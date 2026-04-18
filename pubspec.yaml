@@ -1,0 +1,123 @@
+name: triex
+description: A new Flutter project.
+
+version: 3.4.0
+
+environment:
+  sdk: '>=2.18.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  shared_preferences: ^2.2.2
+  flutter_slidable: ^3.0.0
+  webview_flutter: ^4.2.2
+  http: ^0.13.6
+  url_launcher: ^6.2.5
+  audioplayers: ^5.2.0
+  geocoding: ^2.1.0
+  flutter_svg: ^2.0.7
+  lottie: ^2.2.0
+  flutter_map: ^4.0.0
+  latlong2: ^0.8.1
+  firebase_analytics: ^11.4.4
+  firebase_auth: ^5.5.1
+  geolocator: ^9.0.2
+  google_fonts: ^4.0.4
+  cloud_firestore: ^5.0.0
+  fluttertoast: ^8.2.0 
+  font_awesome_flutter: ^10.5.0
+  firebase_core: ^3.12.1
+  image_picker: ^1.0.4
+  firebase_storage: ^12.4.5
+  firebase_auth_web: ^5.14.1
+  google_maps_flutter: ^2.10.1
+  google_maps_flutter_web: ^0.5.12
+  shimmer: ^2.0.0
+  timeago: ^3.6.0
+  intl: ^0.18.0
+  flutter_typeahead: ^5.2.0
+  google_places_flutter: ^2.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.2
+  flutter_launcher_icons: ^0.13.1   # ✅ MOVED HERE
+
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/tricycle.png
+    - assets/images/accept.png
+    - assets/images/successful.png
+    - assets/images/earn-money.png
+    - assets/images/driver.png
+    - assets/images/taxi.png
+    - assets/images/man.png
+    - assets/images/bus.png
+    - assets/images/package.png
+    - assets/images/cab.png
+    - assets/images/pickup-truck.png
+    - assets/images/delivery-man.png
+    - assets/images/fast-shipping.png
+    - assets/images/car.png
+    - assets/images/bus (2).png
+    - assets/images/bajaj.png
+    - assets/images/keke.png
+    - assets/images/menu-bar.png
+    - assets/images/shuttle-service.png
+    - assets/images/layout.png
+    - assets/images/service.png 
+    - assets/images/help.png
+    - assets/images/deck_mobility_circular_logo.png
+    - assets/images/customer-service.png
+    - assets/images/settings.png
+    - assets/images/school-bus.png
+    - assets/images/shuttle-bus.png
+    - assets/images/package (2).png
+    - assets/images/cab (1).png
+    - assets/images/shopping-cart.png
+    - assets/images/check-list.png
+    - assets/images/delivery-schedule.png
+    - assets/images/truck (3).png
+    - assets/images/warehouse (1).png
+    - assets/images/waybill (2).png
+    - assets/images/transport (1).png
+    - assets/images/shopping-bag.png
+    - assets/images/take-away.png
+    - assets/images/courier-delivery.png
+    - assets/images/clock.png
+    - assets/images/box (1).png
+    - assets/images/send.png
+    - assets/images/traveling.png
+    - assets/images/supplier.png
+    - assets/sounds/notification_sound.mp3
+    - assets/images/zone.png
+    - assets/images/coke.png
+    - assets/images/danwake.png
+    - assets/images/party jollof rice.jpg
+    - assets/images/pepsi.png
+    - assets/images/pizza.png
+    - assets/images/poundo ugusi.jpg
+    - assets/images/puff.png
+    - assets/images/samosa.png
+    - assets/images/shawarma.png
+    - assets/images/small chops.jpg
+    - assets/images/Spaghetti.jpg
+    - assets/images/suya.png
+    - assets/images/tuwon shinkafa.jpg
+    - assets/images/bibimbap.png
+    - assets/images/up-right.png
+    - assets/images/left-and-right-arrows.png
+
+
+# ✅ MUST stay at root level
+flutter_launcher_icons:
+  android: true
+  ios: true
+  web:
+    generate: true
+  image_path: "assets/images/zone.png"
