@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:geocoding/geocoding.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:math';
@@ -690,38 +689,43 @@ class _HomePageState extends State<HomePage> {
             userName: widget.userName,
             onTabSelected: _onBottomNavTapped,
           ),
-          _ridesPage,
-          const LogisticsPage(),
-          const TransportPage(),
+
+          UserOrdersListPage(), // 🔁 replaced _ridesPage
+          const support(), // 🔁 replaced LogisticsPage
+          const profile(), // 🔁 replaced TransportPage
         ],
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        backgroundColor: Colors.white,
-        currentIndex: _selectedIndex,
-        onTap: _onBottomNavTapped,
-        selectedItemColor: Colors.black,
-        unselectedItemColor: Colors.grey,
-        type: BottomNavigationBarType.fixed,
-        items: [
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.home_rounded),
-            label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: Image.asset('assets/images/taxi.png', width: 25, height: 25),
-            label: 'Rides',
-          ),
-          BottomNavigationBarItem(
-            icon:
-                Image.asset('assets/images/package.png', width: 22, height: 22),
-            label: 'Logistics',
-          ),
-          BottomNavigationBarItem(
-            icon: Image.asset('assets/images/shuttle-service.png',
-                width: 22, height: 22),
-            label: 'Transport',
-          ),
-        ],
+      bottomNavigationBar: SizedBox(
+        height: 70, // 👈 increase this (default is ~56–60)
+        child: BottomNavigationBar(
+          backgroundColor: Colors.white,
+          currentIndex: _selectedIndex,
+          onTap: _onBottomNavTapped,
+          selectedItemColor: Colors.black,
+          unselectedItemColor: Colors.grey,
+          type: BottomNavigationBarType.fixed,
+          items: [
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.home_rounded),
+              label: 'Home',
+            ),
+            BottomNavigationBarItem(
+              icon:
+                  Image.asset('assets/images/taxi.png', width: 25, height: 25),
+              label: 'Orders',
+            ),
+            BottomNavigationBarItem(
+              icon: Image.asset('assets/images/package.png',
+                  width: 22, height: 22),
+              label: 'Support',
+            ),
+            BottomNavigationBarItem(
+              icon: Image.asset('assets/images/shuttle-service.png',
+                  width: 22, height: 22),
+              label: 'Profile',
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1357,6 +1361,7 @@ class _VendorOrderDetailsPageState extends State<VendorOrderDetailsPage> {
         //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
 
         leading: Padding(
           padding: const EdgeInsets.only(left: 10),
@@ -2072,6 +2077,7 @@ class _AddProductPageState extends State<AddProductPage> {
         //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
 
         leading: Padding(
           padding: const EdgeInsets.only(left: 10),
@@ -4101,6 +4107,7 @@ class _DashboardPageState extends State<DashboardPage> {
       barrierDismissible: false,
       builder: (context) {
         return Dialog(
+          backgroundColor: Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
             side: const BorderSide(color: Colors.black12), // border
@@ -4111,7 +4118,7 @@ class _DashboardPageState extends State<DashboardPage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Text(
-                  "Unavailable to find your accurate location address, please add location manually.",
+                  "Unable to find your accurate location address, please add location manually.",
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 14),
                 ),
@@ -4143,6 +4150,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
   void openAddLocationForm() {
     showModalBottomSheet(
+      backgroundColor: Colors.white,
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
@@ -4166,7 +4174,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   const SizedBox(height: 20),
                   DropdownButtonFormField<String>(
                     value: selectedState,
-                    hint: const Text("Select State"),
+                    hint: const Text("Select City"),
                     items: nigeriaStates
                         .map((state) =>
                             DropdownMenuItem(value: state, child: Text(state)))
@@ -4243,6 +4251,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
   void openLocationModal() {
     showModalBottomSheet(
+      backgroundColor: Colors.white,
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
@@ -4269,14 +4278,14 @@ class _DashboardPageState extends State<DashboardPage> {
                       padding: const EdgeInsets.symmetric(
                           vertical: 12, horizontal: 16),
                       decoration: BoxDecoration(
-                          color: Colors.green.withOpacity(0.1),
+                          color: Colors.grey.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(10)),
                       child: Row(
                         children: const [
-                          Icon(Icons.add, color: Colors.green),
+                          Icon(Icons.add, color: Colors.black),
                           SizedBox(width: 10),
                           Text("Add Location",
-                              style: TextStyle(color: Colors.green))
+                              style: TextStyle(color: Colors.black))
                         ],
                       ),
                     ),
@@ -4286,20 +4295,32 @@ class _DashboardPageState extends State<DashboardPage> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text("Use my current location",
-                          style: TextStyle(color: Colors.green[500])),
-                      Switch(
+                          style: TextStyle(color: Colors.grey[500])),
+                      Transform.scale(
+                        scale: 0.85,
+                        child: Switch(
                           value: useCurrentLocation,
+                          activeColor: Colors.white,
+                          activeTrackColor: Colors.black,
+                          inactiveThumbColor: Colors.white,
+                          inactiveTrackColor: Colors.grey.shade300,
+                          trackOutlineColor:
+                              MaterialStateProperty.all(Colors.transparent),
                           onChanged: (val) {
                             setModalState(() => useCurrentLocation = val);
-                            if (val && !isLoadingLocation)
+                            if (val && !isLoadingLocation) {
                               Navigator.pop(context);
-                          }),
+                            }
+                          },
+                        ),
+                      )
                     ],
                   ),
                   const SizedBox(height: 20),
                   if (savedAddresses.isNotEmpty) const Text("Saved Addresses"),
                   ...savedAddresses.map((addr) => ListTile(
-                        leading: const Icon(Icons.location_on),
+                        leading:
+                            const Icon(Icons.location_on, color: Colors.black),
                         title: Text(addr),
                         onTap: () {
                           setState(() => address = addr);
@@ -4509,122 +4530,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
                   const SizedBox(height: 20),
 
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text("Explore Vendors",
-                        style: TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.bold)),
-                  ),
-
                   const SizedBox(height: 10),
-
-                  // Vendors List with Realistic Shimmer
-                  // Vendors List
-                  isLoadingVendors
-                      ? Column(
-                          children: List.generate(
-                            6,
-                            (_) => _buildVendorCardShimmer(),
-                          ),
-                        )
-                      : ListView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: vendors.length,
-                          itemBuilder: (context, index) {
-                            final vendor = vendors[index];
-                            final name = vendor["businessName"] ?? "";
-                            final category = vendor["category"] ?? "";
-                            final hours = vendor["hours"] ?? "";
-
-                            bool isOpen = true;
-                            try {
-                              final parts = hours.split(" ");
-                              final openHour = int.parse(parts[0]);
-                              final closeHour = int.parse(parts[1]);
-                              final now = DateTime.now().hour;
-                              isOpen = now >= openHour && now <= closeHour;
-                            } catch (_) {}
-
-                            return GestureDetector(
-                              onTap: () => openVendorModal(vendor),
-                              child: Container(
-                                margin: const EdgeInsets.only(
-                                    bottom: 12), // ✅ spacing FIX
-                                padding: const EdgeInsets.all(10),
-                                height: 110,
-                                decoration: BoxDecoration(
-                                  color: Colors.grey[100],
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Row(
-                                  children: [
-                                    ClipOval(
-                                      child: Image.network(
-                                        vendor["profileImageUrl"] ?? "",
-                                        width: 70,
-                                        height: 70,
-                                        fit: BoxFit.cover,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          Text(
-                                            name,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 14,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: 8, vertical: 3),
-                                            decoration: BoxDecoration(
-                                              color: isOpen
-                                                  ? Colors.green
-                                                      .withOpacity(0.1)
-                                                  : Colors.red.withOpacity(0.1),
-                                              borderRadius:
-                                                  BorderRadius.circular(6),
-                                            ),
-                                            child: Text(
-                                              isOpen ? "Open" : "Closed",
-                                              style: TextStyle(
-                                                color: isOpen
-                                                    ? Colors.green
-                                                    : Colors.red,
-                                                fontSize: 10,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 10, vertical: 6),
-                                      decoration: BoxDecoration(
-                                        color: Colors.black.withOpacity(0.05),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Text(
-                                        getCategoryLabel(category),
-                                        style: const TextStyle(fontSize: 10),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        ),
                 ],
               ),
             ),
@@ -4835,6 +4741,7 @@ class _ProviderOnboardingPageState extends State<ProviderOnboardingPage> {
         //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
 
         leading: Padding(
           padding: const EdgeInsets.only(left: 10),
@@ -5041,6 +4948,7 @@ class _ProviderHomePageState extends State<ProviderHomePage> {
         //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
 
         leading: Padding(
           padding: const EdgeInsets.only(left: 10),
@@ -5216,6 +5124,7 @@ class ManageRoutesPage extends StatelessWidget {
         //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
 
         leading: Padding(
           padding: const EdgeInsets.only(left: 10),
@@ -5728,6 +5637,7 @@ class ManageVehiclesPage extends StatelessWidget {
         //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
 
         leading: Padding(
           padding: const EdgeInsets.only(left: 10),
@@ -5827,6 +5737,7 @@ class _TransportPageState extends State<TransportPage> {
         //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
 
         leading: Padding(
           padding: const EdgeInsets.only(left: 10),
@@ -5853,7 +5764,7 @@ class _TransportPageState extends State<TransportPage> {
           child: Text(
             'Transport',
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 15,
               fontWeight: FontWeight.bold,
               color: Colors.black,
             ),
@@ -5895,7 +5806,12 @@ class _TransportPageState extends State<TransportPage> {
                   child: GestureDetector(
                     onTap: _openMassTransitModal,
                     child: _serviceCard(
-                      icon: Icons.directions_bus,
+                      icon: Image.asset(
+                        'assets/images/bus.png',
+                        width: 26,
+                        height: 26,
+                        fit: BoxFit.contain,
+                      ),
                       title: "Mass Transit",
                       subtitle: "Book intercity bus transits.",
                     ),
@@ -5904,8 +5820,13 @@ class _TransportPageState extends State<TransportPage> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: _serviceCard(
-                    icon: Icons.flight,
-                    title: "Flight Booking",
+                    icon: Image.asset(
+                      'assets/images/plane.png',
+                      width: 26,
+                      height: 26,
+                      fit: BoxFit.contain,
+                    ),
+                    title: "Flights",
                     subtitle: "Book flight tickets.",
                   ),
                 ),
@@ -5941,55 +5862,235 @@ class _TransportPageState extends State<TransportPage> {
                     itemBuilder: (context, index) {
                       final p = providers[index];
 
-                      return Container(
-                        width: 300,
-                        margin: const EdgeInsets.only(right: 12),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
-                        child: Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 25,
-                              backgroundImage: NetworkImage(p['imageUrl']),
-                            ),
-                            const SizedBox(width: 10),
-
-                            /// NAME + LOCATION
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    p['name'],
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.bold),
-                                  ),
-                                  Text(p['location']),
-                                ],
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () => _openProviderModal(p),
+                        child: Container(
+                          width: 300,
+                          margin: const EdgeInsets.only(right: 12),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey.shade300),
+                          ),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 25,
+                                backgroundImage: NetworkImage(p['imageUrl']),
                               ),
-                            ),
+                              const SizedBox(width: 10),
 
-                            /// STATE BADGE
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: Colors.green.shade50,
-                                borderRadius: BorderRadius.circular(8),
+                              /// NAME + LOCATION
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      p['name'],
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.bold),
+                                    ),
+                                    Text(p['location']),
+                                  ],
+                                ),
                               ),
-                              child: Text(p['state']),
-                            )
-                          ],
+
+                              /// STATE BADGE
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.shade50,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(p['state']),
+                              )
+                            ],
+                          ),
                         ),
                       );
                     },
                   );
                 },
               ),
+            ),
+            const SizedBox(height: 20),
+
+            const Text(
+              "Recents",
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            ),
+
+            const SizedBox(height: 12),
+            StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('transport_tickets')
+                  .where('userId',
+                      isEqualTo: FirebaseAuth.instance.currentUser?.uid)
+                  // .orderBy('createdAt', descending: true)
+                  .limit(10)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final docs = snapshot.data!.docs;
+
+                if (docs.isEmpty) {
+                  return const Padding(
+                    padding: EdgeInsets.all(10),
+                    child: Text("No recent tickets yet"),
+                  );
+                }
+
+                return Column(
+                  children: docs.map((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+
+                    final from = data['from'] ?? 'Unknown';
+                    final to = data['to'] ?? 'Unknown';
+                    final price = data['price'] ?? 0;
+                    final provider = data['providerName'] ?? 'Provider';
+                    final location = data['providerLocation'] ?? '';
+                    final status = data['status'] ?? 'pending';
+                    final ticketId = data['ticketId'] ?? '';
+
+                    final departure = data['departure'] as Timestamp?;
+                    final createdAt = data['createdAt'] as Timestamp?;
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        // border: Border.all(color: Colors.grey.shade200),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          )
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          /// TOP ROW (route + status)
+                          Row(
+                            children: [
+                              Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: Colors.black,
+                                  borderRadius: BorderRadius.circular(30),
+                                ),
+                                child: const Icon(
+                                  Icons.directions_bus,
+                                  color: Colors.white,
+                                  size: 18,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      "$from → $to",
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      provider,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: status == "valid"
+                                      ? Colors.green.withOpacity(0.1)
+                                      : Colors.orange.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  status.toUpperCase(),
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: status == "valid"
+                                        ? Colors.green
+                                        : Colors.orange,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 10),
+
+                          /// SECOND ROW (details)
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                "₦$price",
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Text(
+                                "ID: $ticketId",
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey[500],
+                                ),
+                              ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 6),
+
+                          /// FOOTER (dates)
+                          Row(
+                            children: [
+                              Icon(Icons.schedule,
+                                  size: 14, color: Colors.grey[600]),
+                              const SizedBox(width: 4),
+                              Text(
+                                departure != null
+                                    ? "Dep: ${DateTime.fromMillisecondsSinceEpoch(departure.millisecondsSinceEpoch).toString().split('.')[0]}"
+                                    : "No departure",
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                );
+              },
             ),
           ],
         ),
@@ -5998,54 +6099,256 @@ class _TransportPageState extends State<TransportPage> {
   }
 
   Widget _serviceCard({
-    required IconData icon,
+    required Widget icon,
     required String title,
     required String subtitle,
   }) {
     return Container(
-      height: 150,
-      padding: const EdgeInsets.all(14),
+      height: 160,
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           )
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          /// ROW 1: ICON + TITLE
+          /// ICON + TITLE
           Row(
             children: [
-              Icon(icon, size: 26, color: Colors.black),
-              const SizedBox(width: 8),
+              /// 🌈 Gradient Circular Icon
+              Container(
+                width: 45,
+                height: 45,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.grey[50],
+                ),
+                child: Center(
+                  child: SizedBox(
+                    width: 25,
+                    height: 25,
+                    child: icon,
+                  ),
+                ),
+              ),
+
+              const SizedBox(width: 12),
+
               Expanded(
                 child: Text(
                   title,
                   style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
                   ),
                 ),
               ),
             ],
           ),
 
-          const SizedBox(height: 12),
+          /// ⬇️ spacing pushes description lower
+          const SizedBox(height: 20),
 
-          /// ROW 2: DESCRIPTION
+          /// DESCRIPTION
           Text(
             subtitle,
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 12.5,
+              height: 1.4,
               color: Colors.grey[600],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _openProviderModal(dynamic provider) async {
+    final providerId = provider.id;
+
+    /// 🔥 Fetch ALL routes for this provider
+    final routesSnap = await FirebaseFirestore.instance
+        .collection('routes')
+        .where('providerId', isEqualTo: providerId)
+        .get();
+
+    final routes = routesSnap.docs;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+      ),
+      builder: (_) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.7,
+        minChildSize: 0.5,
+        maxChildSize: 0.9,
+        builder: (context, controller) => Padding(
+          padding: const EdgeInsets.all(16),
+          child: ListView(
+            controller: controller,
+            children: [
+              /// 🔹 HANDLE
+              Center(
+                child: Container(
+                  width: 50,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              /// 🔹 PROVIDER INFO CARD
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.06),
+                      blurRadius: 10,
+                    )
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 28,
+                      backgroundImage: NetworkImage(provider['imageUrl']),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            provider['name'],
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            provider['location'],
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              /// 🔹 ROUTES TITLE
+              const Text(
+                "Routes",
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              /// 🔥 ROUTES LIST (CLICKABLE)
+              ...routes.map((r) {
+                final data = r.data();
+
+                return InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () {
+                    Navigator.pop(context); // close modal
+
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => TicketBookingPage(
+                          routeData: r,
+                          providerData: provider,
+                        ),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[50],
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        /// ROUTE INFO
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "${data['from']} → ${data['to']}",
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              "Tap to book",
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        /// PRICE
+                        Text(
+                          "₦${data['price']}",
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.green,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+
+              /// 🔥 EMPTY STATE
+              if (routes.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.only(top: 20),
+                  child: Center(
+                    child: Text("No routes available"),
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -6061,14 +6364,12 @@ class _TransportPageState extends State<TransportPage> {
       ),
       builder: (_) => StatefulBuilder(
         builder: (context, setState) {
-          final filteredStates = states.where((s) => s != fromState).toList();
-
           return Padding(
             padding: EdgeInsets.only(
               left: 16,
               right: 16,
               top: 20,
-              bottom: MediaQuery.of(context).viewInsets.bottom,
+              bottom: MediaQuery.of(context).viewInsets.bottom + 20,
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -6090,50 +6391,48 @@ class _TransportPageState extends State<TransportPage> {
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
-                    color: Colors.black,
                   ),
                 ),
 
                 const SizedBox(height: 20),
 
-                /// FROM CARD
-                _whiteField(
+                /// 🔵 FROM BUTTON
+                _stateSelector(
                   label: "From",
-                  child: DropdownButtonFormField(
-                    value: fromState,
-                    decoration: _inputDecoration(),
-                    items: states
-                        .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-                        .toList(),
-                    onChanged: (val) {
+                  value: fromState,
+                  onTap: () async {
+                    final result = await _openStatePicker(states);
+                    if (result != null) {
                       setState(() {
-                        fromState = val;
+                        fromState = result;
                         toState = null;
                       });
-                    },
-                  ),
+                    }
+                  },
                 ),
 
                 const SizedBox(height: 12),
 
-                /// TO CARD
-                _whiteField(
+                /// 🔵 TO BUTTON
+                _stateSelector(
                   label: "To",
-                  child: DropdownButtonFormField(
-                    value: toState,
-                    decoration: _inputDecoration(),
-                    items: filteredStates
-                        .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-                        .toList(),
-                    onChanged: (val) {
-                      setState(() => toState = val);
-                    },
-                  ),
+                  value: toState,
+                  onTap: () async {
+                    final filtered =
+                        states.where((s) => s != fromState).toList();
+
+                    final result = await _openStatePicker(filtered);
+                    if (result != null) {
+                      setState(() {
+                        toState = result;
+                      });
+                    }
+                  },
                 ),
 
                 const SizedBox(height: 20),
 
-                /// BUTTON (BLACK THEME)
+                /// SEARCH BUTTON
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
@@ -6150,7 +6449,8 @@ class _TransportPageState extends State<TransportPage> {
                       style: TextStyle(color: Colors.white),
                     ),
                   ),
-                )
+                ),
+                SizedBox(height: 10),
               ],
             ),
           );
@@ -6159,46 +6459,70 @@ class _TransportPageState extends State<TransportPage> {
     );
   }
 
-  Widget _whiteField({required String label, required Widget child}) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label,
+  Widget _stateSelector({
+    required String label,
+    required String? value,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        child: Row(
+          children: [
+            Text(
+              label,
               style: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-              )),
-          const SizedBox(height: 6),
-          child,
-        ],
+                color: Colors.grey,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                value ?? "",
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: value == null ? Colors.grey : Colors.black,
+                ),
+              ),
+            ),
+            const Icon(Icons.keyboard_arrow_down),
+          ],
+        ),
       ),
     );
   }
 
-  InputDecoration _inputDecoration() {
-    return InputDecoration(
-      filled: true,
-      fillColor: Colors.white,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.grey.shade300),
+  Future<String?> _openStatePicker(List<String> list) async {
+    return showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.grey.shade300),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Colors.black),
-      ),
+      builder: (_) {
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: list.length,
+          itemBuilder: (context, index) {
+            final state = list[index];
+
+            return ListTile(
+              title: Text(state),
+              onTap: () => Navigator.pop(context, state),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -6416,40 +6740,13 @@ class _TransportTicketsPageState extends State<TransportTicketsPage> {
 
     return Scaffold(
       appBar: AppBar(
-        //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
-
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 10),
-          child: GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              width: 25,
-              height: 25,
-              decoration: BoxDecoration(
-                color: Colors.grey[100], // ✅ grey 50 look
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.arrow_back_ios,
-                size: 14,
-                color: Colors.black,
-              ),
-            ),
-          ),
-        ),
-
-        title: const Padding(
-          padding: EdgeInsets.only(left: 8), // ✅ spacing from icon
-          child: Text(
-            'Transport Tickets',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: Colors.black,
-            ),
-          ),
+        scrolledUnderElevation: 0,
+        iconTheme: const IconThemeData(color: Colors.black),
+        title: const Text(
+          'Transport Tickets',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
         ),
       ),
       body: Padding(
@@ -6500,12 +6797,6 @@ class _TransportTicketsPageState extends State<TransportTicketsPage> {
                       /// PROVIDER
                       Row(
                         children: [
-                          CircleAvatar(
-                            radius: 25,
-                            backgroundImage: NetworkImage(
-                                ticket['providerImageUrl'] ??
-                                    "https://via.placeholder.com/150"),
-                          ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
@@ -6718,6 +7009,7 @@ class _TicketBookingPageState extends State<TicketBookingPage> {
         //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
 
         leading: Padding(
           padding: const EdgeInsets.only(left: 10),
@@ -6990,6 +7282,7 @@ class _AdminInstitutionsPageState extends State<AdminInstitutionsPage> {
         //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
 
         leading: Padding(
           padding: const EdgeInsets.only(left: 10),
@@ -7100,406 +7393,693 @@ class _AdminInstitutionsPageState extends State<AdminInstitutionsPage> {
 }
 
 class ShuttleBookingPage extends StatefulWidget {
+  const ShuttleBookingPage({super.key});
+
   @override
-  _ShuttleBookingPageState createState() => _ShuttleBookingPageState();
+  State<ShuttleBookingPage> createState() => _ShuttleBookingPageState();
 }
 
 class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
-  String? selectedInstitution;
-  String? selectedPickup;
-  String? selectedDestination;
+  final TextEditingController _searchController = TextEditingController();
 
-  double? price;
-  bool loading = false;
-
-  int ticketCount = 0;
-
-  List<String> institutionList = [];
-  Map<String, List<String>> institutionLocations = {};
-  Map<String, double> institutionPrices = {};
-
-  @override
-  void initState() {
-    super.initState();
-    fetchInstitutions();
-    fetchTicketCount();
-  }
-
-  /// FETCH TICKET COUNT
-  void fetchTicketCount() async {
-    try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection("tickets")
-          .where("userId", isEqualTo: "currentUser") // replace with auth uid
-          .get();
-
-      setState(() {
-        ticketCount = snapshot.docs.length;
-      });
-    } catch (e) {}
-  }
-
-  /// FETCH INSTITUTIONS
-  void fetchInstitutions() async {
-    try {
-      final snapshot =
-          await FirebaseFirestore.instance.collection("institutions").get();
-
-      final List<String> names = [];
-      final Map<String, List<String>> locMap = {};
-      final Map<String, double> priceMap = {};
-
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
-
-        names.add(data["name"]);
-
-        locMap[data["name"]] = List<String>.from(data["locations"]);
-
-        priceMap[data["name"]] = (data["price"] ?? 0).toDouble();
-      }
-
-      setState(() {
-        institutionList = names;
-        institutionLocations = locMap;
-        institutionPrices = priceMap;
-      });
-    } catch (e) {}
-  }
-
-  List<String> get currentLocations => selectedInstitution != null
-      ? institutionLocations[selectedInstitution!] ?? []
-      : [];
-
-  /// MODERN POPUP SELECTOR
-  Future<String?> showCustomDropdown(
-    String title,
-    List<String> options,
-  ) async {
-    return showModalBottomSheet<String>(
+  // ─────────────────────────────────────────────
+  //  INSTITUTIONS MODAL
+  // ─────────────────────────────────────────────
+  void _openInstitutionsModal() {
+    showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (context) {
-        return Container(
-          height: 400,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
-          ),
-          child: Column(
-            children: [
-              SizedBox(height: 15),
-              Container(
-                height: 5,
-                width: 40,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(10),
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.75,
+          minChildSize: 0.5,
+          maxChildSize: 0.95,
+          builder: (context, scrollController) {
+            return Column(
+              children: [
+                const SizedBox(height: 12),
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
-              ),
-              SizedBox(height: 20),
-              Text(
-                title,
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              SizedBox(height: 20),
-              Expanded(
-                child: ListView.builder(
-                  itemCount: options.length,
-                  itemBuilder: (context, index) {
-                    final item = options[index];
+                const SizedBox(height: 16),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 20),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      "Select Institution",
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: FutureBuilder<QuerySnapshot>(
+                    future: FirebaseFirestore.instance
+                        .collection('institutions')
+                        .get(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return _institutionShimmer();
+                      }
+                      if (snapshot.hasError) {
+                        return Center(child: Text("Error: ${snapshot.error}"));
+                      }
+                      if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                        return const Center(
+                            child: Text("No institutions found."));
+                      }
 
-                    return ListTile(
-                      title: Text(item),
-                      onTap: () {
-                        Navigator.pop(context, item);
-                      },
-                    );
-                  },
+                      final institutions = snapshot.data!.docs;
+
+                      return ListView.builder(
+                        controller: scrollController,
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        itemCount: institutions.length,
+                        itemBuilder: (context, index) {
+                          final data = institutions[index].data()
+                              as Map<String, dynamic>;
+                          final name = data['name'] ?? 'Unknown';
+                          final locations =
+                              List<String>.from(data['locations'] ?? []);
+
+                          return GestureDetector(
+                            onTap: () {
+                              Navigator.pop(context);
+                              _openDriversModal(name);
+                            },
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: Colors.grey.shade200),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.05),
+                                    blurRadius: 10,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 52,
+                                    height: 52,
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue.withOpacity(0.1),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.school_rounded,
+                                      color: Colors.blue,
+                                      size: 26,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          name,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                        if (locations.isNotEmpty) ...[
+                                          const SizedBox(height: 6),
+                                          Wrap(
+                                            spacing: 6,
+                                            runSpacing: 4,
+                                            children: locations
+                                                .map(
+                                                  (loc) => Container(
+                                                    padding: const EdgeInsets
+                                                            .symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 3),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.grey[100],
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              20),
+                                                    ),
+                                                    child: Text(
+                                                      loc,
+                                                      style: TextStyle(
+                                                        fontSize: 10,
+                                                        color: Colors.grey[700],
+                                                      ),
+                                                    ),
+                                                  ),
+                                                )
+                                                .toList(),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                  const Icon(
+                                    Icons.arrow_forward_ios_rounded,
+                                    size: 14,
+                                    color: Colors.grey,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            );
+          },
         );
       },
     );
   }
 
-  /// BOOK
-  void bookShuttle() {
-    if (selectedInstitution == null ||
-        selectedPickup == null ||
-        selectedDestination == null ||
-        price == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Complete all selections")),
-      );
-      return;
-    }
+  // ─────────────────────────────────────────────
+  //  DRIVERS MODAL
+  // ─────────────────────────────────────────────
+  void _openDriversModal(String institutionName) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.75,
+          minChildSize: 0.5,
+          maxChildSize: 0.95,
+          builder: (context, scrollController) {
+            return Column(
+              children: [
+                const SizedBox(height: 12),
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ShuttlePaymentPage(
-          institution: selectedInstitution!,
-          pickup: selectedPickup!,
-          destination: selectedDestination!,
-          price: price!,
-        ),
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                /// HEADER
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Row(
+                    children: [
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.pop(context);
+                          _openInstitutionsModal();
+                        },
+                        child: const Icon(CupertinoIcons.back, size: 22),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          institutionName,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 6),
+
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      "Available Drivers",
+                      style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+
+                /// 🔥 STREAM BUILDER (FIXED)
+                Expanded(
+                  child: StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('shuttle_drivers')
+                        .where('activeInstitution', isEqualTo: institutionName)
+                        .where('status', isEqualTo: 'online')
+                        .snapshots(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return _driverShimmer();
+                      }
+
+                      if (snapshot.hasError) {
+                        return Center(child: Text("Error: ${snapshot.error}"));
+                      }
+
+                      if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                        return Center(
+                          child: Text(
+                            "No active shuttles",
+                            style: TextStyle(color: Colors.grey[400]),
+                          ),
+                        );
+                      }
+
+                      final drivers = snapshot.data!.docs;
+
+                      return ListView.builder(
+                        controller: scrollController,
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        itemCount: drivers.length,
+                        itemBuilder: (context, index) {
+                          final doc = drivers[index];
+                          final data = doc.data() as Map<String, dynamic>;
+
+                          /// 🔥 IMPORTANT: attach doc ID
+                          data['id'] = doc.id;
+
+                          final vehicleImage = data['vehicleImage'] ?? '';
+                          final vehicleName = data['vehicleName'] ?? '';
+                          final driverCode = data['driverCode'] ?? '';
+                          final vehicleCapacity = data['vehicleCapacity'] ?? 0;
+                          final boardedPassengers =
+                              data['boardedPassengers'] ?? 0;
+
+                          final seatsLeft = vehicleCapacity - boardedPassengers;
+                          final safeSeats = seatsLeft < 0 ? 0 : seatsLeft;
+                          final isFull = safeSeats <= 0;
+
+                          return _driverCard(
+                            data: data,
+                            vehicleImage: vehicleImage,
+                            vehicleName: vehicleName,
+                            driverCode: driverCode,
+                            vehicleCapacity: vehicleCapacity,
+                            boardedPassengers: boardedPassengers,
+                            seatsLeft: safeSeats,
+                            isFull: isFull,
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _avatarFallback() {
+    return Container(
+      width: 52,
+      height: 52,
+      color: Colors.grey[200],
+      child: const Icon(Icons.person, color: Colors.grey),
+    );
+  }
+
+  Widget _infoChip(IconData icon, String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: color),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: color,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  void goToMyTickets() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => MyTicketsPage(),
-      ),
-    ).then((value) {
-      fetchTicketCount();
-    });
-  }
-
-  /// SELECTOR FIELD
-  Widget selectorField({
-    required String label,
-    required String? value,
-    required IconData icon,
-    required VoidCallback onTap,
+  Widget _driverCard({
+    required Map<String, dynamic> data,
+    required String vehicleImage,
+    required String vehicleName,
+    required String driverCode,
+    required int vehicleCapacity,
+    required int boardedPassengers,
+    required int seatsLeft,
+    required bool isFull,
   }) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: (!isFull)
+          ? () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ShuttlePaymentPage(driverData: data),
+                ),
+              );
+            }
+          : null,
       child: Container(
-        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        height: 70,
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
+          color: Colors.white,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.grey.shade300),
+          border: Border.all(color: Colors.grey.shade200),
         ),
         child: Row(
           children: [
-            Icon(icon),
-            SizedBox(width: 12),
+            /// 🚐 Vehicle Image
+            ClipOval(
+              child: vehicleImage.isNotEmpty
+                  ? Image.network(
+                      vehicleImage,
+                      width: 48,
+                      height: 48,
+                      fit: BoxFit.cover,
+                    )
+                  : Container(
+                      width: 48,
+                      height: 48,
+                      color: Colors.grey[200],
+                      child: const Icon(Icons.directions_bus),
+                    ),
+            ),
+
+            const SizedBox(width: 10),
+
+            /// INFO
             Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "$driverCode • $vehicleName",
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Text(
+                        "$boardedPassengers/$vehicleCapacity",
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        isFull ? "Full" : "Seats: $seatsLeft",
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isFull ? Colors.red : Colors.green,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            /// PRICE / FULL
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: isFull ? Colors.grey : Colors.black,
+                borderRadius: BorderRadius.circular(8),
+              ),
               child: Text(
-                value ?? label,
-                style: TextStyle(
-                  color: value == null ? Colors.grey : Colors.black,
+                isFull ? "Full" : "₦${data['price'] ?? 0}",
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
             ),
-            Icon(Icons.keyboard_arrow_down)
           ],
         ),
       ),
     );
   }
 
-  /// BUILD
+  // ─────────────────────────────────────────────
+  //  BUILD
+  // ─────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
-
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 10),
-          child: GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              width: 25,
-              height: 25,
-              decoration: BoxDecoration(
-                color: Colors.grey[100], // ✅ grey 50 look
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.arrow_back_ios,
-                size: 14,
-                color: Colors.black,
-              ),
-            ),
-          ),
-        ),
-
-        title: const Padding(
-          padding: EdgeInsets.only(left: 8), // ✅ spacing from icon
-          child: Text(
-            '',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
+        scrolledUnderElevation: 0,
+        leading: GestureDetector(
+          onTap: () => Navigator.pop(context),
+          child: const Padding(
+            padding: EdgeInsets.only(left: 8),
+            child: Icon(
+              CupertinoIcons.back,
               color: Colors.black,
+              size: 26,
             ),
           ),
         ),
+        title: const Text(
+          "Shuttle",
+          style: TextStyle(
+            color: Colors.black,
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        centerTitle: true,
       ),
       body: Padding(
-        padding: EdgeInsets.all(20),
-        child: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(
-              child: Text(
-                "Book Shuttle Bus Ticket",
-                style: TextStyle(
-                  fontSize: 20,
-
-                  //fontWeight: FontWeight.bold
+            // ── Search Bar ──────────────────────
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  hintText: "Search shuttles",
+                  hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
+                  prefixIcon:
+                      Icon(Icons.search, color: Colors.grey[400], size: 20),
+                  border: InputBorder.none,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 ),
               ),
             ),
 
-            SizedBox(height: 20),
+            const SizedBox(height: 24),
 
-            /// MY TICKETS WITH BADGE
-            GestureDetector(
-              onTap: goToMyTickets,
-              child: Container(
-                padding: EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Colors.deepPurple, Colors.grey.shade900],
+            const Text(
+              "What are you looking for?",
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+            ),
+
+            const SizedBox(height: 16),
+
+            // ── Two Category Cards ───────────────
+            Row(
+              children: [
+                GestureDetector(
+                  onTap: _openInstitutionsModal,
+                  child: _categoryCard(
+                    icon: Icons.directions_bus_rounded,
+                    iconColor: Colors.blue,
+                    bgColor: Colors.blue.withOpacity(0.08),
+                    title: "Shuttle",
+                    description: "Book shuttle bus tickets",
                   ),
-                  borderRadius: BorderRadius.circular(16),
                 ),
-                child: Row(
-                  children: [
-                    Stack(
-                      children: [
-                        Container(
-                          padding: EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.white,
-                          ),
-                          child:
-                              Icon(Icons.airplane_ticket, color: Colors.amber),
-                        ),
-                        if (ticketCount > 0)
-                          Positioned(
-                            right: 0,
-                            top: 0,
-                            child: Container(
-                              padding: EdgeInsets.all(6),
-                              decoration: BoxDecoration(
-                                color: Colors.red,
-                                shape: BoxShape.circle,
-                              ),
-                              child: Text(
-                                ticketCount.toString(),
-                                style: TextStyle(
-                                    color: Colors.white, fontSize: 10),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                    SizedBox(width: 15),
-                    Text(
-                      "My Tickets",
-                      style: TextStyle(color: Colors.white, fontSize: 16),
-                    ),
-                    Spacer(),
-                    Icon(Icons.arrow_forward_ios, color: Colors.white, size: 16)
-                  ],
+                const SizedBox(width: 14),
+                GestureDetector(
+                  onTap: () {
+                    // TODO: Commute flow
+                  },
+                  child: _categoryCard(
+                    icon: Icons.commute_rounded,
+                    iconColor: Colors.teal,
+                    bgColor: Colors.teal.withOpacity(0.08),
+                    title: "Commute",
+                    description: "Book shuttle tickets in your city",
+                  ),
                 ),
-              ),
-            ),
-
-            SizedBox(height: 30),
-
-            /// Institution
-            selectorField(
-              label: "Select Institution",
-              value: selectedInstitution,
-              icon: Icons.school,
-              onTap: () async {
-                final result = await showCustomDropdown(
-                    "Select Institution", institutionList);
-
-                if (result != null) {
-                  setState(() {
-                    selectedInstitution = result;
-                    selectedPickup = null;
-                    selectedDestination = null;
-                    price = institutionPrices[result];
-                  });
-                }
-              },
-            ),
-
-            SizedBox(height: 20),
-
-            /// Pickup
-            selectorField(
-              label: "Pickup Location",
-              value: selectedPickup,
-              icon: Icons.location_on,
-              onTap: () async {
-                final result = await showCustomDropdown(
-                    "Pickup Location", currentLocations);
-
-                if (result != null) {
-                  setState(() {
-                    selectedPickup = result;
-                  });
-                }
-              },
-            ),
-
-            SizedBox(height: 20),
-
-            /// Destination
-            selectorField(
-              label: "Destination",
-              value: selectedDestination,
-              icon: Icons.flag,
-              onTap: () async {
-                final result =
-                    await showCustomDropdown("Destination", currentLocations);
-
-                if (result != null) {
-                  setState(() {
-                    selectedDestination = result;
-                  });
-                }
-              },
-            ),
-
-            SizedBox(height: 25),
-
-            if (price != null)
-              Container(
-                padding: EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Text(
-                  "Price: ₦${price!.toStringAsFixed(0)}",
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-              ),
-
-            SizedBox(height: 35),
-
-            ElevatedButton(
-              onPressed: bookShuttle,
-              style: ElevatedButton.styleFrom(
-                padding: EdgeInsets.symmetric(vertical: 18),
-                backgroundColor: Colors.black,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14)),
-              ),
-              child: Text(
-                "Book",
-                style: TextStyle(color: Colors.white, fontSize: 16),
-              ),
+              ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _categoryCard({
+    required IconData icon,
+    required Color iconColor,
+    required Color bgColor,
+    required String title,
+    required String description,
+  }) {
+    return Container(
+      height: 130,
+      width: 150,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: bgColor,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: iconColor, size: 22),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            description,
+            style:
+                TextStyle(fontSize: 10, color: Colors.grey[500], height: 1.4),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Widget _shimmerBox({double height = 16, double width = double.infinity}) {
+    return Shimmer.fromColors(
+      baseColor: Colors.grey[300]!,
+      highlightColor: Colors.grey[100]!,
+      child: Container(
+        height: height,
+        width: width,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+        ),
+      ),
+    );
+  }
+
+  Widget _institutionShimmer() {
+    return ListView.builder(
+      itemCount: 6,
+      itemBuilder: (_, __) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+        child: Row(
+          children: [
+            _shimmerBox(height: 50, width: 50),
+            const SizedBox(width: 12),
+            Expanded(child: _shimmerBox(height: 14)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _driverShimmer() {
+    return ListView.builder(
+      itemCount: 6,
+      itemBuilder: (_, __) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+        child: Container(
+          height: 70,
+          padding: const EdgeInsets.all(10),
+          child: Row(
+            children: [
+              _shimmerBox(height: 50, width: 50),
+              const SizedBox(width: 10),
+              Expanded(child: _shimmerBox(height: 14)),
+              const SizedBox(width: 10),
+              _shimmerBox(height: 20, width: 50),
+            ],
+          ),
         ),
       ),
     );
@@ -7576,6 +8156,7 @@ class _MyTicketsPageState extends State<MyTicketsPage> {
         //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
 
         leading: Padding(
           padding: const EdgeInsets.only(left: 10),
@@ -7848,6 +8429,7 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
         //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
 
         leading: Padding(
           padding: const EdgeInsets.only(left: 10),
@@ -8178,25 +8760,38 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
 }
 
 class ShuttlePaymentPage extends StatefulWidget {
-  final String institution;
-  final String pickup;
-  final String destination;
-  final double price;
+  final Map<String, dynamic> driverData;
 
   const ShuttlePaymentPage({
-    required this.institution,
-    required this.pickup,
-    required this.destination,
-    required this.price,
     super.key,
+    required this.driverData,
   });
 
   @override
-  _ShuttlePaymentPageState createState() => _ShuttlePaymentPageState();
+  State<ShuttlePaymentPage> createState() => _ShuttlePaymentPageState();
 }
 
 class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
   bool loading = false;
+
+  late String institution;
+  late String pickup;
+  late String destination;
+  late int price;
+  late String driverId;
+
+  @override
+  void initState() {
+    super.initState();
+
+    final data = widget.driverData;
+
+    institution = data['activeInstitution'] ?? '';
+    pickup = data['pickupLocation'] ?? '';
+    destination = data['destinationLocation'] ?? '';
+    price = (data['price'] ?? 0);
+    driverId = data['id'] ?? '';
+  }
 
   Future<void> _payWithPaystack() async {
     final user = FirebaseAuth.instance.currentUser;
@@ -8208,7 +8803,7 @@ class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
       const String paystackSecretKey =
           'sk_test_661490bf9dc0914e122c2c043ab3aaf3a307d658';
 
-      final int amount = (widget.price * 100).toInt(); // kobo
+      final int amount = (price * 100).toInt();
       final String reference =
           "shuttle_${DateTime.now().millisecondsSinceEpoch}";
 
@@ -8232,18 +8827,12 @@ class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
       final data = jsonDecode(response.body);
       final String checkoutUrl = data['data']['authorization_url'];
 
-      if (!await canLaunchUrl(Uri.parse(checkoutUrl))) {
-        throw "Could not launch payment page";
-      }
-
-      // 🔓 Open Paystack checkout
       await launchUrl(
         Uri.parse(checkoutUrl),
         mode: LaunchMode.externalApplication,
       );
 
-      // ⚠️ TEMP: Assume success after redirect
-      await _saveTicket(reference);
+      await _completeBooking(reference);
 
       if (!mounted) return;
 
@@ -8251,7 +8840,6 @@ class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
         const SnackBar(content: Text("Payment successful! Ticket booked.")),
       );
 
-      // ✅ Navigate to tickets page
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (_) => MyTicketsPage()),
@@ -8266,22 +8854,50 @@ class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
     }
   }
 
-  Future<void> _saveTicket(String paymentReference) async {
+  Future<void> _completeBooking(String paymentReference) async {
     final user = FirebaseAuth.instance.currentUser!;
+    final driverRef =
+        FirebaseFirestore.instance.collection("shuttle_drivers").doc(driverId);
 
-    String ticketId = "ST${Random().nextInt(90000) + 10000}";
+    await FirebaseFirestore.instance.runTransaction((transaction) async {
+      final snapshot = await transaction.get(driverRef);
 
-    await FirebaseFirestore.instance.collection("shuttle_tickets").add({
-      "ticketId": ticketId,
-      "institution": widget.institution,
-      "pickup": widget.pickup,
-      "destination": widget.destination,
-      "price": widget.price,
-      "status": "paid",
-      "userId": user.uid,
-      "userName": user.displayName ?? "User",
-      "paymentReference": paymentReference,
-      "createdAt": FieldValue.serverTimestamp(),
+      if (!snapshot.exists) {
+        throw Exception("Driver not found");
+      }
+
+      final data = snapshot.data()!;
+      int boarded = data['boardedPassengers'] ?? 0;
+      int capacity = data['vehicleCapacity'] ?? 0;
+      int currentEarnings = data['amountCollected'] ?? 0;
+
+      if (boarded >= capacity) {
+        throw Exception("Bus is full");
+      }
+
+      transaction.update(driverRef, {
+        "boardedPassengers": boarded + 1,
+        "amountCollected": currentEarnings + price,
+      });
+
+      String ticketId = "ST${Random().nextInt(90000) + 10000}";
+
+      final ticketRef =
+          FirebaseFirestore.instance.collection("shuttle_tickets").doc();
+
+      transaction.set(ticketRef, {
+        "ticketId": ticketId,
+        "driverId": driverId,
+        "institution": institution,
+        "pickup": pickup,
+        "destination": destination,
+        "price": price,
+        "status": "paid",
+        "userId": user.uid,
+        "userName": user.displayName ?? "User",
+        "paymentReference": paymentReference,
+        "createdAt": FieldValue.serverTimestamp(),
+      });
     });
   }
 
@@ -8290,10 +8906,9 @@ class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
-
+        scrolledUnderElevation: 0,
         leading: Padding(
           padding: const EdgeInsets.only(left: 10),
           child: GestureDetector(
@@ -8302,7 +8917,7 @@ class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
               width: 25,
               height: 25,
               decoration: BoxDecoration(
-                color: Colors.grey[100], // ✅ grey 50 look
+                color: Colors.grey[100],
                 shape: BoxShape.circle,
               ),
               child: const Icon(
@@ -8313,16 +8928,12 @@ class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
             ),
           ),
         ),
-
-        title: const Padding(
-          padding: EdgeInsets.only(left: 8), // ✅ spacing from icon
-          child: Text(
-            'Shuttle Payment',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: Colors.black,
-            ),
+        title: const Text(
+          'Shuttle Payment',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            color: Colors.black,
           ),
         ),
       ),
@@ -8332,9 +8943,10 @@ class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
           child: Container(
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                  colors: [Colors.white, Colors.amberAccent],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight),
+                colors: [Colors.white, Colors.amberAccent],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
@@ -8345,7 +8957,10 @@ class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
               ],
             ),
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+              padding: const EdgeInsets.symmetric(
+                vertical: 24,
+                horizontal: 20,
+              ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -8358,17 +8973,14 @@ class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
                     ),
                   ),
                   const SizedBox(height: 20),
-
-                  // Ticket Fields with Dividers
-                  _ticketField("Institution", widget.institution),
-                  _ticketField("Pickup", widget.pickup),
-                  _ticketField("Destination", widget.destination),
+                  _ticketField("Institution", institution),
+                  _ticketField("Pickup", pickup),
+                  _ticketField("Destination", destination),
                   _ticketField(
                     "Price",
-                    "₦${widget.price.toStringAsFixed(2)}",
+                    "₦$price",
                     isBold: true,
                   ),
-
                   const SizedBox(height: 30),
                   SizedBox(
                     width: double.infinity,
@@ -8377,15 +8989,18 @@ class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
                         minimumSize: const Size(double.infinity, 50),
                         backgroundColor: Colors.black,
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                       onPressed: loading ? null : _payWithPaystack,
                       child: loading
                           ? const CircularProgressIndicator(color: Colors.white)
                           : const Text(
                               "Pay",
-                              style:
-                                  TextStyle(fontSize: 16, color: Colors.white),
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.white,
+                              ),
                             ),
                     ),
                   ),
@@ -8402,11 +9017,14 @@ class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title,
-            style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: Colors.black54)),
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: Colors.black54,
+          ),
+        ),
         const SizedBox(height: 4),
         Text(
           value,
@@ -9247,6 +9865,7 @@ class UserOrdersPage extends StatelessWidget {
         //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
 
         leading: Padding(
           padding: const EdgeInsets.only(left: 10),
@@ -9310,8 +9929,10 @@ class UserOrdersPage extends StatelessWidget {
 
           final status = orderData['status'] ?? 'pending';
           final deliveryCode = orderData['deliveryCode'];
-          final statusTimes =
-              orderData['statusTimes'] as Map<String, dynamic>? ?? {};
+          final createdAt = orderData['createdAt'] as Timestamp?;
+          final pickupConfirmedAt =
+              orderData['pickupConfirmedAt'] as Timestamp?;
+          final deliveredAt = orderData['deliveredAt'] as Timestamp?;
 
           double totalPrice = 0;
           for (var item in items) {
@@ -9328,18 +9949,18 @@ class UserOrdersPage extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    const Text("Order",
+                    const Text("Order Id",
                         style: TextStyle(
-                            fontSize: 24, fontWeight: FontWeight.bold)),
+                            fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(width: 10),
                     Card(
-                      color: Colors.deepPurple.withOpacity(0.1),
+                      color: Colors.white,
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10)),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 6),
-                        child: Text("#$orderId",
+                        child: Text("$orderId",
                             style: const TextStyle(
                                 color: Colors.deepPurple,
                                 fontWeight: FontWeight.bold)),
@@ -9352,6 +9973,7 @@ class UserOrdersPage extends StatelessWidget {
                     style: TextStyle(fontWeight: FontWeight.w500)),
                 const SizedBox(height: 8),
                 Card(
+                  color: Colors.white,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                   child: Padding(
@@ -9365,7 +9987,7 @@ class UserOrdersPage extends StatelessWidget {
                           width: double.infinity,
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
-                            color: Colors.deepPurple,
+                            color: Colors.black,
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Text(
@@ -9387,28 +10009,28 @@ class UserOrdersPage extends StatelessWidget {
                   isLast: false,
                   title: "Order Placed",
                   subtitle: "Processing your order",
-                  time: _formatTime(statusTimes['pending']),
+                  time: _formatTime(createdAt),
                 ),
                 _timelineStep(
                   reached: _isReached(status, 'accepted'),
                   isLast: false,
                   title: "Order Accepted",
                   subtitle: "Vendor is preparing your order",
-                  time: _formatTime(statusTimes['accepted']),
+                  time: "--",
                 ),
                 _timelineStep(
                   reached: _isReached(status, 'picked_up'),
                   isLast: false,
                   title: "Order Pickup",
                   subtitle: "Rider is on the way",
-                  time: _formatTime(statusTimes['picked_up']),
+                  time: _formatTime(pickupConfirmedAt),
                 ),
                 _timelineStep(
                   reached: _isReached(status, 'completed'),
                   isLast: true,
                   title: "Order Delivered",
                   subtitle: "Completed",
-                  time: _formatTime(statusTimes['completed']),
+                  time: _formatTime(deliveredAt),
                 ),
                 const SizedBox(height: 20),
                 Card(
@@ -9556,10 +10178,12 @@ class UserOrdersListPage extends StatelessWidget {
     }
 
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
         //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
 
         leading: Padding(
           padding: const EdgeInsets.only(left: 10),
@@ -9648,6 +10272,7 @@ class UserOrdersListPage extends StatelessWidget {
                   );
                 },
                 child: Card(
+                  color: Colors.white,
                   margin: const EdgeInsets.symmetric(vertical: 6),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
@@ -9658,7 +10283,7 @@ class UserOrdersListPage extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          "Order #${orders[index].id}",
+                          "Order : ${orders[index].id}",
                           style: const TextStyle(
                               fontSize: 16, fontWeight: FontWeight.bold),
                         ),
@@ -9674,19 +10299,24 @@ class UserOrdersListPage extends StatelessWidget {
                               fontSize: 14, fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(height: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.deepPurple.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            "Status: ${order['status'] ?? 'pending'}",
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.deepPurple),
-                          ),
+                        Row(
+                          children: [
+                            Spacer(),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                " ${order['status'] ?? 'pending'}",
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.deepPurple),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -9870,8 +10500,16 @@ class _CheckoutPageState extends State<CheckoutPage> {
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
-                  builder: (context) => UserOrdersPage(orderId: orderRef.id)),
+                builder: (context) => UserOrdersPage(orderId: orderRef.id),
+              ),
             );
+
+            // optional slight delay ensures navigation completes smoothly
+            Future.delayed(const Duration(milliseconds: 300), () {
+              _cartItems.clear();
+              _productDetails.clear();
+              setState(() {});
+            });
           }
         }
       } else {
@@ -9894,6 +10532,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
         //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
 
         leading: Padding(
           padding: const EdgeInsets.only(left: 10),
@@ -9965,6 +10604,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                             item['selectedSides'] as List<dynamic>? ?? [];
 
                         return Card(
+                          color: Colors.white,
                           margin: const EdgeInsets.only(bottom: 12),
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12)),
@@ -9977,7 +10617,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     ClipRRect(
-                                      borderRadius: BorderRadius.circular(8),
+                                      borderRadius: BorderRadius.circular(30),
                                       child: item['image'] != ''
                                           ? Image.network(item['image'],
                                               width: 60,
@@ -9998,9 +10638,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                                   fontSize: 16)),
                                           const SizedBox(height: 4),
                                           Text(
-                                              'Qty: $qty  •  ₦${lineTotal.toStringAsFixed(0)}',
-                                              style: const TextStyle(
-                                                  color: Colors.deepPurple,
+                                              'x $qty  •  ₦${lineTotal.toStringAsFixed(0)}',
+                                              style: TextStyle(
+                                                  color: Colors.grey[700],
                                                   fontSize: 15)),
                                           if (addons.isNotEmpty ||
                                               sides.isNotEmpty) ...[
@@ -10049,7 +10689,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
               child: ElevatedButton(
                 onPressed: _cartItems.isEmpty || _isLoading ? null : _pay,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.deepPurple,
+                  backgroundColor: Colors.black,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                 ),
@@ -10114,6 +10754,7 @@ class _FoodSectionPageState extends State<FoodSectionPage>
   late Offset _controlPoint;
 
   List<Map<String, dynamic>> _foodVendors = [];
+
   String? selectedVendorId;
 
   /// CATEGORY FILTER
@@ -10135,6 +10776,10 @@ class _FoodSectionPageState extends State<FoodSectionPage>
     _animationController = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 600));
     _fetchFoodVendors();
+  }
+
+  int get _totalItems {
+    return _selectedItems.values.fold(0, (sum, qty) => sum + qty);
   }
 
   Future<void> _fetchFoodVendors() async {
@@ -10159,6 +10804,280 @@ class _FoodSectionPageState extends State<FoodSectionPage>
     if (price is num) return price.toDouble();
     if (price is String) return double.tryParse(price) ?? 0;
     return 0;
+  }
+
+  void openVendorModal(Map<String, dynamic> vendor) async {
+    final vendorId = vendor["uid"];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return FractionallySizedBox(
+          heightFactor: 0.65, // ✅ 65% height
+          child: FutureBuilder(
+            future: FirebaseFirestore.instance
+                .collection("products")
+                .where("vendorId", isEqualTo: vendorId)
+                .get(),
+            builder: (context, AsyncSnapshot snapshot) {
+              if (!snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              final vendorProducts =
+                  snapshot.data.docs.map((e) => e.data()).toList();
+
+              // 🔥 RANDOM OPEN/CLOSE (for now)
+              bool isOpen = DateTime.now().second % 2 == 0;
+              final deliveryTime =
+                  10 + (DateTime.now().millisecond % 26); // 10–35 mins
+              final rating = (3.5 + (DateTime.now().millisecond % 15) / 10)
+                  .toStringAsFixed(1); // 3.5 – 5.0
+
+              return Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    /// HANDLE
+                    Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[400],
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    /// 🔥 UPDATED VENDOR CARD
+                    /// 🔥 UPDATED VENDOR CARD
+                    Container(
+                      height: 130, // ✅ increased height
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white, // ✅ white background
+                        borderRadius: BorderRadius.circular(14),
+                        border:
+                            Border.all(color: Colors.black), // ✅ black border
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          /// IMAGE
+                          ClipOval(
+                            child: Image.network(
+                              vendor["profileImageUrl"] ?? "",
+                              width: 70,
+                              height: 70,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+
+                          const SizedBox(width: 12),
+
+                          /// DETAILS
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                /// NAME
+                                Text(
+                                  vendor["businessName"] ?? "",
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+
+                                const SizedBox(height: 6),
+
+                                /// LOCATION + STATUS
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        vendor["storeLocation"] ??
+                                            "No location",
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey[600],
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+
+                                    /// STATUS CHIP
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: isOpen
+                                            ? Colors.green.withOpacity(0.1)
+                                            : Colors.red.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: Text(
+                                        isOpen ? "Open" : "Closed",
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: isOpen
+                                              ? Colors.green
+                                              : Colors.red,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+
+                                const SizedBox(height: 8),
+
+                                /// 🔥 DELIVERY TIME + RATING
+                                Row(
+                                  children: [
+                                    /// DELIVERY TIME
+                                    Row(
+                                      children: [
+                                        Icon(Icons.access_time,
+                                            size: 14, color: Colors.grey[600]),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          "$deliveryTime mins",
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey[700],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+
+                                    const SizedBox(width: 12),
+
+                                    /// RATING
+                                    Row(
+                                      children: [
+                                        const Icon(Icons.star,
+                                            size: 14, color: Colors.amber),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          rating,
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 10),
+
+                    Divider(
+                      color: Colors.grey[300],
+                      thickness: 1,
+                    ),
+
+                    const SizedBox(height: 10),
+
+                    /// PRODUCTS TITLE
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        "Products",
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                    ),
+
+                    const SizedBox(height: 10),
+
+                    /// PRODUCTS LIST
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: vendorProducts.length,
+                        itemBuilder: (context, index) {
+                          final product = vendorProducts[index];
+
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 10),
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[100],
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              children: [
+                                ClipOval(
+                                  child: Image.network(
+                                    product["image"] ?? "",
+                                    width: 65,
+                                    height: 65,
+                                    fit: BoxFit.cover,
+                                    errorBuilder:
+                                        (context, error, stackTrace) =>
+                                            Container(
+                                      width: 65,
+                                      height: 65,
+                                      color: Colors.grey[200],
+                                      child: const Icon(Icons.image,
+                                          color: Colors.grey),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        product["name"] ?? "",
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.bold),
+                                      ),
+                                      Text(
+                                        product["description"] ?? "",
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Text(
+                                  "₦${product["price"]}",
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
   }
 
   /// ================= CUSTOMIZATION MODAL =================
@@ -10187,6 +11106,95 @@ class _FoodSectionPageState extends State<FoodSectionPage>
 
           total *= quantity;
 
+          Widget buildOptionCard({
+            required String title,
+            required List items,
+            required List selectedList,
+          }) {
+            if (items.isEmpty) return const SizedBox();
+
+            return Container(
+              margin: const EdgeInsets.only(top: 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Divider(height: 1),
+                  const SizedBox(height: 8),
+                  ...List.generate(items.length, (index) {
+                    final item = items[index];
+                    final isSelected = selectedList.contains(item);
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  item['name'],
+                                  style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  "₦${item['price']}",
+                                  style: TextStyle(
+                                    color: Colors.grey[700],
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () {
+                              setModalState(() {
+                                if (isSelected) {
+                                  selectedList.remove(item);
+                                } else {
+                                  selectedList.add(item);
+                                }
+                              });
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: const BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.black,
+                              ),
+                              child: const Icon(
+                                Icons.add,
+                                color: Colors.white,
+                                size: 18,
+                              ),
+                            ),
+                          )
+                        ],
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            );
+          }
+
           return Container(
             height: MediaQuery.of(context).size.height * 0.85,
             decoration: const BoxDecoration(
@@ -10195,18 +11203,17 @@ class _FoodSectionPageState extends State<FoodSectionPage>
             ),
             child: Column(
               children: [
-                /// 🔹 SCROLLABLE CONTENT
+                /// CONTENT
                 Expanded(
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.all(16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        /// 🔹 IMAGE + NAME ROW
+                        /// IMAGE + NAME
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            /// Circular Image
                             ClipOval(
                               child: product['image'] != null &&
                                       product['image'].toString().isNotEmpty
@@ -10220,91 +11227,58 @@ class _FoodSectionPageState extends State<FoodSectionPage>
                                       height: 70,
                                       width: 70,
                                       color: Colors.grey[300],
-                                      child:
-                                          const Icon(Icons.fastfood, size: 30),
+                                      child: const Icon(Icons.fastfood),
                                     ),
                             ),
-
                             const SizedBox(width: 12),
-
-                            /// Name
                             Expanded(
-                              child: Text(
-                                product['name'],
-                                style: const TextStyle(
-                                    fontSize: 18, fontWeight: FontWeight.bold),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    product['name'],
+                                    style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold),
+                                  ),
+                                  const SizedBox(height: 6),
+
+                                  /// DESCRIPTION MOVED HERE
+                                  if (product['description'] != null)
+                                    Text(
+                                      product['description'],
+                                      style: TextStyle(color: Colors.grey[700]),
+                                    ),
+                                ],
                               ),
                             )
                           ],
                         ),
 
                         const SizedBox(height: 10),
-
-                        /// 🔹 DESCRIPTION
-                        if (product['description'] != null)
-                          Text(
-                            product['description'],
-                            style: TextStyle(color: Colors.grey[700]),
-                          ),
-
-                        const SizedBox(height: 10),
-
-                        /// 🔹 DIVIDER
                         const Divider(),
 
-                        /// 🔹 SIDES
-                        if ((product['sides'] ?? []).isNotEmpty) ...[
-                          const SizedBox(height: 10),
-                          const Text("Sides",
-                              style: TextStyle(fontWeight: FontWeight.bold)),
-                          ...List.generate(product['sides'].length, (index) {
-                            final side = product['sides'][index];
-                            return CheckboxListTile(
-                              contentPadding: EdgeInsets.zero,
-                              title:
-                                  Text("${side['name']} (+₦${side['price']})"),
-                              value: selectedSides.contains(side),
-                              onChanged: (v) {
-                                setModalState(() {
-                                  v!
-                                      ? selectedSides.add(side)
-                                      : selectedSides.remove(side);
-                                });
-                              },
-                            );
-                          }),
-                        ],
+                        /// SIDES CARD
+                        buildOptionCard(
+                          title: "Sides",
+                          items: product['sides'] ?? [],
+                          selectedList: selectedSides,
+                        ),
 
-                        /// 🔹 ADDONS
-                        if ((product['addons'] ?? []).isNotEmpty) ...[
-                          const SizedBox(height: 10),
-                          const Text("Addons",
-                              style: TextStyle(fontWeight: FontWeight.bold)),
-                          ...List.generate(product['addons'].length, (index) {
-                            final addon = product['addons'][index];
-                            return CheckboxListTile(
-                              contentPadding: EdgeInsets.zero,
-                              title: Text(
-                                  "${addon['name']} (+₦${addon['price']})"),
-                              value: selectedAddons.contains(addon),
-                              onChanged: (v) {
-                                setModalState(() {
-                                  v!
-                                      ? selectedAddons.add(addon)
-                                      : selectedAddons.remove(addon);
-                                });
-                              },
-                            );
-                          }),
-                        ],
+                        /// ADDONS CARD
+                        buildOptionCard(
+                          title: "Addons",
+                          items: product['addons'] ?? [],
+                          selectedList: selectedAddons,
+                        ),
 
-                        const SizedBox(height: 80), // space for bottom bar
+                        const SizedBox(height: 80),
                       ],
                     ),
                   ),
                 ),
 
-                /// 🔹 FIXED BOTTOM BAR
+                /// BOTTOM BAR
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -10316,7 +11290,6 @@ class _FoodSectionPageState extends State<FoodSectionPage>
                   ),
                   child: Row(
                     children: [
-                      /// 🔹 QUANTITY SELECTOR
                       Row(
                         children: [
                           IconButton(
@@ -10324,48 +11297,54 @@ class _FoodSectionPageState extends State<FoodSectionPage>
                                 if (quantity > 1)
                                   setModalState(() => quantity--);
                               },
-                              icon: const Icon(Icons.remove_circle,
-                                  color: Colors.black)),
+                              icon: const Icon(Icons.remove_circle)),
                           Text(quantity.toString(),
                               style: const TextStyle(fontSize: 18)),
                           IconButton(
                               onPressed: () => setModalState(() => quantity++),
-                              icon: const Icon(Icons.add_circle,
-                                  color: Colors.black)),
+                              icon: const Icon(Icons.add_circle)),
                         ],
                       ),
-
                       const SizedBox(width: 10),
-
-                      /// 🔹 ADD BUTTON
                       Expanded(
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.black,
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 14)),
+                            backgroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
                           onPressed: () {
                             Navigator.pop(context);
 
                             final cartKey =
                                 "${product['id']}-${selectedAddons.hashCode}-${selectedSides.hashCode}";
 
-                            _flyToCart(
-                                imageKey,
-                                {
-                                  ...product,
-                                  'addonsSelected': selectedAddons,
-                                  'sidesSelected': selectedSides,
-                                  'quantity': quantity,
-                                  'price': total
-                                },
+                            final cartProduct = {
+                              ...product,
+                              'addonsSelected': selectedAddons,
+                              'sidesSelected': selectedSides,
+                              'quantity': quantity,
+                              'price': total,
+                            };
+
+                            setState(() {
+                              _selectedItems.update(
                                 cartKey,
-                                quantity);
+                                (value) => value + quantity,
+                                ifAbsent: () => quantity,
+                              );
+
+                              _productDetails[cartKey] = cartProduct;
+                            });
+
+                            _flyToCart(
+                                imageKey, cartProduct, cartKey, quantity);
                           },
-                          child: Text("Add ₦$total",
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold)),
+                          child: Text(
+                            "Add ₦$total",
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold),
+                          ),
                         ),
                       )
                     ],
@@ -10445,10 +11424,7 @@ class _FoodSectionPageState extends State<FoodSectionPage>
       ),
     );
 
-    setState(() {
-      _selectedItems.clear();
-      _productDetails.clear();
-    });
+    setState(() {});
   }
 
   /// ================= SKELETON =================
@@ -10469,13 +11445,25 @@ class _FoodSectionPageState extends State<FoodSectionPage>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      floatingActionButton: FloatingActionButton.extended(
-        key: _cartKey,
-        onPressed: _goToCart,
-        label: Text("${_selectedItems.length}",
-            style: const TextStyle(color: Colors.white)),
-        icon: const Icon(Icons.shopping_cart, color: Colors.white),
-        backgroundColor: Colors.black,
+      floatingActionButton: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 300),
+        child: _totalItems == 0
+            ? FloatingActionButton(
+                key: const ValueKey("collapsed"),
+                onPressed: _goToCart,
+                backgroundColor: Colors.black,
+                child: const Icon(Icons.shopping_cart, color: Colors.white),
+              )
+            : FloatingActionButton.extended(
+                key: const ValueKey("expanded"),
+                onPressed: _goToCart,
+                backgroundColor: Colors.black,
+                icon: const Icon(Icons.shopping_cart, color: Colors.white),
+                label: Text(
+                  "Checkout ($_totalItems)",
+                  style: const TextStyle(color: Colors.white),
+                ),
+              ),
       ),
       body: SafeArea(
         child: Column(
@@ -10491,8 +11479,8 @@ class _FoodSectionPageState extends State<FoodSectionPage>
                       GestureDetector(
                         onTap: () => Navigator.pop(context),
                         child: Container(
-                          width: 25,
-                          height: 25,
+                          width: 30,
+                          height: 30,
                           decoration: BoxDecoration(
                             color: Colors.grey[100], // ✅ grey 50 look
                             shape: BoxShape.circle,
@@ -10506,6 +11494,7 @@ class _FoodSectionPageState extends State<FoodSectionPage>
                       ),
 
                       //const Spacer(),
+                      SizedBox(height: 10),
                       const Text("Order Food",
                           style: TextStyle(
                               // fontWeight: FontWeight.bold
@@ -10597,13 +11586,28 @@ class _FoodSectionPageState extends State<FoodSectionPage>
               ),
             ),
 
-            const SizedBox(height: 8),
+            SizedBox(height: 8),
 
             /// SWIPABLE VENDORS + PRODUCTS
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 children: [
+                  Row(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: Text('Explore Vendors',
+                            style: TextStyle(
+                              color: Colors.black,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            )),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 5),
+
                   /// VENDORS (horizontally scrollable)
                   SizedBox(
                     height: 120, // 🔥 increased from 100 → 120
@@ -10624,12 +11628,7 @@ class _FoodSectionPageState extends State<FoodSectionPage>
                               final bool isOpen = (i % 2 == 0);
 
                               return GestureDetector(
-                                onTap: () {
-                                  setState(() {
-                                    selectedVendorId =
-                                        selected ? null : vendor['id'];
-                                  });
-                                },
+                                onTap: () => openVendorModal(vendor),
                                 child: Stack(
                                   children: [
                                     ClipRRect(
@@ -10659,21 +11658,43 @@ class _FoodSectionPageState extends State<FoodSectionPage>
                                                     CrossAxisAlignment.center,
                                                 children: [
                                                   Container(
-                                                    width:
-                                                        75, // slightly increased for balance
+                                                    width: 75,
                                                     height: 75,
                                                     decoration: BoxDecoration(
                                                       shape: BoxShape.circle,
                                                       color: Colors.grey[300],
                                                     ),
-                                                    child: CircleAvatar(
-                                                      radius: 37,
-                                                      backgroundImage: vendor[
-                                                                  'image'] !=
-                                                              ''
-                                                          ? NetworkImage(
-                                                              vendor['image'])
-                                                          : null,
+                                                    child: ClipOval(
+                                                      child: (() {
+                                                        final raw =
+                                                            vendor['image'];
+
+                                                        final imageUrl =
+                                                            (raw ?? '')
+                                                                .toString()
+                                                                .trim()
+                                                                .replaceAll(
+                                                                    '"', '');
+
+                                                        if (imageUrl.isEmpty) {
+                                                          return const Icon(
+                                                              Icons.person,
+                                                              size: 30);
+                                                        }
+
+                                                        return Image.network(
+                                                          imageUrl,
+                                                          fit: BoxFit.cover,
+                                                          errorBuilder:
+                                                              (context, error,
+                                                                  stackTrace) {
+                                                            return const Icon(
+                                                                Icons
+                                                                    .broken_image,
+                                                                size: 30);
+                                                          },
+                                                        );
+                                                      })(),
                                                     ),
                                                   ),
                                                   const SizedBox(width: 12),
@@ -10855,39 +11876,47 @@ class _FoodSectionPageState extends State<FoodSectionPage>
                                         ],
                                       ),
                                       child: ClipOval(
-                                        child: (data['image'] != null &&
-                                                data['image']
-                                                    .toString()
-                                                    .isNotEmpty &&
-                                                data['image']
-                                                    .toString()
-                                                    .startsWith('http'))
-                                            ? Image.network(
-                                                data['image'],
-                                                fit: BoxFit.cover,
-                                                loadingBuilder:
-                                                    (context, child, progress) {
-                                                  if (progress == null)
-                                                    return child;
-                                                  return const Center(
-                                                    child: SizedBox(
-                                                      width: 20,
-                                                      height: 20,
-                                                      child:
-                                                          CircularProgressIndicator(
-                                                              strokeWidth: 2),
-                                                    ),
-                                                  );
-                                                },
-                                                errorBuilder: (_, __, ___) {
-                                                  return const Icon(
-                                                      Icons.broken_image);
-                                                },
-                                              )
-                                            : const Icon(Icons.image),
+                                        child: (() {
+                                          final imageUrl =
+                                              data['image'] as String?;
+
+                                          if (imageUrl == null ||
+                                              imageUrl.trim().isEmpty) {
+                                            return const Icon(Icons.image);
+                                          }
+
+                                          final cleanUrl = imageUrl.trim();
+
+                                          debugPrint(
+                                              "IMAGE URL USED: $cleanUrl");
+
+                                          return Image.network(
+                                            cleanUrl,
+                                            fit: BoxFit.cover,
+                                            loadingBuilder:
+                                                (context, child, progress) {
+                                              if (progress == null)
+                                                return child;
+                                              return const Center(
+                                                child: SizedBox(
+                                                  width: 20,
+                                                  height: 20,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                          strokeWidth: 2),
+                                                ),
+                                              );
+                                            },
+                                            errorBuilder: (_, __, ___) {
+                                              debugPrint(
+                                                  "FAILED URL: $cleanUrl");
+                                              return const Icon(
+                                                  Icons.broken_image);
+                                            },
+                                          );
+                                        })(),
                                       ),
                                     ),
-
                                     const SizedBox(width: 12),
 
                                     // Product Name & Description
@@ -10937,17 +11966,9 @@ class _FoodSectionPageState extends State<FoodSectionPage>
                                                         FontWeight.bold),
                                               ),
 
-                                              const SizedBox(height: 4),
+                                              const SizedBox(height: 10),
 
                                               // 🔢 Orders
-                                              Text(
-                                                "$orders ordered",
-                                                style: const TextStyle(
-                                                  fontSize: 12,
-                                                  color: Colors.grey,
-                                                  fontWeight: FontWeight.w500,
-                                                ),
-                                              ),
 
                                               // 🔥 Popular Badge
                                               if (orders > 15) ...[
@@ -10965,7 +11986,7 @@ class _FoodSectionPageState extends State<FoodSectionPage>
                                                             6),
                                                   ),
                                                   child: const Text(
-                                                    "🔥 Popular",
+                                                    "🔥",
                                                     style: TextStyle(
                                                       fontSize: 10,
                                                       color: Colors.orange,
@@ -11341,6 +12362,7 @@ class AdminDashboard extends StatelessWidget {
         //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
 
         leading: Padding(
           padding: const EdgeInsets.only(left: 10),
@@ -11722,6 +12744,7 @@ class _RegisterPageState extends State<RegisterPage>
         //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
 
         leading: Padding(
           padding: const EdgeInsets.only(left: 10),
@@ -12934,6 +13957,7 @@ class TransportDriverPage extends StatelessWidget {
         //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
 
         leading: Padding(
           padding: const EdgeInsets.only(left: 10),
@@ -13055,6 +14079,7 @@ class PackageTrackingViewPage extends StatelessWidget {
         //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
 
         leading: Padding(
           padding: const EdgeInsets.only(left: 10),
@@ -13142,428 +14167,6 @@ class PackageTrackingViewPage extends StatelessWidget {
   }
 }
 
-class PackageDetailsPage extends StatefulWidget {
-  final String serviceType;
-  const PackageDetailsPage({Key? key, required this.serviceType})
-      : super(key: key);
-
-  @override
-  State<PackageDetailsPage> createState() => _PackageDetailsPageState();
-}
-
-class _PackageDetailsPageState extends State<PackageDetailsPage> {
-  final _formKey = GlobalKey<FormState>();
-  final ScrollController _scrollController = ScrollController();
-
-  final _packageNameController = TextEditingController();
-  final _pickupAddressController = TextEditingController();
-  final _deliveryAddressController = TextEditingController();
-  final _senderNameController = TextEditingController();
-  final _senderContactController = TextEditingController();
-  final _receiverNameController = TextEditingController();
-  final _receiverContactController = TextEditingController();
-
-  bool _useSavedSender = false;
-
-  int _currentStep = 0;
-
-  String? _selectedCategory;
-
-  final List<String> _categories = [
-    'Document',
-    'Electronics',
-    'Clothing',
-    'Food',
-    'Other'
-  ];
-
-  // ================= LOAD SAVED SENDER =================
-
-  Future<void> _loadSavedSender() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    if (!_useSavedSender) return;
-
-    setState(() {
-      _senderNameController.text = prefs.getString('senderName') ?? '';
-      _senderContactController.text = prefs.getString('senderContact') ?? '';
-      _pickupAddressController.text = prefs.getString('pickupAddress') ?? '';
-    });
-  }
-
-  Future<void> _saveSenderDetails() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    await prefs.setString('senderName', _senderNameController.text.trim());
-    await prefs.setString(
-        'senderContact', _senderContactController.text.trim());
-    await prefs.setString(
-        'pickupAddress', _pickupAddressController.text.trim());
-  }
-
-  // ================= VALIDATION =================
-
-  bool _validateStep(int step) {
-    switch (step) {
-      case 0:
-        return _packageNameController.text.isNotEmpty &&
-            _selectedCategory != null;
-      case 1:
-        return _senderNameController.text.isNotEmpty &&
-            _senderContactController.text.isNotEmpty &&
-            _pickupAddressController.text.isNotEmpty;
-      default:
-        return false;
-    }
-  }
-
-  void _updateStepProgress() {
-    if (_currentStep == 0 && _validateStep(0)) {
-      setState(() => _currentStep = 1);
-      _scrollToSection(1);
-    } else if (_currentStep == 1 && _validateStep(1)) {
-      _saveSenderDetails();
-      setState(() => _currentStep = 2);
-      _scrollToSection(2);
-    }
-  }
-
-  void _scrollToSection(int step) {
-    Future.delayed(const Duration(milliseconds: 300), () {
-      _scrollController.animateTo(
-        step * 320,
-        duration: const Duration(milliseconds: 500),
-        curve: Curves.easeInOut,
-      );
-    });
-  }
-
-  // ================= FIRESTORE LOGIC UNCHANGED =================
-
-  void _goToPreview() {
-    if (!_formKey.currentState!.validate() || _selectedCategory == null) return;
-
-    final trackingId = 'TRK-${const Uuid().v4().substring(0, 8).toUpperCase()}';
-    final userId = FirebaseAuth.instance.currentUser!.uid;
-
-    final data = {
-      'serviceType': widget.serviceType,
-      'packageName': _packageNameController.text.trim(),
-      'category': _selectedCategory!,
-      'pickupAddress': _pickupAddressController.text.trim(),
-      'deliveryAddress': _deliveryAddressController.text.trim(),
-      'senderName': _senderNameController.text.trim(),
-      'senderContact': _senderContactController.text.trim(),
-      'receiverName': _receiverNameController.text.trim(),
-      'receiverContact': _receiverContactController.text.trim(),
-      'trackingId': trackingId,
-      'userId': userId,
-    };
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => PackagePreviewPage(packageData: data),
-      ),
-    );
-  }
-
-  // ================= SECTION CARD =================
-
-  Widget _sectionCard({
-    required int step,
-    required Widget child,
-    Widget? iconWidget, // <-- new optional widget for custom icons/images
-    IconData? icon, // <-- optional IconData
-    required String title,
-    required String subtitle,
-  }) {
-    bool enabled = _currentStep >= step;
-
-    return AnimatedOpacity(
-      duration: const Duration(milliseconds: 300),
-      opacity: enabled ? 1 : 0.4,
-      child: AbsorbPointer(
-        absorbing: !enabled,
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 18),
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 8,
-                offset: const Offset(0, 4),
-              )
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  // Use the widget if provided, else fallback to Icon
-                  if (iconWidget != null)
-                    iconWidget
-                  else if (icon != null)
-                    Icon(icon),
-                  const SizedBox(width: 8),
-                  Text(title,
-                      style: const TextStyle(
-                          fontSize: 17, fontWeight: FontWeight.bold)),
-                  const Spacer(),
-                  Text("${step + 1} of 3",
-                      style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green[900]))
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(subtitle,
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
-              const SizedBox(height: 16),
-              child
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ================= SECTIONS =================
-
-  Widget _packageSection() {
-    return Column(
-      children: [
-        _buildTextField(
-          _packageNameController,
-          'Package Name',
-          onChanged: (_) => _updateStepProgress(),
-        ),
-        const SizedBox(height: 12),
-        DropdownButtonFormField<String>(
-          value: _selectedCategory,
-          decoration: _inputDecoration('Category'),
-          items: _categories
-              .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-              .toList(),
-          onChanged: (val) {
-            setState(() => _selectedCategory = val);
-            _updateStepProgress();
-          },
-          validator: (String? v) {
-            if (v == null || v.isEmpty) return 'Select category';
-            return null;
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _senderSection() {
-    return Column(
-      children: [
-        CheckboxListTile(
-          value: _useSavedSender,
-          title: const Text("Use my details",
-              style: TextStyle(
-                fontSize: 10,
-                color: Colors.green,
-              )),
-          onChanged: (bool? v) async {
-            if (v == null) return; // safely ignore null
-            setState(() => _useSavedSender = v);
-            if (v) await _loadSavedSender();
-          },
-        ),
-        _buildTextField(_senderNameController, "Sender Name",
-            onChanged: (_) => _updateStepProgress()),
-        const SizedBox(height: 12),
-        _buildTextField(_senderContactController, "Phone",
-            keyboardType: TextInputType.phone,
-            onChanged: (_) => _updateStepProgress()),
-        const SizedBox(height: 12),
-        _buildTextField(_pickupAddressController, "Pickup Address",
-            onChanged: (_) => _updateStepProgress()),
-      ],
-    );
-  }
-
-  Widget _receiverSection() {
-    return Column(
-      children: [
-        _buildTextField(_receiverNameController, "Receiver Name"),
-        const SizedBox(height: 12),
-        _buildTextField(_receiverContactController, "Phone",
-            keyboardType: TextInputType.phone),
-        const SizedBox(height: 12),
-        _buildTextField(_deliveryAddressController, "Delivery Address"),
-      ],
-    );
-  }
-
-  // ================= BUILD =================
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
-        backgroundColor: Colors.white,
-        elevation: 0,
-
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 10),
-          child: GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              width: 25,
-              height: 25,
-              decoration: BoxDecoration(
-                color: Colors.grey[100], // ✅ grey 50 look
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.arrow_back_ios,
-                size: 14,
-                color: Colors.black,
-              ),
-            ),
-          ),
-        ),
-
-        title: const Padding(
-          padding: EdgeInsets.only(left: 8), // ✅ spacing from icon
-          child: Text(
-            'Send Packages',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: Colors.black,
-            ),
-          ),
-        ),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Form(
-          key: _formKey,
-          child: SingleChildScrollView(
-            controller: _scrollController,
-            child: Column(
-              children: [
-                /// 🔹 TOP SERVICE TYPE CARD WITH SHADOW
-                Container(
-                  margin: const EdgeInsets.symmetric(vertical: 16),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.black,
-                    borderRadius: BorderRadius.circular(8),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
-                        blurRadius: 6,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child: Text(
-                      widget.serviceType,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                _sectionCard(
-                  step: 0,
-                  iconWidget: Image.asset(
-                    'assets/images/package.png',
-                    width: 24,
-                    height: 24,
-                    fit: BoxFit.contain,
-                  ),
-                  title: "Package Details",
-                  subtitle: "Tell us what you are sending",
-                  child: _packageSection(),
-                ),
-                _sectionCard(
-                  step: 1,
-                  iconWidget: Image.asset(
-                    'assets/images/supplier.png',
-                    width: 24,
-                    height: 24,
-                    fit: BoxFit.contain,
-                  ),
-                  title: "Sender Details",
-                  subtitle: "Where are we picking this package?",
-                  child: _senderSection(),
-                ),
-                _sectionCard(
-                  step: 2,
-                  iconWidget: Image.asset(
-                    'assets/images/traveling.png',
-                    width: 24,
-                    height: 24,
-                    fit: BoxFit.contain,
-                  ),
-                  title: "Receiver Details",
-                  subtitle: "Where should we deliver this package?",
-                  child: _receiverSection(),
-                ),
-                const SizedBox(height: 20),
-                ElevatedButton(
-                  style:
-                      ElevatedButton.styleFrom(backgroundColor: Colors.black),
-                  onPressed: _currentStep < 2 ? null : _goToPreview,
-                  child: const Text("Continue",
-                      style: TextStyle(color: Colors.white)),
-                )
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ================= INPUT =================
-
-  InputDecoration _inputDecoration(String label) => InputDecoration(
-        labelText: label,
-        filled: true,
-        fillColor: Colors.grey[100],
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-      );
-
-  Widget _buildTextField(TextEditingController controller, String label,
-      {TextInputType keyboardType = TextInputType.text,
-      Function(String)? onChanged}) {
-    return TextFormField(
-      controller: controller,
-      keyboardType: keyboardType,
-      onChanged: onChanged,
-      decoration: _inputDecoration(label),
-      validator: (value) =>
-          value == null || value.trim().isEmpty ? 'Required field' : null,
-    );
-  }
-}
-
 class LogisticsPage extends StatefulWidget {
   const LogisticsPage({super.key});
   @override
@@ -13572,6 +14175,7 @@ class LogisticsPage extends StatefulWidget {
 
 class _LogisticsPageState extends State<LogisticsPage> {
   final TextEditingController _trackingIdController = TextEditingController();
+  String _selectedTab = "pending"; // pending | completed
 
   void _searchTrackingId() async {
     final trackingId = _trackingIdController.text.trim();
@@ -13626,6 +14230,7 @@ class _LogisticsPageState extends State<LogisticsPage> {
         //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
 
         leading: Padding(
           padding: const EdgeInsets.only(left: 10),
@@ -13652,7 +14257,7 @@ class _LogisticsPageState extends State<LogisticsPage> {
           child: Text(
             'Logistics',
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 15,
               fontWeight: FontWeight.bold,
               color: Colors.black,
             ),
@@ -13668,7 +14273,7 @@ class _LogisticsPageState extends State<LogisticsPage> {
             const Text("Track Order",
                 style: TextStyle(
                     //fontWeight: FontWeight.bold,
-                    fontSize: 16)),
+                    fontSize: 14)),
             const SizedBox(height: 8),
             TextField(
               controller: _trackingIdController,
@@ -13697,8 +14302,7 @@ class _LogisticsPageState extends State<LogisticsPage> {
                     title: "Instant",
                     description: "Send packages within your city.",
                     iconPath: "assets/images/transport (1).png",
-                    onTap: () => _openService(
-                        "Fill in the details below to instantly send packages within your city"),
+                    onTap: () => _openService("Lastmile Delivery"),
                   ),
                 ),
                 const SizedBox(width: 16),
@@ -13707,155 +14311,289 @@ class _LogisticsPageState extends State<LogisticsPage> {
                     title: "Waybills",
                     description: "Send packages nationwide safely.",
                     iconPath: "assets/images/waybill (2).png",
-                    onTap: () => _openService(
-                        "Fill in the details below to waybill packages to your customers "),
+                    onTap: () => _openService("Waybills"),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 30),
 
-            // 🔹 Recents Section
-            Row(
-              mainAxisAlignment: MainAxisAlignment.start,
-              children: [
-                const Text(
-                  "Recents",
-                  style: TextStyle(fontSize: 14),
-                ),
-                const SizedBox(width: 6),
-                Image.asset(
-                  'assets/images/clock.png',
-                  width: 15,
-                  height: 15,
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-
-            // 🔹 User logistics requests
+            /// 🔹 Tabs (Pending / Completed)
             StreamBuilder<QuerySnapshot>(
               stream: _userLogisticsRequests(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+              builder: (context, snapshot) { 
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return const Text("No requests found.");
+                  return const Center(child: Text("No activity here"));
                 }
 
-                final docs = snapshot.data!.docs;
+                final docs = snapshot.data?.docs ?? [];
+
+                /// 🔥 COUNTS
+                final pendingCount = docs.where((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  final status =
+                      (data['status'] ?? '').toString().toLowerCase();
+                  return status != "completed";
+                }).length;
+
+                final completedCount = docs.where((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  final status =
+                      (data['status'] ?? '').toString().toLowerCase();
+                  return status == "completed";
+                }).length;
 
                 return Column(
-                  children: docs.map((doc) {
-                    final data = doc.data() as Map<String, dynamic>;
-                    final packageName = data['packageName'] ?? '';
-                    final price = data['proposedCost'] ?? '';
-                    final status = data['status'] ?? '';
-                    final createdAt = (data['createdAt'] as Timestamp).toDate();
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    /// 🔹 Tabs NOW HAVE ACCESS TO COUNTS
+                    _buildSegmentedTabs(
+                      pendingCount: pendingCount,
+                      completedCount: completedCount,
+                    ),
+                    const SizedBox(height: 15),
 
-                    Color statusColor;
-                    switch (status.toLowerCase()) {
-                      case 'awaiting_pickup':
-                      case 'picked_up':
-                        statusColor = Colors.orange;
-                        break;
-                      case 'completed':
-                        statusColor = Colors.green;
-                        break;
-                      default:
-                        statusColor = Colors.blueGrey;
-                    }
+                    /// 🔥 FILTER LOGIC
+                    ...docs.where((doc) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      final status =
+                          (data['status'] ?? '').toString().toLowerCase();
 
-                    return InkWell(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => OrderPlacedPage(
-                              orderId: doc.id,
+                      if (_selectedTab == "completed") {
+                        return status == "completed";
+                      } else {
+                        return status != "completed";
+                      }
+                    }).map((doc) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      final packageName = data['packageName'] ?? '';
+                      final price = data['proposedCost'] ?? '';
+                      final status = data['status'] ?? '';
+                      final createdAt =
+                          (data['createdAt'] as Timestamp).toDate();
+
+                      Color statusColor;
+                      switch (status.toLowerCase()) {
+                        case 'awaiting_pickup':
+                        case 'picked_up':
+                          statusColor = Colors.orange;
+                          break;
+                        case 'completed':
+                          statusColor = Colors.green;
+                          break;
+                        default:
+                          statusColor = Colors.blueGrey;
+                      }
+
+                      return InkWell(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => OrderPlacedPage(orderId: doc.id),
                             ),
+                          );
+                        },
+                        child: Container(
+                          height: 75,
+                          width: double.infinity,
+                          margin: const EdgeInsets.symmetric(vertical: 5),
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                        );
-                      },
-                      child: Container(
-                        height: 75,
-                        width: double.infinity,
-                        margin: const EdgeInsets.symmetric(vertical: 5),
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.black12),
-                        ),
-                        child: Row(
-                          children: [
-                            Image.asset(
-                              "assets/images/up-right.png",
-                              height: 25,
-                              width: 25,
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
+                          child: Row(
+                            children: [
+                              Image.asset(
+                                "assets/images/up-right.png",
+                                height: 25,
+                                width: 25,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      packageName,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      "₦$price",
+                                      style: const TextStyle(
+                                        color: Colors.green,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                                crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
-                                  Text(
-                                    packageName,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: statusColor.withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      status,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: statusColor,
+                                        fontWeight: FontWeight.w500,
+                                      ),
                                     ),
                                   ),
-                                  const SizedBox(height: 4),
+                                  const SizedBox(height: 5),
                                   Text(
-                                    "₦$price",
+                                    DateFormat('dd/MM/yyyy').format(createdAt),
                                     style: const TextStyle(
-                                      color: Colors.grey,
                                       fontSize: 12,
+                                      color: Colors.grey,
                                     ),
                                   ),
                                 ],
                               ),
-                            ),
-                            Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: statusColor.withOpacity(0.15),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    status,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: statusColor,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 5),
-                                Text(
-                                  DateFormat('dd/MM/yyyy').format(createdAt),
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                    );
-                  }).toList(),
+                      );
+                    }).toList(),
+                  ],
                 );
               },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSegmentedTabs({
+    required int pendingCount,
+    required int completedCount,
+  }) {
+    final isPending = _selectedTab == "pending";
+
+    return Container(
+      height: 50,
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        color: Colors.grey[100],
+        borderRadius: BorderRadius.circular(30),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth / 2;
+
+          return Stack(
+            children: [
+              /// 🔥 SLIDING BACKGROUND
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOutCubic,
+                left: isPending ? 0 : width,
+                top: 0,
+                bottom: 0,
+                child: Container(
+                  width: width,
+                  decoration: BoxDecoration(
+                    color: Colors.black,
+                    borderRadius: BorderRadius.circular(30),
+                  ),
+                ),
+              ),
+
+              /// 🔥 TAB BUTTONS
+              Row(
+                children: [
+                  Expanded(
+                    child: _segmentItem(
+                      label: "Pending",
+                      value: "pending",
+                      count: pendingCount,
+                    ),
+                  ),
+                  Expanded(
+                    child: _segmentItem(
+                      label: "Completed",
+                      value: "completed",
+                      count: completedCount,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _segmentItem({
+    required String label,
+    required String value,
+    required int count,
+  }) {
+    final isSelected = _selectedTab == value;
+
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedTab = value;
+        });
+      },
+      child: Container(
+        color: Colors.transparent,
+        alignment: Alignment.center,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            AnimatedDefaultTextStyle(
+              duration: const Duration(milliseconds: 250),
+              style: TextStyle(
+                color: isSelected ? Colors.white : Colors.black,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+              child: Text(label),
+            ),
+            const SizedBox(width: 6),
+
+            /// 🔥 BADGE
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                color: isSelected ? Colors.white : Colors.black,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                count.toString(),
+                style: TextStyle(
+                  color: isSelected ? Colors.black : Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
           ],
         ),
@@ -13882,30 +14620,37 @@ class _LogisticsPageState extends State<LogisticsPage> {
     return InkWell(
       onTap: onTap,
       child: Container(
-        height: 120,
+        height: 160,
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: Colors.orange[50],
+          color: Colors.white,
           borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisAlignment: MainAxisAlignment.start,
           children: [
             /// 🔥 ROW 1 → ICON + TITLE
             Row(
               children: [
                 Container(
-                  height: 42,
-                  width: 42,
-                  decoration: const BoxDecoration(
+                  height: 43,
+                  width: 43,
+                  decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Colors.white, // keeps icon visible
+                    color: Colors.grey[100], // keeps icon visible
                   ),
                   padding: const EdgeInsets.all(8),
                   child: Image.asset(iconPath),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 15),
                 Expanded(
                   child: Text(
                     title,
@@ -13938,16 +14683,386 @@ class _LogisticsPageState extends State<LogisticsPage> {
   }
 }
 
-class PackagePreviewPage extends StatelessWidget {
-  final Map<String, dynamic> packageData;
-
-  const PackagePreviewPage({Key? key, required this.packageData})
+class PackageDetailsPage extends StatefulWidget {
+  final String serviceType;
+  const PackageDetailsPage({Key? key, required this.serviceType})
       : super(key: key);
 
   @override
-  Widget build(BuildContext context) {
-    final serviceType = packageData['serviceType'] ?? 'Package Details';
+  State<PackageDetailsPage> createState() => _PackageDetailsPageState();
+}
 
+class _PackageDetailsPageState extends State<PackageDetailsPage> {
+  final _formKey = GlobalKey<FormState>();
+  final ScrollController _scrollController = ScrollController();
+
+  final _packageNameController = TextEditingController();
+  final _pickupAddressController = TextEditingController();
+  final _deliveryAddressController = TextEditingController();
+  final _senderNameController = TextEditingController();
+  final _senderContactController = TextEditingController();
+  final _receiverNameController = TextEditingController();
+  final _receiverContactController = TextEditingController();
+
+  bool _useSavedSender = false;
+  int _currentStep = 0;
+  String? _selectedCategory;
+
+  final List<String> _categories = [
+    'Document',
+    'Electronics',
+    'Clothing',
+    'Food',
+    'Other'
+  ];
+
+  // ================= LOGISTICS ROUTES =================
+  List<Map<String, dynamic>> _routes = [];
+
+  String? _selectedFromCity;
+  String? _selectedToCity;
+  int? _calculatedPrice;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchRoutes();
+  }
+
+  Future<void> _fetchRoutes() async {
+    final snapshot =
+        await FirebaseFirestore.instance.collection('logistics_routes').get();
+
+    setState(() {
+      _routes = snapshot.docs.map((e) => e.data()).toList();
+    });
+  }
+
+  List<String> _getCities() {
+    return _routes.map((e) => e['city'].toString()).toSet().toList();
+  }
+
+  List<Map<String, dynamic>> _getDestinations(String city) {
+    final route = _routes.firstWhere(
+      (r) => r['city'] == city,
+      orElse: () => {},
+    );
+
+    if (route.isEmpty) return [];
+
+    return List<Map<String, dynamic>>.from(route['destinations'] ?? []);
+  }
+
+  void _calculatePrice() {
+    if (_selectedFromCity == null || _selectedToCity == null) return;
+
+    final dests = _getDestinations(_selectedFromCity!);
+
+    final match = dests.firstWhere(
+      (d) => d['name'] == _selectedToCity,
+      orElse: () => {},
+    );
+
+    setState(() {
+      _calculatedPrice =
+          match.isNotEmpty ? (match['price'] as num).toInt() : null;
+    });
+  }
+
+  // ================= LOAD SAVED SENDER =================
+  Future<void> _loadSavedSender() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    if (!_useSavedSender) return;
+
+    setState(() {
+      _senderNameController.text = prefs.getString('senderName') ?? '';
+      _senderContactController.text = prefs.getString('senderContact') ?? '';
+      _pickupAddressController.text = prefs.getString('pickupAddress') ?? '';
+    });
+  }
+
+  Future<void> _saveSenderDetails() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    await prefs.setString('senderName', _senderNameController.text.trim());
+    await prefs.setString(
+        'senderContact', _senderContactController.text.trim());
+    await prefs.setString(
+        'pickupAddress', _pickupAddressController.text.trim());
+  }
+
+  // ================= VALIDATION =================
+  bool _validateStep(int step) {
+    switch (step) {
+      case 0:
+        return _packageNameController.text.isNotEmpty &&
+            _selectedCategory != null;
+      case 1:
+        return _senderNameController.text.isNotEmpty &&
+            _senderContactController.text.isNotEmpty &&
+            _pickupAddressController.text.isNotEmpty;
+      default:
+        return false;
+    }
+  }
+
+  void _updateStepProgress() {
+    if (_currentStep == 0 && _validateStep(0)) {
+      setState(() => _currentStep = 1);
+    } else if (_currentStep == 1 && _validateStep(1)) {
+      _saveSenderDetails();
+      setState(() => _currentStep = 2);
+    }
+  }
+
+  // ================= PREVIEW =================
+  void _goToPreview() {
+    if (!_formKey.currentState!.validate() || _selectedCategory == null) return;
+
+    final trackingId = 'TRK-${const Uuid().v4().substring(0, 8).toUpperCase()}';
+
+    final userId = FirebaseAuth.instance.currentUser!.uid;
+
+    final data = {
+      'serviceType': widget.serviceType,
+      'packageName': _packageNameController.text.trim(),
+      'category': _selectedCategory!,
+      'pickupAddress': _pickupAddressController.text.trim(),
+      'deliveryAddress': _deliveryAddressController.text.trim(),
+      'senderName': _senderNameController.text.trim(),
+      'senderContact': _senderContactController.text.trim(),
+      'receiverName': _receiverNameController.text.trim(),
+      'receiverContact': _receiverContactController.text.trim(),
+      'trackingId': trackingId,
+      'userId': userId,
+
+      // 🔥 LOGISTICS DATA ADDED
+      'fromCity': _selectedFromCity,
+      'toCity': _selectedToCity,
+      'price': _calculatedPrice,
+    };
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PackagePreviewPage(packageData: data),
+      ),
+    );
+  }
+
+  // ================= CITY DROPDOWN =================
+  Widget _cityDropdown() {
+    final cities = _getCities();
+
+    return DropdownButtonFormField<String>(
+      value: _selectedFromCity,
+      decoration: _inputDecoration("Pickup City"),
+      items: cities
+          .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+          .toList(),
+      onChanged: (val) {
+        setState(() {
+          _selectedFromCity = val;
+          _selectedToCity = null;
+          _calculatedPrice = null;
+        });
+        _updateStepProgress();
+      },
+    );
+  }
+
+  Widget _destinationDropdown() {
+    if (_selectedFromCity == null) {
+      return const Text("Select pickup city first");
+    }
+
+    final dests = _getDestinations(_selectedFromCity!);
+
+    return DropdownButtonFormField<String>(
+      value: _selectedToCity,
+      decoration: _inputDecoration("Delivery Destination"),
+      items: dests.map<DropdownMenuItem<String>>((d) {
+        final name = d['name'];
+
+        if (name == null) {
+          return const DropdownMenuItem<String>(
+            value: "",
+            child: Text("Invalid destination"),
+          );
+        }
+
+        return DropdownMenuItem<String>(
+          value: name.toString(),
+          child: Text(name.toString()),
+        );
+      }).toList(),
+      onChanged: (val) {
+        setState(() {
+          _selectedToCity = val;
+          _calculatePrice();
+        });
+        _updateStepProgress();
+      },
+    );
+  }
+
+  // ================= SECTION CARD (UNCHANGED) =================
+  Widget _sectionCard({
+    required int step,
+    required Widget child,
+    Widget? iconWidget,
+    IconData? icon,
+    required String title,
+    required String subtitle,
+  }) {
+    bool enabled = _currentStep >= step;
+
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 300),
+      opacity: enabled ? 1 : 0.4,
+      child: AbsorbPointer(
+        absorbing: !enabled,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 18),
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              )
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  if (iconWidget != null)
+                    iconWidget
+                  else if (icon != null)
+                    Icon(icon),
+                  const SizedBox(width: 8),
+                  Text(title,
+                      style: const TextStyle(
+                          fontSize: 17, fontWeight: FontWeight.bold)),
+                  const Spacer(),
+                  Text("${step + 1} of 3",
+                      style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green[900]))
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(subtitle,
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+              const SizedBox(height: 16),
+              child
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ================= SECTIONS =================
+  Widget _packageSection() {
+    return Column(
+      children: [
+        _buildTextField(_packageNameController, 'Package Name',
+            onChanged: (_) => _updateStepProgress()),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<String>(
+          value: _selectedCategory,
+          decoration: _inputDecoration('Category'),
+          items: _categories
+              .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+              .toList(),
+          onChanged: (val) {
+            setState(() => _selectedCategory = val);
+            _updateStepProgress(); // 🔥 THIS WAS MISSING
+          },
+        ),
+        const SizedBox(height: 12),
+        _cityDropdown(),
+        const SizedBox(height: 12),
+        _destinationDropdown(),
+      ],
+    );
+  }
+
+  Widget _senderSection() {
+    return Column(
+      children: [
+        GestureDetector(
+          onTap: () async {
+            setState(() => _useSavedSender = !_useSavedSender);
+            if (_useSavedSender) await _loadSavedSender();
+          },
+          child: Row(
+            children: [
+              // Spacer(),
+              Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.black, width: 1),
+                  color: _useSavedSender ? Colors.black : Colors.transparent,
+                ),
+                child: _useSavedSender
+                    ? const Icon(Icons.check, size: 10, color: Colors.white)
+                    : null,
+              ),
+              const SizedBox(width: 8),
+              const Text("Use my details", style: TextStyle(fontSize: 10)),
+            ],
+          ),
+        ),
+        SizedBox(height: 8),
+        _buildTextField(
+          _senderNameController,
+          "Sender Name",
+          onChanged: (_) => _updateStepProgress(),
+        ),
+        const SizedBox(height: 12),
+        _buildTextField(
+          _senderContactController,
+          "Phone",
+          keyboardType: TextInputType.phone,
+          onChanged: (_) => _updateStepProgress(),
+        ),
+        SizedBox(height: 12),
+        _buildTextField(
+          _pickupAddressController,
+          "Pickup Location",
+          onChanged: (_) => _updateStepProgress(),
+        ),
+      ],
+    );
+  }
+
+  Widget _receiverSection() {
+    return Column(
+      children: [
+        _buildTextField(_receiverNameController, "Receiver Name"),
+        const SizedBox(height: 12),
+        _buildTextField(_receiverContactController, "Phone",
+            keyboardType: TextInputType.phone),
+        const SizedBox(height: 12),
+        _buildTextField(_deliveryAddressController, "Delivery Location"),
+      ],
+    );
+  }
+
+  // ================= BUILD =================
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -13978,6 +15093,150 @@ class PackagePreviewPage extends StatelessWidget {
         title: const Padding(
           padding: EdgeInsets.only(left: 8), // ✅ spacing from icon
           child: Text(
+            '',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: Colors.black,
+            ),
+          ),
+        ),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            controller: _scrollController,
+            child: Column(
+              children: [
+                Center(
+                  child: Container(
+                    height: 70,
+                    width: 350,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      color: Colors.black,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Text(
+                          'Fill out the details below to send packages instantly.',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          )),
+                    ),
+                  ),
+                ),
+                _sectionCard(
+                  step: 0,
+                  iconWidget: Image.asset('assets/images/package.png',
+                      width: 24, height: 24),
+                  title: "Package Details",
+                  subtitle: "Tell us what you are sending",
+                  child: _packageSection(),
+                ),
+                _sectionCard(
+                  step: 1,
+                  iconWidget: Image.asset('assets/images/supplier.png',
+                      width: 24, height: 24),
+                  title: "Sender Details",
+                  subtitle: "Where should we pickup this package ?",
+                  child: _senderSection(),
+                ),
+                _sectionCard(
+                  step: 2,
+                  iconWidget: Image.asset('assets/images/traveling.png',
+                      width: 24, height: 24),
+                  title: "Receiver Details",
+                  subtitle: "Where should we deliver this package ?",
+                  child: _receiverSection(),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _goToPreview,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.black,
+                    ),
+                    child: const Text(
+                      "Continue",
+                      style: TextStyle(
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                )
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _inputDecoration(String label) => InputDecoration(
+        labelText: label,
+        filled: true,
+        fillColor: Colors.grey[100],
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+      );
+
+  Widget _buildTextField(TextEditingController controller, String label,
+      {TextInputType keyboardType = TextInputType.text,
+      Function(String)? onChanged}) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: keyboardType,
+      onChanged: onChanged,
+      decoration: _inputDecoration(label),
+    );
+  }
+}
+
+class PackagePreviewPage extends StatelessWidget {
+  final Map<String, dynamic> packageData;
+
+  const PackagePreviewPage({Key? key, required this.packageData})
+      : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final serviceType = packageData['serviceType'] ?? 'Package Details';
+
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 10),
+          child: GestureDetector(
+            onTap: () => Navigator.pop(context),
+            child: Container(
+              width: 25,
+              height: 25,
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.arrow_back_ios,
+                size: 14,
+                color: Colors.black,
+              ),
+            ),
+          ),
+        ),
+        title: const Padding(
+          padding: EdgeInsets.only(left: 8),
+          child: Text(
             'Package Preview',
             style: TextStyle(
               fontSize: 12,
@@ -13994,7 +15253,7 @@ class PackagePreviewPage extends StatelessWidget {
             constraints: const BoxConstraints(maxWidth: 500),
             child: Card(
               elevation: 4,
-              color: Colors.grey[200],
+              color: Colors.white,
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16)),
               child: Padding(
@@ -14012,9 +15271,39 @@ class PackagePreviewPage extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 20),
-                    // 🔹 Display details dynamically based on service type
+
+                    /// 🔹 EXISTING UI
                     _buildServicePreviewUI(serviceType),
+
+                    /// 🔥 NEW: FROM / TO
+                    if (packageData['fromCity'] != null)
+                      _buildDetail("From", packageData['fromCity']),
+                    if (packageData['toCity'] != null)
+                      _buildDetail("To", packageData['toCity']),
+
+                    const SizedBox(height: 10),
+
+                    /// 🔥 NEW: PRICE DISPLAY
+                    if (packageData['price'] != null)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.black,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          "₦${packageData['price']}",
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold),
+                        ),
+                      ),
+
                     const SizedBox(height: 20),
+
                     Row(
                       children: [
                         Expanded(
@@ -14022,65 +15311,20 @@ class PackagePreviewPage extends StatelessWidget {
                             onPressed: () => Navigator.pop(context),
                             style: OutlinedButton.styleFrom(
                               padding: const EdgeInsets.symmetric(vertical: 14),
-                              side: const BorderSide(color: Colors.black),
+                              //side: const BorderSide(color: Colors.black),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10),
                               ),
                             ),
-                            child: const Text("Go Back"),
+                            child: const Text("Go Back",
+                                style: TextStyle(color: Colors.black)),
                           ),
                         ),
                         const SizedBox(width: 16),
                         Expanded(
                           child: ElevatedButton(
-                            onPressed: () async {
-                              showDialog(
-                                context: context,
-                                barrierDismissible: false,
-                                builder: (_) => const AlertDialog(
-                                  content: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      CircularProgressIndicator(),
-                                      SizedBox(height: 16),
-                                      Text("Creating shipment..."),
-                                    ],
-                                  ),
-                                ),
-                              );
-
-                              try {
-                                final trackingId = packageData['trackingId'];
-
-                                await FirebaseFirestore.instance
-                                    .collection('logistics_requests')
-                                    .doc(trackingId)
-                                    .set({
-                                  ...packageData,
-                                  'status': 'pending',
-                                  'createdAt': FieldValue.serverTimestamp(),
-                                  'updatedAt': FieldValue.serverTimestamp(),
-                                  'assignedAgent': null,
-                                  'proposedCost': null,
-                                });
-
-                                Navigator.pop(context);
-
-                                Navigator.pushReplacement(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => LogisticsSearchingScreen(
-                                      requestId: trackingId,
-                                      packageData: packageData,
-                                    ),
-                                  ),
-                                );
-                              } catch (e) {
-                                Navigator.pop(context);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text(e.toString())));
-                              }
-                            },
+                            onPressed: () =>
+                                _payAndCreateOrder(context), // 🔥 UPDATED
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.black,
                               padding: const EdgeInsets.symmetric(vertical: 14),
@@ -14089,8 +15333,10 @@ class PackagePreviewPage extends StatelessWidget {
                               ),
                             ),
                             child: const Text(
-                              "Confirm & Send",
-                              style: TextStyle(color: Colors.white),
+                              "Pay",
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold),
                             ),
                           ),
                         ),
@@ -14106,24 +15352,118 @@ class PackagePreviewPage extends StatelessWidget {
     );
   }
 
-  // 🔹 Build dynamic preview fields based on service type
+  /// 🔥 PAYSTACK + ORDER CREATION
+  Future<void> _payAndCreateOrder(BuildContext context) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    const String paystackKey =
+        'sk_test_661490bf9dc0914e122c2c043ab3aaf3a307d658';
+
+    final int amount =
+        (double.parse(packageData['price'].toString()) * 100).toInt();
+
+    final String reference = "log_${DateTime.now().millisecondsSinceEpoch}";
+
+    final Uri url = Uri.parse('https://api.paystack.co/transaction/initialize');
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text("Processing payment..."),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final response = await http.post(
+        url,
+        headers: {
+          'Authorization': 'Bearer $paystackKey',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'email': user.email,
+          'amount': amount,
+          'reference': reference,
+        }),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception("Payment initialization failed");
+      }
+
+      final checkoutUrl =
+          jsonDecode(response.body)['data']['authorization_url'];
+
+      if (await canLaunchUrl(Uri.parse(checkoutUrl))) {
+        await launchUrl(Uri.parse(checkoutUrl),
+            mode: LaunchMode.externalApplication);
+      }
+
+      /// ⚠️ TEMP: Assume payment success
+      final trackingId = packageData['trackingId'];
+      final pickupCode = _generateCode();
+      final deliveryCode = _generateCode();
+
+      await FirebaseFirestore.instance
+          .collection('logistics_requests')
+          .doc(trackingId)
+          .set({
+        ...packageData,
+        'status': 'pending',
+        'paymentStatus': 'paid',
+        'paymentReference': reference,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+        'assignedAgent': null,
+        'pickupCode': pickupCode,
+        'deliveryCode': deliveryCode,
+      });
+
+      Navigator.pop(context);
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => OrderPlacedPage(orderId: trackingId),
+        ),
+      );
+    } catch (e) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+  }
+
+  // 🔹 UNTOUCHED
   Widget _buildServicePreviewUI(String serviceType) {
     switch (serviceType) {
       case "Instant pickup and delivery":
         return _instantDeliveryPreview();
       case "Waybills":
         return _waybillsPreview();
-      case "Bulk Goods Transport":
-        return _bulkTransportPreview();
-      case "Express Delivery":
-        return _expressDeliveryPreview();
-      case "Scheduled Delivery":
-        return _scheduledDeliveryPreview();
-      case "Errand":
-        return _errandPreview();
-      default:
-        return _defaultPreview();
     }
+    return _defaultPreview();
+  }
+
+  String _generateCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    final rand = Random();
+
+    return String.fromCharCodes(
+      Iterable.generate(
+        5,
+        (_) => chars.codeUnitAt(rand.nextInt(chars.length)),
+      ),
+    );
   }
 
   Widget _instantDeliveryPreview() {
@@ -14169,82 +15509,6 @@ class PackagePreviewPage extends StatelessWidget {
     );
   }
 
-  Widget _bulkTransportPreview() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildDetail("Service Type", "Bulk Goods Transport"),
-        _buildDetail("Package Name", packageData['packageName']),
-        _buildDetail("Pickup Address", packageData['pickupAddress']),
-        _buildDetail("Delivery Address", packageData['deliveryAddress']),
-        _buildDetail("Quantity/Weight", packageData['extraField']),
-        const SizedBox(height: 10),
-        Text("Tracking ID: ${packageData['trackingId']}",
-            style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-                color: Colors.deepPurple)),
-      ],
-    );
-  }
-
-  Widget _expressDeliveryPreview() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildDetail("Service Type", "Express Delivery"),
-        _buildDetail("Package Name", packageData['packageName']),
-        _buildDetail("Pickup Address", packageData['pickupAddress']),
-        _buildDetail("Delivery Address", packageData['deliveryAddress']),
-        _buildDetail("Expected Delivery Time", packageData['extraField']),
-        const SizedBox(height: 10),
-        Text("Tracking ID: ${packageData['trackingId']}",
-            style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-                color: Colors.deepPurple)),
-      ],
-    );
-  }
-
-  Widget _scheduledDeliveryPreview() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildDetail("Service Type", "Scheduled Delivery"),
-        _buildDetail("Package Name", packageData['packageName']),
-        _buildDetail("Pickup Address", packageData['pickupAddress']),
-        _buildDetail("Delivery Address", packageData['deliveryAddress']),
-        _buildDetail("Scheduled Date & Time", packageData['extraField']),
-        const SizedBox(height: 10),
-        Text("Tracking ID: ${packageData['trackingId']}",
-            style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-                color: Colors.deepPurple)),
-      ],
-    );
-  }
-
-  Widget _errandPreview() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildDetail("Service Type", "Errand"),
-        _buildDetail("Task/Item", packageData['packageName']),
-        _buildDetail("Pickup Location", packageData['pickupAddress']),
-        _buildDetail("Delivery Location", packageData['deliveryAddress']),
-        _buildDetail("Instructions", packageData['extraField']),
-        const SizedBox(height: 10),
-        Text("Tracking ID: ${packageData['trackingId']}",
-            style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-                color: Colors.deepPurple)),
-      ],
-    );
-  }
-
   Widget _defaultPreview() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -14268,10 +15532,7 @@ class PackagePreviewPage extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            "$title: ",
-            style: const TextStyle(color: Colors.black87),
-          ),
+          Text("$title: ", style: const TextStyle(color: Colors.black87)),
           Expanded(
             child: Text(
               value ?? '-',
@@ -14280,432 +15541,6 @@ class PackagePreviewPage extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class LogisticsSearchingScreen extends StatelessWidget {
-  final String requestId;
-  final Map<String, dynamic> packageData;
-
-  const LogisticsSearchingScreen({
-    super.key,
-    required this.requestId,
-    required this.packageData,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_outlined),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text(''),
-        backgroundColor: Colors.white,
-        elevation: 0,
-      ),
-      body: StreamBuilder<DocumentSnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('logistics_requests')
-            .doc(requestId)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) {
-            return _buildLoading();
-          }
-
-          final data = snapshot.data!.data() as Map<String, dynamic>?;
-
-          if (data != null &&
-              data['status'] == 'accepted' &&
-              data['proposedCost'] != null &&
-              data['assignedAgent'] != null) {
-            // Trigger navigation only once
-            Future.microtask(() {
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => PackageAssignmentPage(
-                    packageData: {
-                      ...packageData,
-                      'docId': requestId, // 👈 IMPORTANT
-                      'proposedCost': data['proposedCost'],
-                      'assignedAgent': data['assignedAgent'],
-                      'driverName': data['driverName'],
-                    },
-                  ),
-                ),
-              );
-            });
-          }
-
-          return _buildLoading();
-        },
-      ),
-    );
-  }
-
-  Widget _buildLoading() {
-    return const Center(
-      child: AlertDialog(
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(color: Colors.black),
-            SizedBox(height: 16),
-            Text(
-              "Shipment Created. Searching for a delivery agent ",
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class PackageAssignmentPage extends StatelessWidget {
-  final Map<String, dynamic> packageData;
-
-  const PackageAssignmentPage({Key? key, required this.packageData})
-      : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    final String senderName = packageData['senderName'] ?? 'N/A';
-    final String senderContact = packageData['senderContact'] ?? 'N/A';
-    final String senderAddress = packageData['pickupAddress'] ?? 'N/A';
-
-    final String receiverName = packageData['receiverName'] ?? 'N/A';
-    final String receiverContact = packageData['receiverContact'] ?? 'N/A';
-    final String receiverAddress = packageData['deliveryAddress'] ?? 'N/A';
-
-    final String driverName = packageData['driverName'] ?? 'Awaiting Driver';
-    final String driverContact = packageData['driverContact'] ?? 'N/A';
-    final String proposedCost = packageData['proposedCost'] != null
-        ? '₦${packageData['proposedCost'].toString()}'
-        : 'Awaiting Price';
-
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
-        backgroundColor: Colors.white,
-        elevation: 0,
-
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 10),
-          child: GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              width: 25,
-              height: 25,
-              decoration: BoxDecoration(
-                color: Colors.grey[100], // ✅ grey 50 look
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.arrow_back_ios,
-                size: 14,
-                color: Colors.black,
-              ),
-            ),
-          ),
-        ),
-
-        title: const Padding(
-          padding: EdgeInsets.only(left: 8), // ✅ spacing from icon
-          child: Text(
-            'Package Assignment',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: Colors.black,
-            ),
-          ),
-        ),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Center(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    "Order Assigned",
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  SizedBox(width: 6),
-                  Icon(Icons.check_circle, color: Colors.green, size: 22),
-                ],
-              ),
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              "Please confirm your order details and proceed with payment.",
-              style: TextStyle(color: Colors.black87, fontSize: 14),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 20),
-
-            // Grouped Sender & Receiver
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey.shade300),
-              ),
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildSectionLabel("From"),
-                  _buildWrappedDetailCard(
-                      senderName, senderAddress, senderContact),
-                  const SizedBox(height: 12),
-                  _buildSectionLabel("To"),
-                  _buildWrappedDetailCard(
-                      receiverName, receiverAddress, receiverContact),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            _buildSectionLabel("Delivery Agent"),
-            _buildAgentCard(driverName, driverContact),
-            const SizedBox(height: 16),
-            _buildSectionLabel("Price"),
-            _buildPriceCard(proposedCost),
-            const SizedBox(height: 24),
-
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () async {
-                  await _processPayment(context, packageData);
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: const Text(
-                  "Pay",
-                  style: TextStyle(fontSize: 16, color: Colors.white),
-                ),
-              ),
-            )
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSectionLabel(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Text(
-        text,
-        style: const TextStyle(
-          fontSize: 15,
-          color: Colors.black,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-
-  Future<void> _processPayment(
-      BuildContext context, Map<String, dynamic> data) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    const String paystackKey =
-        'sk_test_661490bf9dc0914e122c2c043ab3aaf3a307d658';
-    final int amount =
-        (double.parse(data['proposedCost'].toString()) * 100).toInt();
-    final String reference = "log_${DateTime.now().millisecondsSinceEpoch}";
-    final Uri url = Uri.parse('https://api.paystack.co/transaction/initialize');
-
-    try {
-      final response = await http.post(url,
-          headers: {
-            'Authorization': 'Bearer $paystackKey',
-            'Content-Type': 'application/json',
-          },
-          body: jsonEncode({
-            'email': user.email,
-            'amount': amount,
-            'reference': reference,
-          }));
-
-      if (response.statusCode != 200) {
-        _showSnack(context, 'Payment failed to initialize');
-        return;
-      }
-
-      final checkoutUrl =
-          jsonDecode(response.body)['data']['authorization_url'];
-
-      if (await canLaunchUrl(Uri.parse(checkoutUrl))) {
-        await launchUrl(Uri.parse(checkoutUrl),
-            mode: LaunchMode.externalApplication);
-      }
-
-      // 🚀 AFTER SUCCESSFUL PAYMENT (Assumed)
-      final String trackingId = "TRX${DateTime.now().millisecondsSinceEpoch}";
-      final String pickupCode = (1000 + Random().nextInt(8999)).toString();
-      final String deliveryCode = (1000 + Random().nextInt(8999)).toString();
-
-      // 📩 Send SMS to Receiver
-      await sendSms(data['receiverContact'],
-          "Your Deck package delivery code is $deliveryCode. Keep it safe.");
-
-      // 💾 UPDATE existing request instead of creating new
-      await FirebaseFirestore.instance
-          .collection('logistics_requests')
-          .doc(data['docId']) // MUST exist in data
-          .update({
-        'paymentReference': reference,
-        'trackingId': trackingId,
-        'pickupCode': pickupCode,
-        'deliveryCode': deliveryCode,
-        'status': 'awaiting_pickup',
-        'updatedAt': Timestamp.now(),
-      });
-
-      // 👉 Navigate to Order Page
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => OrderPlacedPage(orderId: data['docId']),
-        ),
-      );
-    } catch (e) {
-      _showSnack(context, "Error: $e");
-    }
-  }
-
-  void _showSnack(BuildContext context, String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-  }
-
-  Widget _buildWrappedDetailCard(String name, String address, String phone) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(top: 4),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildDetailRow("Name", name),
-          _buildDetailRow("Address", address),
-          _buildDetailRow("Phone", phone),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDetailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            "$label: ",
-            style: const TextStyle(
-                fontWeight: FontWeight.w600, color: Colors.black87),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(color: Colors.black54),
-            ),
-          )
-        ],
-      ),
-    );
-  }
-
-  Future<void> sendSms(String phone, String message) async {
-    // TODO: Call your SMS API here
-    debugPrint("SMS to $phone: $message");
-  }
-
-  Widget _buildPriceCard(String price) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.black),
-      ),
-      child: Center(
-        child: Text(
-          price,
-          style: const TextStyle(
-            fontSize: 18,
-            color: Colors.black,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAgentCard(String name, String phone) {
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      elevation: 2,
-      color: Colors.grey[200],
-      child: Padding(
-        padding: const EdgeInsets.all(14.0),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Icon(Icons.person, color: Colors.purple[900]),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    name,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                )
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                const Icon(Icons.phone, color: Colors.black),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    phone,
-                    style: const TextStyle(color: Colors.black54),
-                  ),
-                )
-              ],
-            )
-          ],
-        ),
       ),
     );
   }
@@ -14732,6 +15567,7 @@ class OrderPlacedPage extends StatelessWidget {
         //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
 
         leading: Padding(
           padding: const EdgeInsets.only(left: 10),
@@ -14756,7 +15592,7 @@ class OrderPlacedPage extends StatelessWidget {
         title: const Padding(
           padding: EdgeInsets.only(left: 8), // ✅ spacing from icon
           child: Text(
-            'trackingId',
+            '',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.bold,
@@ -14784,7 +15620,7 @@ class OrderPlacedPage extends StatelessWidget {
           }
 
           final trackingId = getSafe('trackingId');
-          final status = getSafe('status', 'awaiting_pickup');
+          final status = getSafe('status', 'pending');
 
           final packageName = getSafe('packageName');
           final pickupCode = getSafe('pickupCode');
@@ -14796,20 +15632,41 @@ class OrderPlacedPage extends StatelessWidget {
           final senderName = getSafe('senderName');
           final receiverName = getSafe('receiverName');
           final receiverContact = getSafe('receiverContact');
-          final proposedCost = getSafe('proposedCost', '0');
+          final price = getSafe('price', '0');
 
           Color getStatusColor(String status) {
             switch (status.toLowerCase()) {
-              case 'awaiting_pickup':
+              case 'pending':
+                return Colors.grey;
+              case 'accepted':
                 return Colors.orange;
-              case 'in_transit':
+              case 'pickedup':
                 return Colors.blue;
               case 'completed':
                 return Colors.green;
-              case 'cancelled':
-                return Colors.red;
               default:
                 return Colors.grey;
+            }
+          }
+
+          bool isStepCompleted(String step, String status) {
+            final s = status.toLowerCase();
+
+            switch (step) {
+              case 'pending':
+                return true;
+
+              case 'accepted':
+                return s == 'accepted' || s == 'pickedup' || s == 'completed';
+
+              case 'pickedup':
+                return s == 'pickedup' || s == 'completed';
+
+              case 'completed':
+                return s == 'completed';
+
+              default:
+                return false;
             }
           }
 
@@ -14832,20 +15689,6 @@ class OrderPlacedPage extends StatelessWidget {
             );
           }
 
-          bool isStepCompleted(String step) {
-            switch (step) {
-              case 'awaiting_pickup':
-                return status.toLowerCase() != 'awaiting_pickup';
-              case 'in_transit':
-                return status.toLowerCase() == 'in_transit' ||
-                    status.toLowerCase() == 'completed';
-              case 'completed':
-                return status.toLowerCase() == 'completed';
-              default:
-                return false;
-            }
-          }
-
           return Padding(
             padding: const EdgeInsets.all(20),
             child: SingleChildScrollView(
@@ -14853,64 +15696,103 @@ class OrderPlacedPage extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   /// 🔹 ORDER ID
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text("Order Id",
-                          style: TextStyle(
-                              fontSize: 15, fontWeight: FontWeight.bold)),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.black,
-                          borderRadius: BorderRadius.circular(8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.06),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
                         ),
-                        child: Text(trackingId,
-                            style: const TextStyle(
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        const Text(
+                          "Package ID",
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Flexible(
+                          child: Container(
+                            constraints: const BoxConstraints(maxWidth: 160),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.black,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              trackingId,
+                              textAlign: TextAlign.center,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: Colors.white,
-                                fontSize: 16)),
-                      ),
-                    ],
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 8),
 
-                  GestureDetector(
-                    onTap: () {
-                      Clipboard.setData(ClipboardData(text: trackingId));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text("Order ID copied")),
-                      );
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          vertical: 8, horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[100],
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.copy, size: 14),
-                          SizedBox(width: 6),
-                          Text(
-                            "Copy Order ID",
-                            style: TextStyle(fontSize: 12),
+                  Row(
+                    children: [
+                      Spacer(),
+                      GestureDetector(
+                        onTap: () {
+                          Clipboard.setData(ClipboardData(text: trackingId));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text("Order ID copied")),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 8, horizontal: 12),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[100],
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                        ],
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.copy, size: 14),
+                              SizedBox(width: 6),
+                              Text(
+                                "Copy",
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
+                    ],
                   ),
 
                   const SizedBox(height: 15),
 
                   /// 🔹 STATUS
-                  Card(
+                  Center(
+                      child: Card(
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),
                     elevation: 2,
+                    color: Colors.white,
                     child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Column(
@@ -14918,9 +15800,9 @@ class OrderPlacedPage extends StatelessWidget {
                         children: [
                           /// 🔥 DYNAMIC STATUS TEXT
                           Text(
-                            status == "awaiting_pickup"
+                            status == "pending"
                                 ? "Delivery agent is on his way to pickup this order."
-                                : status == "in_transit"
+                                : status == "pickedup"
                                     ? "Package picked up, on its way to $receiverName."
                                     : "Package delivered successfully.",
                             style: const TextStyle(
@@ -14930,10 +15812,9 @@ class OrderPlacedPage extends StatelessWidget {
                           const SizedBox(height: 12),
 
                           /// 🔥 CODE CARD
-                          if (status == "awaiting_pickup")
-                            _codeCard(pickupCode),
+                          if (status == "pending") _codeCard(pickupCode),
 
-                          if (status == "in_transit")
+                          if (status == "pickedup")
                             Row(
                               children: [
                                 Expanded(child: _codeCard(deliveryCode)),
@@ -14970,7 +15851,7 @@ class OrderPlacedPage extends StatelessWidget {
                         ],
                       ),
                     ),
-                  ),
+                  )),
 
                   const SizedBox(height: 20),
 
@@ -14984,26 +15865,27 @@ class OrderPlacedPage extends StatelessWidget {
                     steps: [
                       _TimelineData(
                         title: "Order Placed",
-                        subtitle: "Order has been successfully placed",
-                        completed: true,
-                        color: Colors.green,
+                        subtitle: "Assigning agent to pickup package.",
+                        completed: isStepCompleted('pending', status),
+                        color: Colors.grey,
                       ),
                       _TimelineData(
-                        title: "Awaiting Pickup",
-                        subtitle: "Agent on his way to pickup package.",
-                        completed: isStepCompleted('awaiting_pickup'),
+                        title: "Agent Assigned",
+                        subtitle: "Agent on his way.",
+                        completed: isStepCompleted('accepted', status),
                         color: Colors.orange,
                       ),
                       _TimelineData(
-                        title: "In Transit",
-                        subtitle: "Package in transit.",
-                        completed: isStepCompleted('in_transit'),
+                        title: "Picked Up",
+                        subtitle:
+                            "Package pickedup, will shortly be delivered.",
+                        completed: isStepCompleted('pickedup', status),
                         color: Colors.blue,
                       ),
                       _TimelineData(
                         title: "Delivered",
-                        subtitle: "Package delivered.",
-                        completed: isStepCompleted('completed'),
+                        subtitle: "Package delivered successfully.",
+                        completed: isStepCompleted('completed', status),
                         color: Colors.green,
                       ),
                     ],
@@ -15019,6 +15901,7 @@ class OrderPlacedPage extends StatelessWidget {
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),
                     elevation: 2,
+                    color: Colors.white,
                     child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Column(
@@ -15031,8 +15914,7 @@ class OrderPlacedPage extends StatelessWidget {
                           infoRow(
                               "Receiver:", "$receiverName ($receiverContact)"),
                           const Divider(),
-                          infoRow("Delivery Fee", "₦$proposedCost",
-                              highlight: true),
+                          infoRow("Delivery Fee", "₦$price", highlight: true),
                         ],
                       ),
                     ),
@@ -15168,6 +16050,605 @@ class _TimelineData {
     required this.completed,
     required this.color,
   });
+}
+
+class LogisticsAdminDashboard extends StatefulWidget {
+  const LogisticsAdminDashboard({Key? key}) : super(key: key);
+
+  @override
+  State<LogisticsAdminDashboard> createState() =>
+      _LogisticsAdminDashboardState();
+}
+
+class _LogisticsAdminDashboardState extends State<LogisticsAdminDashboard> {
+  String selectedFilter = "new";
+
+  Stream<QuerySnapshot> _getRequests() {
+    return FirebaseFirestore.instance
+        .collection('logistics_requests')
+        .orderBy('createdAt', descending: true)
+        .snapshots();
+  }
+
+  Color _statusColor(String status) {
+    switch (status) {
+      case "pending":
+        return Colors.orange;
+      case "completed":
+        return Colors.green;
+      case "assigned":
+        return Colors.blue;
+      default:
+        return Colors.red;
+    }
+  }
+
+  bool _filterMatch(String status) {
+    if (selectedFilter == "new") return status == "new";
+    if (selectedFilter == "pending") return status == "pending";
+    if (selectedFilter == "completed") return status == "completed";
+    return true;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+
+      // ================= APP BAR =================
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        leading: GestureDetector(
+          onTap: () => Navigator.pop(context),
+          child:
+              const Icon(Icons.arrow_back_ios, color: Colors.black, size: 18),
+        ),
+        title: const Text(
+          "Logistics Admin",
+          style: TextStyle(
+            color: Colors.black,
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+
+      body: Column(
+        children: [
+          const SizedBox(height: 10),
+
+          // ================= MANAGE ROUTES BUTTON =================
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () {
+                  // TODO: navigate to your existing routes page
+                  Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => AddRoutePage()));
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  "Manage Routes",
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // ================= FILTER CHIPS =================
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _chip("New"),
+                _chip("Pending"),
+                _chip("Completed"),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 10),
+
+          // ================= REQUEST LIST =================
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: _getRequests(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final docs = snapshot.data!.docs;
+
+                if (docs.isEmpty) {
+                  return const Center(child: Text("No requests yet"));
+                }
+
+                return ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: docs.length,
+                  itemBuilder: (context, index) {
+                    final data = docs[index].data() as Map<String, dynamic>;
+
+                    final status = data['status'] ?? 'new';
+
+                    if (!_filterMatch(status)) {
+                      return const SizedBox.shrink();
+                    }
+
+                    return _requestCard(data, docs[index].id);
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ================= CHIP =================
+  Widget _chip(String label) {
+    final isSelected = selectedFilter == label.toLowerCase();
+
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          selectedFilter = label.toLowerCase();
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.black : Colors.grey[200],
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.white : Colors.black,
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ================= REQUEST CARD =================
+  Widget _requestCard(Map<String, dynamic> data, String docId) {
+    final status = data['status'] ?? 'new';
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // TOP ROW
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  data['packageName'] ?? 'Package',
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.bold),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _statusColor(status).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    status.toUpperCase(),
+                    style: TextStyle(
+                      color: _statusColor(status),
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                )
+              ],
+            ),
+
+            const SizedBox(height: 10),
+
+            Text("From: ${data['pickupAddress'] ?? '-'}"),
+            Text("To: ${data['deliveryAddress'] ?? '-'}"),
+            Text("Sender: ${data['senderName'] ?? '-'}"),
+            Text("Receiver: ${data['receiverName'] ?? '-'}"),
+
+            const SizedBox(height: 10),
+
+            Text(
+              "Tracking ID: ${data['trackingId'] ?? '-'}",
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+            ),
+
+            const SizedBox(height: 12),
+
+            // ================= ACTION BUTTONS =================
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      await FirebaseFirestore.instance
+                          .collection('logistics_requests')
+                          .doc(docId)
+                          .update({'status': 'completed'});
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                    ),
+                    child: const Text("Mark Done"),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      await FirebaseFirestore.instance
+                          .collection('logistics_requests')
+                          .doc(docId)
+                          .update({'status': 'pending'});
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                    ),
+                    child: const Text("Pending"),
+                  ),
+                ),
+              ],
+            )
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class AddRoutePage extends StatefulWidget {
+  const AddRoutePage({super.key});
+
+  @override
+  State<AddRoutePage> createState() => _AddRoutePageState();
+}
+
+class _AddRoutePageState extends State<AddRoutePage> {
+  bool showManageRoutes = false;
+  bool _isSaving = false;
+
+  final TextEditingController cityController = TextEditingController();
+
+  List<TextEditingController> destinationControllers = [];
+  List<TextEditingController> priceControllers = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _addDestinationField();
+  }
+
+  void _addDestinationField() {
+    destinationControllers.add(TextEditingController());
+    priceControllers.add(TextEditingController());
+    setState(() {});
+  }
+
+  void _removeDestinationField(int index) {
+    destinationControllers[index].dispose();
+    priceControllers[index].dispose();
+
+    destinationControllers.removeAt(index);
+    priceControllers.removeAt(index);
+
+    setState(() {});
+  }
+
+  Future<void> _saveRoute() async {
+    if (cityController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("City name is required")),
+      );
+      return;
+    }
+
+    setState(() => _isSaving = true);
+
+    try {
+      List<Map<String, dynamic>> destinations = [];
+
+      for (int i = 0; i < destinationControllers.length; i++) {
+        final dest = destinationControllers[i].text.trim();
+        final priceText = priceControllers[i].text.trim();
+
+        if (dest.isNotEmpty && priceText.isNotEmpty) {
+          destinations.add({
+            "name": dest,
+            "price": double.tryParse(priceText) ?? 0,
+          });
+        }
+      }
+
+      if (destinations.isEmpty) {
+        setState(() => _isSaving = false);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Add at least one destination")),
+        );
+        return;
+      }
+
+      await FirebaseFirestore.instance
+          .collection("logistics_routes")
+          .doc(cityController.text.trim())
+          .set({
+        "city": cityController.text.trim(),
+        "destinations": destinations,
+        "updatedAt": FieldValue.serverTimestamp(),
+      });
+
+      // reset UI
+      cityController.clear();
+      destinationControllers.clear();
+      priceControllers.clear();
+      _addDestinationField();
+
+      setState(() => _isSaving = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Route saved successfully ✅")),
+      );
+    } catch (e) {
+      setState(() => _isSaving = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error saving route: $e")),
+      );
+    }
+  }
+
+  Widget _buildAddRouteForm() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 20),
+        TextField(
+          controller: cityController,
+          decoration: InputDecoration(
+            labelText: "City Name",
+            filled: true,
+            fillColor: Colors.grey[100],
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        const Text(
+          "Destinations & Prices",
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 10),
+        ListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: destinationControllers.length,
+          itemBuilder: (context, index) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: destinationControllers[index],
+                      decoration: InputDecoration(
+                        labelText: "Destination",
+                        filled: true,
+                        fillColor: Colors.grey[100],
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TextField(
+                      controller: priceControllers[index],
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: "Price",
+                        filled: true,
+                        fillColor: Colors.grey[100],
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.remove_circle, color: Colors.red),
+                    onPressed: () => _removeDestinationField(index),
+                  )
+                ],
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 10),
+        TextButton.icon(
+          onPressed: _addDestinationField,
+          icon: const Icon(Icons.add),
+          label: const Text("Add Destination"),
+        ),
+        const SizedBox(height: 20),
+        SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _isSaving ? null : _saveRoute,
+              child: _isSaving
+                  ? const SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text("Save Route"),
+            )),
+      ],
+    );
+  }
+
+  Widget _buildManageRoutes() {
+    return StreamBuilder<QuerySnapshot>(
+      stream:
+          FirebaseFirestore.instance.collection("logistics_routes").snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final docs = snapshot.data!.docs;
+
+        return ListView.builder(
+          itemCount: docs.length,
+          itemBuilder: (context, index) {
+            final data = docs[index].data() as Map<String, dynamic>;
+
+            final destinations = (data['destinations'] as List?) ?? [];
+
+            return Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      data['city'] ?? '',
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 10),
+                    ...destinations.map((d) {
+                      return Text(
+                        "${d['name']} - ₦${d['price']}",
+                      );
+                    }).toList(),
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              showManageRoutes = false;
+                              cityController.text = data['city'];
+                            });
+                          },
+                          child: const Text("Edit"),
+                        )
+                      ],
+                    )
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+
+      // 🔹 iOS BACK BUTTON
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 10),
+          child: GestureDetector(
+            onTap: () => Navigator.pop(context),
+            child: Container(
+              width: 25,
+              height: 25,
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.arrow_back_ios,
+                size: 14,
+                color: Colors.black,
+              ),
+            ),
+          ),
+        ),
+        title: const Text(
+          "Add Route",
+          style: TextStyle(fontSize: 14, color: Colors.black),
+        ),
+      ),
+
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            // 🔹 TOGGLE BUTTON
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  showManageRoutes = !showManageRoutes;
+                });
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.black),
+              child: Text(
+                showManageRoutes ? "Add Route" : "Manage Routes",
+                style: const TextStyle(color: Colors.white),
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            // 🔹 CONTENT SWITCH
+            Expanded(
+              child: showManageRoutes
+                  ? _buildManageRoutes()
+                  : SingleChildScrollView(child: _buildAddRouteForm()),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class LogisticsDeliveryPage extends StatefulWidget {
@@ -15402,6 +16883,7 @@ class _DeliveryCodePageState extends State<DeliveryCodePage> {
         //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
 
         leading: Padding(
           padding: const EdgeInsets.only(left: 10),
@@ -15494,69 +16976,31 @@ class _DeliveryCodePageState extends State<DeliveryCodePage> {
 class DeliveryAgentPage extends StatelessWidget {
   const DeliveryAgentPage({super.key});
 
-  void acceptRequestWithPrice(BuildContext context, String requestId) {
-    final TextEditingController priceController = TextEditingController();
+  Future<void> acceptRequest(BuildContext context, String requestId) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
 
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Enter Delivery Price"),
-        content: TextField(
-          controller: priceController,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            hintText: "Enter cost in NGN",
-          ),
-        ),
-        actions: [
-          TextButton(
-            child: const Text('Go to Delivery Page'),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) =>
-                    LogisticsDeliveryPage(requestId: requestId),
-              ),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final cost = priceController.text.trim();
-              if (cost.isEmpty) return;
+    final driverDoc = await FirebaseFirestore.instance
+        .collection('Drivers')
+        .doc(currentUser.uid)
+        .get();
 
-              final currentUser = FirebaseAuth.instance.currentUser;
-              if (currentUser == null) return;
+    final driverName = driverDoc.data()?['name'] ?? 'Unknown';
 
-              final driverDoc = await FirebaseFirestore.instance
-                  .collection('Drivers')
-                  .doc(currentUser.uid)
-                  .get();
+    await FirebaseFirestore.instance
+        .collection('logistics_requests')
+        .doc(requestId)
+        .update({
+      'status': 'accepted',
+      'assignedAgent': currentUser.uid,
+      'driverName': driverName,
+      'assignedAt': FieldValue.serverTimestamp(),
+    });
 
-              final driverName = driverDoc.data()?['name'] ?? 'Unknown';
-
-              await FirebaseFirestore.instance
-                  .collection('logistics_requests')
-                  .doc(requestId)
-                  .update({
-                'status': 'accepted',
-                'assignedAgent': currentUser.uid,
-                'driverName': driverName,
-                'proposedCost': cost,
-                'assignedAt': FieldValue.serverTimestamp(),
-              });
-
-              Navigator.pop(context); // close dialog
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) =>
-                      LogisticsDeliveryPage(requestId: requestId),
-                ),
-              );
-            },
-            child: const Text("Submit"),
-          ),
-        ],
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => LogisticsDeliveryPage(requestId: requestId),
       ),
     );
   }
@@ -15650,9 +17094,8 @@ class DeliveryAgentPage extends StatelessWidget {
                           0,
                           (sum, doc) =>
                               sum +
-                              (doc['proposedCost'] != null
-                                  ? double.tryParse(
-                                          doc['proposedCost'].toString()) ??
+                              (doc['price'] != null
+                                  ? double.tryParse(doc['price'].toString()) ??
                                       0
                                   : 0),
                         );
@@ -15826,8 +17269,7 @@ class DeliveryAgentPage extends StatelessWidget {
                                   "Receiver: ${data['receiverName'] ?? 'N/A'} (${data['receiverContact'] ?? 'N/A'})"),
                               const SizedBox(height: 12),
                               ElevatedButton.icon(
-                                onPressed: () =>
-                                    acceptRequestWithPrice(context, doc.id),
+                                onPressed: () => acceptRequest(context, doc.id),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.black,
                                 ),
@@ -16129,44 +17571,21 @@ class _ShuttleDriverOnboardingState extends State<ShuttleDriverOnboarding> {
   final TextEditingController vehicleNameCtrl = TextEditingController();
   final TextEditingController vehicleCapacityCtrl = TextEditingController();
 
-  String? selectedInstitution;
   Uint8List? driverImageBytes;
   Uint8List? vehicleImageBytes;
 
-  XFile? driverImageFile;
-  XFile? vehicleImageFile;
-
   bool loading = false;
   final picker = ImagePicker();
-
-  final List<String> institutions = [
-    "University of Lagos (UNILAG)",
-    "University of Ibadan (UI)",
-    "Ahmadu Bello University (ABU)",
-    "Obafemi Awolowo University (OAU)",
-    "University of Benin (UNIBEN)",
-    "University of Nigeria (UNN)",
-    "Lagos State University (LASU)",
-    "Covenant University",
-    "Babcock University",
-    "Bayero University Kano (BUK)",
-    "Federal University of Technology Akure (FUTA)",
-    "Federal University of Technology Minna (FUTMINNA)",
-    "Federal University of Technology Owerri (FUTO)",
-    "Nnamdi Azikiwe University (UNIZIK)",
-    "University of Ilorin (UNILORIN)",
-  ];
 
   Future<void> pickImage(bool isDriver) async {
     final picked = await picker.pickImage(source: ImageSource.gallery);
     if (picked == null) return;
     Uint8List bytes = await picked.readAsBytes();
+
     setState(() {
       if (isDriver) {
-        driverImageFile = picked;
         driverImageBytes = bytes;
       } else {
-        vehicleImageFile = picked;
         vehicleImageBytes = bytes;
       }
     });
@@ -16182,12 +17601,9 @@ class _ShuttleDriverOnboardingState extends State<ShuttleDriverOnboarding> {
 
   Future<void> saveDetails() async {
     if (!_formKey.currentState!.validate()) return;
+
     if (driverImageBytes == null || vehicleImageBytes == null) {
       _showSnack("Please upload both images");
-      return;
-    }
-    if (selectedInstitution == null) {
-      _showSnack("Please select your institution");
       return;
     }
 
@@ -16199,7 +17615,6 @@ class _ShuttleDriverOnboardingState extends State<ShuttleDriverOnboarding> {
       String vehicleUrl =
           await uploadToFirebase(vehicleImageBytes!, "vehicleImages");
 
-      // Generate unique driver code
       String driverCode = "DB${Random().nextInt(90000) + 10000}";
 
       await FirebaseFirestore.instance
@@ -16209,13 +17624,18 @@ class _ShuttleDriverOnboardingState extends State<ShuttleDriverOnboarding> {
         "name": nameCtrl.text.trim(),
         "phone": phoneCtrl.text.trim(),
         "email": emailCtrl.text.trim(),
-        "institution": selectedInstitution,
         "driverImage": driverUrl,
         "vehicleImage": vehicleUrl,
         "vehicleModel": vehicleModelCtrl.text.trim(),
         "vehicleName": vehicleNameCtrl.text.trim(),
         "vehicleCapacity": int.parse(vehicleCapacityCtrl.text.trim()),
+
+        /// NEW FIELDS
         "status": "offline",
+        "activeInstitution": null,
+        "pickupLocation": null,
+        "destinationLocation": null,
+
         "driverCode": driverCode,
         "boardedPassengers": 0,
         "ticketIds": [],
@@ -16226,7 +17646,7 @@ class _ShuttleDriverOnboardingState extends State<ShuttleDriverOnboarding> {
 
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => const ShuttleDriverDashboard()),
+        MaterialPageRoute(builder: (_) => const ShuttleDriverDashboard()),
       );
     } catch (e) {
       _showSnack("Error: $e");
@@ -16239,106 +17659,78 @@ class _ShuttleDriverOnboardingState extends State<ShuttleDriverOnboarding> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  Widget _input(String label, TextEditingController ctrl,
+      {TextInputType type = TextInputType.text}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 15),
+      child: TextFormField(
+        controller: ctrl,
+        keyboardType: type,
+        validator: (v) => v!.isEmpty ? "Required" : null,
+        decoration:
+            InputDecoration(border: OutlineInputBorder(), labelText: label),
+      ),
+    );
+  }
+
+  Widget _imagePicker(String title, Uint8List? bytes, Function() onTap) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        height: 70,
+        width: 70,
+        decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(50),
+            border: Border.all(color: Colors.grey)),
+        child: bytes == null
+            ? Center(child: Text(title))
+            : ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.memory(bytes, fit: BoxFit.cover),
+              ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: Colors.black),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
+      appBar: AppBar(backgroundColor: Colors.white, elevation: 0),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Form(
           key: _formKey,
           child: ListView(
             children: [
-              const Text(
-                "Fill your personal and vehicle details.",
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 15),
-              DropdownButtonFormField(
-                isExpanded: true,
-                decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    labelText: "Select Institution"),
-                items: institutions
-                    .map((e) =>
-                        DropdownMenuItem(value: e, child: Text(e, maxLines: 2)))
-                    .toList(),
-                onChanged: (v) => setState(() => selectedInstitution = v!),
-              ),
-              const SizedBox(height: 15),
-              _imagePicker("Upload Driver Image", driverImageBytes,
-                  () => pickImage(true)),
-              const SizedBox(height: 5),
-              _input("Full Name", nameCtrl),
-              _input("Phone Number", phoneCtrl, type: TextInputType.phone),
-              _input("Email Address", emailCtrl,
-                  type: TextInputType.emailAddress),
-              const SizedBox(height: 20),
-              const Text("Vehicle Information",
+              const Text("Fill your personal and vehicle details.",
                   style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 10),
-              _imagePicker("Upload Vehicle Image", vehicleImageBytes,
-                  () => pickImage(false)),
-              const SizedBox(height: 5),
+              _imagePicker(
+                  "Driver Image", driverImageBytes, () => pickImage(true)),
+              _input("Full Name", nameCtrl),
+              _input("Phone", phoneCtrl),
+              _input("Email", emailCtrl),
+              const SizedBox(height: 20),
+              const Text("Vehicle Info",
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              _imagePicker(
+                  "Vehicle Image", vehicleImageBytes, () => pickImage(false)),
               _input("Vehicle Model", vehicleModelCtrl),
-              _input("Vehicle Name (Make)", vehicleNameCtrl),
-              _input("Vehicle Capacity (Seats)", vehicleCapacityCtrl,
+              _input("Vehicle Name", vehicleNameCtrl),
+              _input("Capacity", vehicleCapacityCtrl,
                   type: TextInputType.number),
               const SizedBox(height: 30),
               ElevatedButton(
                 onPressed: loading ? null : saveDetails,
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(vertical: 15)),
                 child: loading
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text("Get Onboard",
-                        style: TextStyle(fontSize: 16, color: Colors.white)),
-              ),
+                    ? CircularProgressIndicator(color: Colors.white)
+                    : Text("Get Onboard"),
+              )
             ],
           ),
         ),
       ),
     );
   }
-
-  Widget _input(String label, TextEditingController ctrl,
-          {TextInputType type = TextInputType.text}) =>
-      Padding(
-        padding: const EdgeInsets.only(bottom: 15),
-        child: TextFormField(
-          controller: ctrl,
-          keyboardType: type,
-          validator: (v) => v!.isEmpty ? "Required" : null,
-          decoration: InputDecoration(
-              border: const OutlineInputBorder(), labelText: label),
-        ),
-      );
-
-  Widget _imagePicker(String title, Uint8List? bytes, Function() onTap) =>
-      InkWell(
-        onTap: onTap,
-        child: Container(
-          height: 70,
-          width: 70,
-          decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(50),
-              border: Border.all(color: Colors.grey)),
-          child: bytes == null
-              ? Center(child: Text(title))
-              : ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.memory(bytes, fit: BoxFit.cover),
-                ),
-        ),
-      );
 }
 
 /// ---------------------- DRIVER DASHBOARD ----------------------
@@ -16352,479 +17744,286 @@ class ShuttleDriverDashboard extends StatefulWidget {
 class _ShuttleDriverDashboardState extends State<ShuttleDriverDashboard> {
   final user = FirebaseAuth.instance.currentUser;
 
-  /// ------------------ DEPART BUS ------------------
-  Future<void> departBus() async {
-    if (user == null) return;
+  /// ================= GO ONLINE FLOW =================
+  void openRouteSelector() async {
+    final snapshot =
+        await FirebaseFirestore.instance.collection("institutions").get();
 
-    final driverRef =
-        FirebaseFirestore.instance.collection('shuttle_drivers').doc(user!.uid);
+    List<Map<String, dynamic>> institutions =
+        snapshot.docs.map((e) => e.data()).toList();
 
-    try {
-      await FirebaseFirestore.instance.runTransaction((transaction) async {
-        final driverSnap = await transaction.get(driverRef);
-        final driverData = driverSnap.data() as Map<String, dynamic>;
+    String? selectedInstitution;
+    String? pickup;
+    String? destination;
+    TextEditingController priceController = TextEditingController();
 
-        final totalCapacity = driverData['vehicleCapacity'] ?? 0;
-        final boarded = driverData['boardedPassengers'] ?? 0;
-        final ticketIds = List<String>.from(driverData['ticketIds'] ?? []);
-        final amountCollected = (driverData['amountCollected'] ?? 0).toDouble();
-
-        if (boarded == 0) {
-          throw Exception("No passengers to depart");
-        }
-
-        // Add departure record
-        final departureRef =
-            FirebaseFirestore.instance.collection("shuttle_departures").doc();
-
-        transaction.set(departureRef, {
-          'driverId': user!.uid,
-          'driverName': driverData['name'],
-          'driverCode': driverData['driverCode'],
-          'vehicle': driverData['vehicleName'],
-          'capacity': totalCapacity,
-          'boarded': boarded,
-          'ticketIds': ticketIds,
-          'amountCollected': amountCollected,
-          'timestamp': FieldValue.serverTimestamp(),
-        });
-
-        // Reset session + update earnings
-        transaction.update(driverRef, {
-          'boardedPassengers': 0,
-          'ticketIds': [],
-          'amountCollected': 0.0,
-          'earnings': FieldValue.increment(amountCollected),
-        });
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Bus departed successfully")),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Departure failed: $e")),
-      );
-    }
-  }
-
-  void _showBoardedPassengers() {
-    if (user == null) return;
-
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Boarded Passengers"),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: StreamBuilder<DocumentSnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection("shuttle_drivers")
-                .doc(user!.uid)
-                .snapshots(),
-            builder: (context, driverSnap) {
-              if (!driverSnap.hasData) {
-                return const Center(child: CircularProgressIndicator());
-              }
+      isScrollControlled: true,
+      builder: (_) {
+        return StatefulBuilder(builder: (context, setModalState) {
+          List<String> locations = [];
 
-              final driverData =
-                  driverSnap.data!.data() as Map<String, dynamic>? ?? {};
+          if (selectedInstitution != null) {
+            final inst = institutions
+                .firstWhere((e) => e['name'] == selectedInstitution);
+            locations = List<String>.from(inst['locations']);
+          }
 
-              final List<String> ticketIds =
-                  List<String>.from(driverData['ticketIds'] ?? []);
-
-              if (ticketIds.isEmpty) {
-                return const Center(
-                  child: Text("No passengers have boarded yet."),
-                );
-              }
-
-              return StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection("shuttle_tickets")
-                    .where(FieldPath.documentId, whereIn: ticketIds)
-                    .snapshots(),
-                builder: (context, ticketSnap) {
-                  if (!ticketSnap.hasData) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-
-                  // ✅ Build a lookup map (ticketId → ticketData)
-                  final Map<String, Map<String, dynamic>> ticketMap = {
-                    for (var doc in ticketSnap.data!.docs)
-                      doc.id: doc.data() as Map<String, dynamic>
-                  };
-
-                  return ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: ticketIds.length,
-                    itemBuilder: (context, index) {
-                      final ticketId = ticketIds[index];
-                      final ticketData = ticketMap[ticketId];
-                      final ts =
-                          (ticketData?['timestamp'] as Timestamp?)?.toDate();
-
-                      return Card(
-                        margin: const EdgeInsets.symmetric(vertical: 6),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        elevation: 2,
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                ticketData?['userName'] ??
-                                    "Passenger ${index + 1}",
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              _infoBox("Ticket ID: $ticketId"),
-                              if (ticketData != null) ...[
-                                _infoBox(
-                                    "Pickup: ${ticketData['pickup'] ?? 'N/A'}"),
-                                _infoBox(
-                                    "Destination: ${ticketData['destination'] ?? 'N/A'}"),
-                                _infoBox(
-                                  "Price: ₦${ticketData['price'] ?? 'N/A'}",
-                                  highlight: true,
-                                ),
-                                if (ts != null) _infoBox("Boarded at: $ts"),
-                              ],
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  );
-                },
-              );
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Close"),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// ------------------ SHOW BOARDING PASSENGERS ------------------
-  Widget _infoBox(String text, {bool highlight = false}) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(8),
-      margin: const EdgeInsets.symmetric(vertical: 2),
-      decoration: BoxDecoration(
-        color: highlight ? Colors.grey.shade200 : Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontWeight: highlight ? FontWeight.bold : FontWeight.normal,
-        ),
-      ),
-    );
-  }
-
-  /// ------------------ BUILD ------------------
-  @override
-  Widget build(BuildContext context) {
-    if (user == null) {
-      return const Scaffold(
-        body: Center(child: Text("User not logged in.")),
-      );
-    }
-
-    return Scaffold(
-      appBar: AppBar(
-        //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
-        backgroundColor: Colors.white,
-        elevation: 0,
-
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 10),
-          child: GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              width: 25,
-              height: 25,
-              decoration: BoxDecoration(
-                color: Colors.grey[100], // ✅ grey 50 look
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.arrow_back_ios,
-                size: 14,
-                color: Colors.black,
-              ),
-            ),
-          ),
-        ),
-
-        title: const Padding(
-          padding: EdgeInsets.only(left: 8), // ✅ spacing from icon
-          child: Text(
-            'Shuttle Driver',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: Colors.black,
-            ),
-          ),
-        ),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: StreamBuilder<DocumentSnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection("shuttle_drivers")
-              .doc(user!.uid)
-              .snapshots(),
-          builder: (context, snapshot) {
-            if (!snapshot.hasData) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
-            final driverData =
-                snapshot.data!.data() as Map<String, dynamic>? ?? {};
-            final totalCapacity = driverData['vehicleCapacity'] ?? 0;
-            final boarded = driverData['boardedPassengers'] ?? 0;
-            final amountCollected = driverData['amountCollected'] ?? 0.0;
-            final driverCode = driverData['driverCode'] ?? 'N/A';
-            final earnings = driverData['earnings'] ?? 0.0;
-
-            return ListView(
+          return Padding(
+            padding: EdgeInsets.fromLTRB(
+                20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                /// 🔹 DRIVER INFO CARD (UNCHANGED)
-                Card(
-                  elevation: 3,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 30,
-                              backgroundImage: driverData['driverImage'] != null
-                                  ? NetworkImage(driverData['driverImage'])
-                                  : null,
-                              child: driverData['driverImage'] == null
-                                  ? const Icon(Icons.person)
-                                  : null,
-                            ),
-                            const SizedBox(width: 12),
-                            Text(
-                              driverData['name'] ?? '',
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Container(
-                              width: 50,
-                              height: 50,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(8),
-                                color: Colors.grey.shade200,
-                                image: driverData['vehicleImage'] != null
-                                    ? DecorationImage(
-                                        image: NetworkImage(
-                                            driverData['vehicleImage']),
-                                        fit: BoxFit.cover,
-                                      )
-                                    : null,
-                              ),
-                              child: driverData['vehicleImage'] == null
-                                  ? const Icon(Icons.directions_bus)
-                                  : null,
-                            ),
-                            const SizedBox(width: 12),
-                            Text(
-                              driverData['vehicleName'] ?? '',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            const Text("Total Earnings: "),
-                            Text(
-                              "₦$earnings",
-                              style: const TextStyle(
-                                color: Colors.green,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                Text("Select Route",
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+
+                /// Institution
+                DropdownButtonFormField<String>(
+                  hint: Text("Institution"),
+                  value: selectedInstitution,
+                  items: institutions
+                      .map((e) => DropdownMenuItem<String>(
+                            value: e['name'],
+                            child: Text(e['name']),
+                          ))
+                      .toList(),
+                  onChanged: (v) {
+                    setModalState(() {
+                      selectedInstitution = v;
+                      pickup = null;
+                      destination = null;
+                    });
+                  },
+                ),
+
+                /// Pickup
+                DropdownButtonFormField<String>(
+                  hint: Text("Pickup"),
+                  value: pickup,
+                  items: locations
+                      .map((e) => DropdownMenuItem<String>(
+                            value: e,
+                            child: Text(e),
+                          ))
+                      .toList(),
+                  onChanged: (v) => setModalState(() => pickup = v),
+                ),
+
+                /// Destination
+                DropdownButtonFormField<String>(
+                  hint: Text("Destination"),
+                  value: destination,
+                  items: locations
+                      .map((e) => DropdownMenuItem<String>(
+                            value: e,
+                            child: Text(e),
+                          ))
+                      .toList(),
+                  onChanged: (v) => setModalState(() => destination = v),
+                ),
+
+                /// 💰 PRICE INPUT
+                TextField(
+                  controller: priceController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    hintText: "Enter Price",
                   ),
                 ),
 
-                const SizedBox(height: 16),
+                SizedBox(height: 20),
 
-                /// 🔹 BUS SESSION CARD (UNCHANGED UI)
+                ElevatedButton(
+                  onPressed: () async {
+                    if (selectedInstitution == null ||
+                        pickup == null ||
+                        destination == null ||
+                        priceController.text.isEmpty) return;
+
+                    await FirebaseFirestore.instance
+                        .collection("shuttle_drivers")
+                        .doc(user!.uid)
+                        .update({
+                      "status": "online",
+                      "activeInstitution": selectedInstitution,
+                      "pickupLocation": pickup,
+                      "destinationLocation": destination,
+                      "price": int.parse(priceController.text),
+
+                      /// reset trip stats
+                      "boardedPassengers": 0,
+                      "amountCollected": 0,
+                      "timestamp": FieldValue.serverTimestamp(),
+                    });
+
+                    Navigator.pop(context);
+                  },
+                  child: Text("Go Online"),
+                )
+              ],
+            ),
+          );
+        });
+      },
+    );
+  }
+
+  void goOffline() async {
+    await FirebaseFirestore.instance
+        .collection("shuttle_drivers")
+        .doc(user!.uid)
+        .update({
+      "status": "offline",
+      "activeInstitution": null,
+      "pickupLocation": null,
+      "destinationLocation": null,
+    });
+  }
+
+  Future<void> departTrip(Map<String, dynamic> data) async {
+    final driverRef =
+        FirebaseFirestore.instance.collection("shuttle_drivers").doc(user!.uid);
+
+    /// Save to history
+    await FirebaseFirestore.instance.collection("shuttle_departures").add({
+      "driverId": user!.uid,
+      "name": data['name'],
+      "vehicleName": data['vehicleName'],
+      "institution": data['activeInstitution'],
+      "pickup": data['pickupLocation'],
+      "destination": data['destinationLocation'],
+      "price": data['price'],
+      "passengers": data['boardedPassengers'],
+      "capacity": data['vehicleCapacity'],
+      "amount": data['amountCollected'],
+      "departedAt": FieldValue.serverTimestamp(),
+    });
+
+    /// Reset driver
+    await driverRef.update({
+      "status": "offline",
+      "activeInstitution": null,
+      "pickupLocation": null,
+      "destinationLocation": null,
+      "boardedPassengers": 0,
+      "amountCollected": 0,
+    });
+  }
+
+  /// ================= BUILD =================
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text("Driver Dashboard")),
+      body: StreamBuilder<DocumentSnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection("shuttle_drivers")
+            .doc(user!.uid)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData)
+            return Center(child: CircularProgressIndicator());
+
+          final data = snapshot.data!.data() as Map<String, dynamic>;
+
+          return ListView(
+            padding: EdgeInsets.all(16),
+            children: [
+              /// ONLINE SWITCH
+              SwitchListTile(
+                value: data['status'] == "online",
+                title: Text("Go Online"),
+                onChanged: (value) {
+                  if (value) {
+                    openRouteSelector();
+                  } else {
+                    goOffline();
+                  }
+                },
+              ),
+
+              /// ACTIVE ROUTE DISPLAY
+              if (data['status'] == "online")
                 Card(
-                  elevation: 3,
                   child: Padding(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(12),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              "Shuttle Bus",
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
-                            Text(
-                              driverCode,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Card(
-                                color: Colors.grey.shade200,
-                                child: Padding(
-                                  padding: const EdgeInsets.all(8),
-                                  child: Center(
-                                    child: Text("Capacity: $totalCapacity"),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Card(
-                                color: Colors.grey.shade200,
-                                child: Padding(
-                                  padding: const EdgeInsets.all(8),
-                                  child:
-                                      Center(child: Text("Boarded: $boarded")),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        LinearProgressIndicator(
-                          value:
-                              totalCapacity == 0 ? 0 : boarded / totalCapacity,
-                        ),
-                        const SizedBox(height: 8),
-                        GestureDetector(
-                          onTap: _showBoardedPassengers,
-                          child: const Text(
-                            "View passengers",
-                            style: TextStyle(
-                              color: Colors.blue,
-                              decoration: TextDecoration.underline,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
                         Text(
-                          "Amount: ₦$amountCollected",
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
+                          data['activeInstitution'] ?? "",
+                          style: TextStyle(fontWeight: FontWeight.bold),
                         ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed: boarded > 0 ? () => departBus() : null,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.black,
-                            ),
-                            child: const Text("Depart"),
-                          ),
+
+                        SizedBox(height: 5),
+
+                        Text(
+                          "${data['pickupLocation']} → ${data['destinationLocation']}",
                         ),
+
+                        SizedBox(height: 10),
+
+                        /// 🧍 Capacity
+                        Text(
+                          "Passengers: ${data['boardedPassengers']} / ${data['vehicleCapacity']}",
+                        ),
+
+                        /// 💰 Earnings
+                        Text(
+                          "Amount: ₦${data['amountCollected']}",
+                        ),
+
+                        SizedBox(height: 10),
+
+                        /// 🚀 DEPART BUTTON
+                        ElevatedButton(
+                          onPressed: () async {
+                            await departTrip(data);
+                          },
+                          child: Text("Depart"),
+                        )
                       ],
                     ),
                   ),
                 ),
+              SizedBox(height: 20),
 
-                const SizedBox(height: 16),
+              Text("Driver: ${data['name']}"),
+              Text("Vehicle: ${data['vehicleName']}"),
+              SizedBox(height: 20),
 
-                /// 🔹 DEPARTURE HISTORY (UNCHANGED)
-                const Text(
-                  "Departure History",
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                StreamBuilder<QuerySnapshot>(
-                  stream: FirebaseFirestore.instance
-                      .collection("shuttle_departures")
-                      .where("driverId", isEqualTo: user!.uid)
-                      //.orderBy("timestamp", descending: true)
-                      .snapshots(),
-                  builder: (context, snapshot) {
-                    if (!snapshot.hasData) return const SizedBox();
-                    final departures = snapshot.data!.docs;
-                    if (departures.isEmpty) {
-                      return const Text("No departures yet.");
-                    }
-                    return Column(
-                      children: departures.map((doc) {
-                        final data = doc.data() as Map<String, dynamic>;
-                        final ts =
-                            (data['timestamp'] as Timestamp?)?.toDate() ??
-                                DateTime.now();
-                        return Card(
-                          child: ListTile(
-                            title: Text(
-                              "${data['driverName']} - ${data['ticketIds'].length} boarded",
-                            ),
-                            subtitle: Text(
-                              "Amount: ₦${data['amountCollected']} | $ts",
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    );
-                  },
-                ),
-              ],
-            );
-          },
-        ),
+              Text("Trip History",
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+
+              StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection("shuttle_departures")
+                    .where("driverId", isEqualTo: user!.uid)
+                    .orderBy("departedAt", descending: true)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) return SizedBox();
+
+                  return Column(
+                    children: snapshot.data!.docs.map((doc) {
+                      final d = doc.data() as Map<String, dynamic>;
+
+                      return Card(
+                        child: ListTile(
+                          title: Text("${d['pickup']} → ${d['destination']}"),
+                          subtitle: Text(
+                              "Passengers: ${d['passengers']} | ₦${d['amount']}"),
+                        ),
+                      );
+                    }).toList(),
+                  );
+                },
+              )
+            ],
+          );
+        },
       ),
     );
   }
@@ -18679,7 +19878,7 @@ class EarnPage extends StatelessWidget {
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                      builder: (_) => const TransportDriverPage()),
+                      builder: (_) => const LogisticsAdminDashboard()),
                 ),
                 imagePaths: [
                   'assets/images/bus (2).png',
@@ -18898,6 +20097,20 @@ class _supportState extends State<support> {
         ),
       ),
     );
+  }
+}
+
+class profile extends StatefulWidget {
+  const profile({Key? key}) : super(key: key);
+
+  @override
+  State<profile> createState() => _profileState();
+}
+
+class _profileState extends State<profile> {
+  @override
+  Widget build(BuildContext context) {
+    return const Placeholder();
   }
 }
 

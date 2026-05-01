@@ -112,6 +112,7 @@ flutter:
     - assets/images/bibimbap.png
     - assets/images/up-right.png
     - assets/images/left-and-right-arrows.png
+    - assets/images/plane.png
 
 
 # ✅ MUST stay at root level
