@@ -4524,7 +4524,7 @@ class _DashboardPageState extends State<DashboardPage> {
                               context,
                               MaterialPageRoute(
                                   builder: (_) => const ShoppingSectionPage())),
-                          Colors.brown),
+                          Colors.red),
                     ],
                   ),
 
