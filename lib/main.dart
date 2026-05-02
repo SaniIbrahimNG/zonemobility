@@ -14321,7 +14321,7 @@ class _LogisticsPageState extends State<LogisticsPage> {
             /// 🔹 Tabs (Pending / Completed)
             StreamBuilder<QuerySnapshot>(
               stream: _userLogisticsRequests(),
-              builder: (context, snapshot) { 
+              builder: (context, snapshot) {
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                   return const Center(child: Text("No activity here"));
                 }
