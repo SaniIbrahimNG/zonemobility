@@ -240,7 +240,7 @@ class _LoginPageState extends State<LoginPage> {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (context) => HomePage(userName: displayName),
+            builder: (context) => DashboardPage(userName: displayName),
           ),
         );
       }
@@ -559,175 +559,162 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  void _onBottomNavTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
-
-  // Getter to rebuild rides page reactively
-  Widget get _ridesPage => SafeArea(
-        child: Stack(
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+        backgroundColor: Colors.white,
+        body: Stack(
           children: [
-            userLocation != null
-                ? GoogleMap(
-                    onMapCreated: (controller) {
-                      _mapController = controller;
-                    },
-                    initialCameraPosition:
-                        CameraPosition(target: userLocation!, zoom: 16),
-                    markers: _markers,
-                    myLocationEnabled: true,
-                    myLocationButtonEnabled: true,
-                  )
-                : const Center(child: CircularProgressIndicator()),
+            // MAP (bottom)
+            if (userLocation != null)
+              GoogleMap(
+                initialCameraPosition: CameraPosition(
+                  target: userLocation!,
+                  zoom: 15,
+                ),
+                myLocationEnabled: true,
+                myLocationButtonEnabled: true,
+                markers: _markers,
+                onMapCreated: (controller) {
+                  _mapController = controller;
+                },
+              )
+            else
+              const Center(child: CircularProgressIndicator()),
+
+            // INPUT CARD
             Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
+              top: 50,
+              left: 16,
+              right: 16,
               child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(18),
-                    topRight: Radius.circular(18),
-                  ),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.95),
+                  borderRadius: BorderRadius.circular(15),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black12,
+                      color: Colors.black.withOpacity(0.1),
                       blurRadius: 10,
-                      offset: Offset(0, -2),
-                    ),
+                      offset: const Offset(0, 4),
+                    )
                   ],
                 ),
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
                   children: [
                     TextField(
                       controller: _pickupController,
-                      focusNode: _pickupFocusNode,
-                      decoration: InputDecoration(
-                        hintText: 'Enter Pickup Location',
-                        filled: true,
-                        fillColor: Colors.grey[100],
-                        prefixIcon: Icon(Icons.radio_button_checked,
-                            color: Colors.grey[800]),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
-                        ),
+                      decoration: const InputDecoration(
+                        hintText: "Pickup location",
+                        prefixIcon: Icon(Icons.my_location),
+                        border: InputBorder.none,
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const Divider(height: 1),
                     TextField(
                       controller: _destinationController,
-                      focusNode: _destinationFocusNode,
-                      decoration: InputDecoration(
-                        hintText: 'Enter Destination',
-                        filled: true,
-                        fillColor: Colors.grey[100],
-                        prefixIcon:
-                            Icon(Icons.location_on, color: Colors.green[800]),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    ElevatedButton(
-                      onPressed: () {
-                        if (_destinationController.text.trim().isEmpty) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content:
-                                    Text("Please Enter Your Destination!")),
-                          );
-                          return;
-                        }
-                        showModalBottomSheet(
-                          context: context,
-                          isScrollControlled: true,
-                          backgroundColor: Colors.transparent,
-                          builder: (context) =>
-                              RidePage(onSelect: _handleRideSelection),
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        minimumSize: const Size.fromHeight(50),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                      ),
-                      child: const Text(
-                        'Book Ride',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
+                      decoration: const InputDecoration(
+                        hintText: "Where to?",
+                        prefixIcon: Icon(Icons.location_on),
+                        border: InputBorder.none,
                       ),
                     ),
                   ],
                 ),
               ),
             ),
-          ],
-        ),
-      );
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: [
-          DashboardPage(
-            userName: widget.userName,
-            onTabSelected: _onBottomNavTapped,
-          ),
+            // DRIVERS INFO
+            Positioned(
+              bottom: 120,
+              left: 16,
+              right: 16,
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(15),
+                  boxShadow: [
+                    BoxShadow(
+                        color: Colors.black.withOpacity(0.1), blurRadius: 10),
+                  ],
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text("Nearby Drivers",
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    Text("${nearbyDrivers.length}",
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, color: Colors.green)),
+                  ],
+                ),
+              ),
+            ),
 
-          UserOrdersListPage(), // 🔁 replaced _ridesPage
-          const support(), // 🔁 replaced LogisticsPage
-          const profile(), // 🔁 replaced TransportPage
-        ],
-      ),
-      bottomNavigationBar: SizedBox(
-        height: 70, // 👈 increase this (default is ~56–60)
-        child: BottomNavigationBar(
-          backgroundColor: Colors.white,
-          currentIndex: _selectedIndex,
-          onTap: _onBottomNavTapped,
-          selectedItemColor: Colors.black,
-          unselectedItemColor: Colors.grey,
-          type: BottomNavigationBarType.fixed,
-          items: [
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.home_rounded),
-              label: 'Home',
+            // RIDE BUTTONS
+            Positioned(
+              bottom: 20,
+              left: 16,
+              right: 16,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => _handleRideSelection("economy"),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: const Text("Economy",
+                          style: TextStyle(color: Colors.white)),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => _handleRideSelection("premium"),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: const Text("Premium",
+                          style: TextStyle(color: Colors.white)),
+                    ),
+                  ),
+                ],
+              ),
             ),
-            BottomNavigationBarItem(
-              icon:
-                  Image.asset('assets/images/taxi.png', width: 25, height: 25),
-              label: 'Orders',
-            ),
-            BottomNavigationBarItem(
-              icon: Image.asset('assets/images/package.png',
-                  width: 22, height: 22),
-              label: 'Support',
-            ),
-            BottomNavigationBarItem(
-              icon: Image.asset('assets/images/shuttle-service.png',
-                  width: 22, height: 22),
-              label: 'Profile',
+
+            // 🔥 BACK BUTTON (MUST BE LAST)
+            Positioned(
+              top: 50,
+              left: 16,
+              child: GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 8,
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.arrow_back_ios_new,
+                    size: 18,
+                    color: Colors.black,
+                  ),
+                ),
+              ),
             ),
           ],
-        ),
-      ),
-    );
+        ));
   }
 }
 
@@ -3447,12 +3434,10 @@ const String googleApiKey = "AIzaSyAxmD8Gvtn1KGomBFy3pWXRFgvw0c4a-48";
 
 class DashboardPage extends StatefulWidget {
   final String userName;
-  final Function(int) onTabSelected;
 
   const DashboardPage({
     super.key,
     required this.userName,
-    required this.onTabSelected,
   });
 
   @override
@@ -3460,6 +3445,7 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage> {
+  int _selectedIndex = 0;
   String address = "Fetching location...";
   bool isLoadingLocation = true;
   bool locationFailed = false;
@@ -4396,147 +4382,255 @@ class _DashboardPageState extends State<DashboardPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: Column(
+      body: IndexedStack(
+        index: _selectedIndex,
         children: [
-          // ==================== STATIC HEADER (Location + Notification) ====================
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
+          _homeTab(), // 👈 your current dashboard UI
+          UserOrdersListPage(),
+          const support(),
+          const profile(),
+        ],
+      ),
+      bottomNavigationBar: Padding(
+        padding: const EdgeInsets.fromLTRB(
+            12, 0, 12, 12), // 👈 space around (floating look)
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(22),
+          child: Container(
+            height: 70,
+            decoration: BoxDecoration(
               color: Colors.white,
+              borderRadius: BorderRadius.circular(22),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.08),
+                  blurRadius: 12,
+                  offset: const Offset(0, -2),
+                ),
+              ],
             ),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Expanded(
+            child: BottomNavigationBar(
+              backgroundColor: Colors.transparent, // 👈 MUST be transparent
+              elevation: 0,
+              currentIndex: _selectedIndex,
+              onTap: (index) {
+                setState(() {
+                  _selectedIndex = index;
+                });
+              },
+              selectedItemColor: Colors.black,
+              unselectedItemColor: Colors.grey,
+              type: BottomNavigationBarType.fixed,
+              items: [
+                BottomNavigationBarItem(
+                  icon: Image.asset(
+                    'assets/images/home.png',
+                    width: 25,
+                    height: 25,
+                  ),
+                  label: 'Home',
+                ),
+                BottomNavigationBarItem(
+                  icon: Image.asset(
+                    'assets/images/clipboard.png',
+                    width: 25,
+                    height: 25,
+                  ),
+                  label: 'Orders',
+                ),
+                BottomNavigationBarItem(
+                  icon: Image.asset(
+                    'assets/images/support.png',
+                    width: 22,
+                    height: 22,
+                  ),
+                  label: 'Support',
+                ),
+                BottomNavigationBarItem(
+                  icon: Image.asset(
+                    'assets/images/user-image-with-black-background.png',
+                    width: 22,
+                    height: 22,
+                  ),
+                  label: 'Profile',
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _homeTab() {
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+          ),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(
                       child: GestureDetector(
-                        onTap: openLocationModal,
-                        child: Row(
-                          children: [
-                            Icon(Icons.location_on,
-                                size: 18, color: Colors.green[500]),
-                            const SizedBox(width: 6),
-                            Flexible(
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      isLoadingLocation
-                                          ? "Fetching location..."
-                                          : address,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(fontSize: 14),
-                                    ),
-                                  ),
-                                  const Icon(Icons.keyboard_arrow_down,
-                                      size: 18),
-                                ],
-                              ),
-                            ),
-                          ],
+                    onTap: openLocationModal,
+                    child: Container(
+                      height: 45,
+                      width: 250,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.transparent,
+                        borderRadius: BorderRadius.circular(25),
+                        border: Border.all(
+                          color: Color(0xff070303),
+                          width: 0.2,
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    GestureDetector(
-                      onTap: () => openMenu(context),
-                      child: Container(
-                        height: 35,
-                        width: 35,
-                        decoration: BoxDecoration(
-                            color: Colors.grey[100], shape: BoxShape.circle),
-                        child: const Icon(Icons.notifications_none,
-                            color: Colors.black),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.location_on,
+                            size: 18,
+                            color: Colors.green[500],
+                          ),
+                          const SizedBox(width: 6),
+
+                          /// This Expanded is VERY important
+                          Expanded(
+                            child: Row(
+                              children: [
+                                /// Address text
+                                Expanded(
+                                  child: Text(
+                                    isLoadingLocation
+                                        ? "Fetching location..."
+                                        : address,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ),
+
+                                /// Dropdown icon (won’t get pushed out)
+                                const Icon(
+                                  Icons.keyboard_arrow_down,
+                                  size: 18,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                    )
-                  ],
-                ),
+                    ),
+                  )),
+                  const SizedBox(width: 10),
+                  GestureDetector(
+                    onTap: () => openMenu(context),
+                    child: Container(
+                      height: 35,
+                      width: 35,
+                      decoration: BoxDecoration(
+                          color: Colors.grey[100], shape: BoxShape.circle),
+                      child: const Icon(Icons.notifications_none,
+                          color: Colors.black),
+                    ),
+                  )
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Text('Hello ,', style: GoogleFonts.caveat(fontSize: 15)),
+                  const SizedBox(width: 8),
+                  Text('${widget.userName} 👋',
+                      style: GoogleFonts.caveat(
+                          fontWeight: FontWeight.bold, fontSize: 15)),
+                ],
+              ),
+            ],
+          ),
+        ),
+
+        // ==================== SCROLLABLE CONTENT ====================
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                const AutoScrollingBanners(),
                 const SizedBox(height: 10),
-                Row(
+
+                // Services Grid
+                GridView.count(
+                  shrinkWrap: true,
+                  crossAxisCount: 3,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 8,
+                  physics: const NeverScrollableScrollPhysics(),
                   children: [
-                    Text('Hello ,', style: GoogleFonts.caveat(fontSize: 15)),
-                    const SizedBox(width: 8),
-                    Text('${widget.userName} 👋',
-                        style: GoogleFonts.caveat(
-                            fontWeight: FontWeight.bold, fontSize: 15)),
+                    _serviceCard(
+                        'assets/images/cab (1).png',
+                        "Rides",
+                        () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    HomePage(userName: widget.userName),
+                              ),
+                            ),
+                        Colors.blue),
+                    _serviceCard(
+                        'assets/images/package (2).png',
+                        "Logistics",
+                        () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const LogisticsPage())),
+                        Colors.orange),
+                    _serviceCard(
+                        'assets/images/shuttle-bus.png',
+                        "Transport",
+                        () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const TransportPage())),
+                        Colors.purple),
+                    _serviceCard(
+                        'assets/images/delivery-man.png',
+                        "Food",
+                        () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => FoodSectionPage())),
+                        Colors.green),
+                    _serviceCard(
+                        'assets/images/school-bus.png',
+                        "Shuttle",
+                        () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => ShuttleBookingPage())),
+                        Colors.teal),
+                    _serviceCard(
+                        'assets/images/shopping-cart.png',
+                        "Shop",
+                        () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const ShoppingSectionPage())),
+                        Colors.red),
                   ],
                 ),
               ],
             ),
           ),
-
-          // ==================== SCROLLABLE CONTENT ====================
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  const AutoScrollingBanners(),
-                  const SizedBox(height: 10),
-
-                  // Services Grid
-                  GridView.count(
-                    shrinkWrap: true,
-                    crossAxisCount: 3,
-                    crossAxisSpacing: 8,
-                    mainAxisSpacing: 8,
-                    physics: const NeverScrollableScrollPhysics(),
-                    children: [
-                      _serviceCard('assets/images/cab (1).png', "Rides",
-                          () => widget.onTabSelected(1), Colors.blue),
-                      _serviceCard(
-                          'assets/images/package (2).png',
-                          "Logistics",
-                          () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) => const LogisticsPage())),
-                          Colors.orange),
-                      _serviceCard(
-                          'assets/images/shuttle-bus.png',
-                          "Transport",
-                          () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) => const TransportPage())),
-                          Colors.purple),
-                      _serviceCard(
-                          'assets/images/delivery-man.png',
-                          "Food",
-                          () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) => FoodSectionPage())),
-                          Colors.green),
-                      _serviceCard(
-                          'assets/images/school-bus.png',
-                          "Shuttle",
-                          () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) => ShuttleBookingPage())),
-                          Colors.teal),
-                      _serviceCard(
-                          'assets/images/shopping-cart.png',
-                          "Shop",
-                          () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) => const ShoppingSectionPage())),
-                          Colors.red),
-                    ],
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  const SizedBox(height: 10),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -14367,7 +14461,7 @@ class _LogisticsPageState extends State<LogisticsPage> {
                     }).map((doc) {
                       final data = doc.data() as Map<String, dynamic>;
                       final packageName = data['packageName'] ?? '';
-                      final price = data['proposedCost'] ?? '';
+                      final price = data['price'] ?? '';
                       final status = data['status'] ?? '';
                       final createdAt =
                           (data['createdAt'] as Timestamp).toDate();
@@ -16997,11 +17091,76 @@ class DeliveryAgentPage extends StatelessWidget {
       'assignedAt': FieldValue.serverTimestamp(),
     });
 
+    // IMPORTANT: ensure navigation works properly
+    if (!context.mounted) return;
+
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => LogisticsDeliveryPage(requestId: requestId),
+        builder: (_) => LogisticsDeliveryPage(requestId: requestId),
       ),
+    );
+  }
+
+  Widget _buildOrdersStream(
+    BuildContext context, {
+    required String status,
+    required User currentUser,
+    bool showAccept = false,
+  }) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('logistics_requests')
+          .where('status', isEqualTo: status)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final docs = snapshot.data!.docs;
+
+        if (docs.isEmpty) {
+          return const Center(child: Text("No orders found"));
+        }
+
+        return ListView.builder(
+          itemCount: docs.length,
+          itemBuilder: (context, index) {
+            final doc = docs[index];
+            final data = doc.data() as Map<String, dynamic>;
+
+            return Card(
+              margin: const EdgeInsets.all(12),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(data['packageName'] ?? '',
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    Text("Pickup: ${data['pickupAddress'] ?? ''}"),
+                    Text("Delivery: ${data['deliveryAddress'] ?? ''}"),
+                    Text("Price: ₦${data['price'] ?? 0}"),
+                    const SizedBox(height: 10),
+                    if (showAccept)
+                      ElevatedButton(
+                        onPressed: () async {
+                          await acceptRequest(context, doc.id);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.black,
+                        ),
+                        child: const Text("Accept Order"),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -17018,276 +17177,156 @@ class DeliveryAgentPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final currentUser = FirebaseAuth.instance.currentUser;
 
-    return Scaffold(
-      appBar: AppBar(
-        //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
+    return DefaultTabController(
+      length: 3,
+      child: Scaffold(
         backgroundColor: Colors.white,
-        elevation: 0,
-
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 10),
-          child: GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              width: 25,
-              height: 25,
-              decoration: BoxDecoration(
-                color: Colors.grey[100], // ✅ grey 50 look
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.arrow_back_ios,
-                size: 14,
-                color: Colors.black,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          leading: Padding(
+            padding: const EdgeInsets.only(left: 10),
+            child: GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.arrow_back_ios, size: 14),
               ),
             ),
           ),
-        ),
-
-        title: const Padding(
-          padding: EdgeInsets.only(left: 8), // ✅ spacing from icon
-          child: Text(
-            'Partner',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: Colors.black,
-            ),
+          title: const Text(
+            "Partner",
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+          ),
+          bottom: const TabBar(
+            labelColor: Colors.black,
+            indicatorColor: Colors.black,
+            tabs: [
+              Tab(text: "New"),
+              Tab(text: "Pending"),
+              Tab(text: "Completed"),
+            ],
           ),
         ),
-      ),
-      // Wrap Column in a Container with white background
-      body: Container(
-        color: Colors.white,
-        child: Column(
-          children: [
-            // 🔝 Driver Overview Card
-            if (currentUser != null)
-              StreamBuilder<DocumentSnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection('Drivers')
-                    .doc(currentUser.uid)
-                    .snapshots(),
-                builder: (context, driverSnapshot) {
-                  if (!driverSnapshot.hasData) {
-                    return const SizedBox(
-                        height: 120,
-                        child: Center(child: CircularProgressIndicator()));
-                  }
-                  final driverData =
-                      driverSnapshot.data!.data() as Map<String, dynamic>? ??
-                          {};
-
-                  return StreamBuilder<QuerySnapshot>(
+        body: currentUser == null
+            ? const Center(child: Text("Not logged in"))
+            : Column(
+                children: [
+                  // ================= DRIVER STATS =================
+                  StreamBuilder<DocumentSnapshot>(
                     stream: FirebaseFirestore.instance
-                        .collection('logistics_requests')
-                        .where('assignedAgent', isEqualTo: currentUser.uid)
+                        .collection('Drivers')
+                        .doc(currentUser.uid)
                         .snapshots(),
-                    builder: (context, requestSnapshot) {
-                      int totalDeliveries = 0;
-                      double totalEarnings = 0;
-
-                      if (requestSnapshot.hasData) {
-                        final docs = requestSnapshot.data!.docs;
-                        totalDeliveries = docs.length;
-                        totalEarnings = docs.fold(
-                          0,
-                          (sum, doc) =>
-                              sum +
-                              (doc['price'] != null
-                                  ? double.tryParse(doc['price'].toString()) ??
-                                      0
-                                  : 0),
+                    builder: (context, driverSnapshot) {
+                      if (!driverSnapshot.hasData) {
+                        return const SizedBox(
+                          height: 120,
+                          child: Center(child: CircularProgressIndicator()),
                         );
                       }
 
-                      return Column(
-                        children: [
-                          Card(
+                      final driverData = driverSnapshot.data!.data()
+                              as Map<String, dynamic>? ??
+                          {};
+
+                      return StreamBuilder<QuerySnapshot>(
+                        stream: FirebaseFirestore.instance
+                            .collection('logistics_requests')
+                            .where('assignedAgent', isEqualTo: currentUser.uid)
+                            .snapshots(),
+                        builder: (context, requestSnapshot) {
+                          int totalDeliveries = 0;
+                          double totalEarnings = 0;
+
+                          if (requestSnapshot.hasData) {
+                            final docs = requestSnapshot.data!.docs;
+                            totalDeliveries = docs.length;
+
+                            for (var doc in docs) {
+                              final data = doc.data() as Map<String, dynamic>;
+                              totalEarnings += double.tryParse(
+                                      data['price']?.toString() ?? '0') ??
+                                  0;
+                            }
+                          }
+
+                          return Card(
                             margin: const EdgeInsets.all(16),
                             shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16)),
-                            elevation: 6,
-                            color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
                             child: Padding(
-                              padding: const EdgeInsets.all(16.0),
+                              padding: const EdgeInsets.all(16),
                               child: Row(
                                 children: [
-                                  // Driver image
                                   CircleAvatar(
-                                    radius: 40,
-                                    backgroundColor: Colors.grey[300],
+                                    radius: 35,
                                     backgroundImage: driverData['photoUrl'] !=
                                             null
                                         ? NetworkImage(driverData['photoUrl'])
                                         : null,
                                     child: driverData['photoUrl'] == null
-                                        ? const Icon(Icons.person, size: 40)
+                                        ? const Icon(Icons.person)
                                         : null,
                                   ),
-                                  const SizedBox(width: 20),
-                                  // Name + stats
+                                  const SizedBox(width: 15),
                                   Expanded(
                                     child: Column(
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          driverData['name'] ?? 'Unknown',
+                                          driverData['name'] ?? "Driver",
                                           style: const TextStyle(
-                                              fontSize: 20,
-                                              fontWeight: FontWeight.bold),
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                          ),
                                         ),
-                                        const SizedBox(height: 12),
-                                        Row(
-                                          children: [
-                                            Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                const Text("Total Deliveries",
-                                                    style: TextStyle(
-                                                        fontSize: 12,
-                                                        color: Colors.black54)),
-                                                Text("$totalDeliveries",
-                                                    style: const TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        fontSize: 16)),
-                                              ],
-                                            ),
-                                            const SizedBox(width: 30),
-                                            Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                const Text("Total Earnings",
-                                                    style: TextStyle(
-                                                        fontSize: 12,
-                                                        color: Colors.black54)),
-                                                Text(
-                                                    formatCurrency(
-                                                        totalEarnings),
-                                                    style: const TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        fontSize: 16)),
-                                              ],
-                                            ),
-                                          ],
-                                        )
+                                        const SizedBox(height: 10),
+                                        Text("Deliveries: $totalDeliveries"),
+                                        Text(
+                                            "Earnings: ₦${totalEarnings.toStringAsFixed(0)}"),
                                       ],
                                     ),
-                                  )
+                                  ),
                                 ],
                               ),
                             ),
-                          ),
-                          // ✅ Manage Deliveries Button
-                          Padding(
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 16.0),
-                            child: SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton(
-                                onPressed: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) =>
-                                          const DriverDeliveriesPage(),
-                                    ),
-                                  );
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.black,
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 16),
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12)),
-                                ),
-                                child: const Text(
-                                  "Manage Deliveries",
-                                  style: TextStyle(
-                                      fontSize: 16, color: Colors.white),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
+                          );
+                        },
                       );
                     },
-                  );
-                },
-              ),
+                  ),
 
-            // Expanded list of pending requests
-            Expanded(
-              child: StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection('logistics_requests')
-                    .where('status', isEqualTo: 'pending')
-                    .snapshots(),
-                builder: (context, snapshot) {
-                  if (snapshot.hasError) {
-                    return const Center(child: Text("Error loading requests"));
-                  }
-                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                    return const Center(child: Text("No pending requests"));
-                  }
-
-                  final requests = snapshot.data!.docs;
-
-                  return ListView.builder(
-                    itemCount: requests.length,
-                    itemBuilder: (context, index) {
-                      final doc = requests[index];
-                      final data = doc.data() as Map<String, dynamic>? ?? {};
-
-                      return Card(
-                        margin: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 10),
-                        elevation: 3,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                  // ================= TABS =================
+                  Expanded(
+                    child: TabBarView(
+                      children: [
+                        _buildOrdersStream(
+                          context,
+                          status: 'pending',
+                          showAccept: true,
+                          currentUser: currentUser,
                         ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text("Package: ${data['packageName'] ?? 'N/A'}",
-                                  style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold)),
-                              const SizedBox(height: 8),
-                              Text("Category: ${data['category'] ?? 'N/A'}"),
-                              Text("Pickup: ${data['pickupAddress'] ?? 'N/A'}"),
-                              Text(
-                                  "Delivery: ${data['deliveryAddress'] ?? 'N/A'}"),
-                              Text(
-                                  "Receiver: ${data['receiverName'] ?? 'N/A'} (${data['receiverContact'] ?? 'N/A'})"),
-                              const SizedBox(height: 12),
-                              ElevatedButton.icon(
-                                onPressed: () => acceptRequest(context, doc.id),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.black,
-                                ),
-                                icon: const Icon(Icons.check),
-                                label: const Text("Accept & Set Price",
-                                    style: TextStyle(color: Colors.white)),
-                              ),
-                            ],
-                          ),
+                        _buildOrdersStream(
+                          context,
+                          status: 'accepted',
+                          currentUser: currentUser,
                         ),
-                      );
-                    },
-                  );
-                },
+                        _buildOrdersStream(
+                          context,
+                          status: 'completed',
+                          currentUser: currentUser,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
-        ),
       ),
     );
   }

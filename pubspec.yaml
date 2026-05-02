@@ -113,6 +113,10 @@ flutter:
     - assets/images/up-right.png
     - assets/images/left-and-right-arrows.png
     - assets/images/plane.png
+    - assets/images/user-image-with-black-background.png
+    - assets/images/support.png
+    - assets/images/home.png
+    - assets/images/clipboard.png
 
 
 # ✅ MUST stay at root level
