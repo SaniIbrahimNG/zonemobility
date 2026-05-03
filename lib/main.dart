@@ -4389,8 +4389,10 @@ class _DashboardPageState extends State<DashboardPage> {
         children: [
           _homeTab(), // 👈 your current dashboard UI
           UserOrdersListPage(),
-          const support(),
-          const profile(),
+          Support(
+            userName: FirebaseAuth.instance.currentUser?.displayName ?? "User",
+          ),
+          Profile(),
         ],
       ),
       bottomNavigationBar: Padding(
@@ -5873,7 +5875,7 @@ class _TransportPageState extends State<TransportPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Colors.grey[100],
       appBar: AppBar(
         //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
@@ -5924,9 +5926,9 @@ class _TransportPageState extends State<TransportPage> {
                 width: 350,
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 decoration: BoxDecoration(
-                  color: Colors.grey[100],
+                  color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey.shade300),
+                  border: Border.all(color: Colors.white),
                 ),
                 child: const TextField(
                   decoration: InputDecoration(
@@ -6011,8 +6013,9 @@ class _TransportPageState extends State<TransportPage> {
                           margin: const EdgeInsets.only(right: 12),
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
+                            color: Colors.white,
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.grey.shade300),
+                            // border: Border.all(color: Colors.white),
                           ),
                           child: Row(
                             children: [
@@ -7511,11 +7514,42 @@ class _TransportTicketPageState extends State<TransportTicketPage> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
+        //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
-        title: const Text("My Ticket",
-            style: TextStyle(color: Colors.black, fontSize: 14)),
-        iconTheme: const IconThemeData(color: Colors.black),
+        scrolledUnderElevation: 0,
+
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 10),
+          child: GestureDetector(
+            onTap: () => Navigator.pop(context),
+            child: Container(
+              width: 25,
+              height: 25,
+              decoration: BoxDecoration(
+                color: Colors.grey[100], // ✅ grey 50 look
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.arrow_back_ios,
+                size: 14,
+                color: Colors.black,
+              ),
+            ),
+          ),
+        ),
+
+        title: const Padding(
+          padding: EdgeInsets.only(left: 8), // ✅ spacing from icon
+          child: Text(
+            '',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: Colors.black,
+            ),
+          ),
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -7600,25 +7634,28 @@ class _TransportTicketPageState extends State<TransportTicketPage> {
                     const SizedBox(height: 12),
 
                     /// ================= STATUS =================
-                    const Text("STATUS",
-                        style: TextStyle(color: Colors.white70, fontSize: 11)),
-
-                    const SizedBox(height: 6),
-
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: ticket["status"] == "cancelled"
-                            ? Colors.red.withOpacity(0.2)
-                            : Colors.green.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        ticket["status"],
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                    ),
+                    Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          const Text("STATUS",
+                              style: TextStyle(
+                                  color: Colors.white70, fontSize: 11)),
+                          const SizedBox(height: 6),
+                          Container(
+                            width: 200,
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: ticket["status"] == "cancelled"
+                                  ? Colors.red.withOpacity(0.2)
+                                  : Colors.green.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              ticket["status"],
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                          ),
+                        ]),
 
                     const SizedBox(height: 20),
 
@@ -7689,7 +7726,10 @@ class _TransportTicketPageState extends State<TransportTicketPage> {
                               borderRadius: BorderRadius.circular(12)),
                         ),
                         onPressed: () {},
-                        child: const Text("Board Ticket"),
+                        child: const Text("Board Ticket",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                            )),
                       ),
                     ),
                   ],
@@ -7710,7 +7750,11 @@ class _TransportTicketPageState extends State<TransportTicketPage> {
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                     onPressed: loadingCancel ? null : _cancelTicket,
-                    child: const Text("Cancel Ticket"),
+                    child: const Text("Cancel Ticket",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        )),
                   ),
                 ),
 
@@ -7724,7 +7768,11 @@ class _TransportTicketPageState extends State<TransportTicketPage> {
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                     onPressed: () {},
-                    child: const Text("Download"),
+                    child: const Text("Download",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        )),
                   ),
                 ),
               ],
@@ -8403,7 +8451,7 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Colors.grey[100],
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
@@ -8437,7 +8485,7 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
             // ── Search Bar ──────────────────────
             Container(
               decoration: BoxDecoration(
-                color: Colors.grey[100],
+                color: Colors.white,
                 borderRadius: BorderRadius.circular(14),
               ),
               child: TextField(
@@ -10694,6 +10742,65 @@ class UserOrdersPage extends StatelessWidget {
 class UserOrdersListPage extends StatelessWidget {
   const UserOrdersListPage({super.key});
 
+  Color getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'pending':
+        return Colors.orange;
+      case 'processing':
+        return Colors.blue;
+      case 'completed':
+        return Colors.green;
+      case 'cancelled':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  Widget buildSkeletonLoader() {
+    return ListView.builder(
+      padding: const EdgeInsets.all(12),
+      itemCount: 6,
+      itemBuilder: (context, index) {
+        return Shimmer.fromColors(
+          baseColor: Colors.grey[300]!,
+          highlightColor: Colors.grey[100]!,
+          child: Card(
+            margin: const EdgeInsets.symmetric(vertical: 6),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(height: 14, width: 150, color: Colors.white),
+                  const SizedBox(height: 8),
+                  Container(height: 12, width: 100, color: Colors.white),
+                  const SizedBox(height: 6),
+                  Container(height: 12, width: 120, color: Colors.white),
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Container(
+                      height: 20,
+                      width: 70,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                  )
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
@@ -10703,44 +10810,6 @@ class UserOrdersListPage extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: AppBar(
-        //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
-        backgroundColor: Colors.white,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 10),
-          child: GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              width: 25,
-              height: 25,
-              decoration: BoxDecoration(
-                color: Colors.grey[100], // ✅ grey 50 look
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.arrow_back_ios,
-                size: 14,
-                color: Colors.black,
-              ),
-            ),
-          ),
-        ),
-
-        title: const Padding(
-          padding: EdgeInsets.only(left: 8), // ✅ spacing from icon
-          child: Text(
-            'My Orders',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: Colors.black,
-            ),
-          ),
-        ),
-      ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('orders')
@@ -10752,7 +10821,7 @@ class UserOrdersListPage extends StatelessWidget {
           }
 
           if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
+            return buildSkeletonLoader();
           }
 
           final orders = snapshot.data!.docs;
@@ -10761,93 +10830,141 @@ class UserOrdersListPage extends StatelessWidget {
             return const Center(child: Text("You have no orders yet"));
           }
 
-          return ListView.builder(
+          return ListView(
             padding: const EdgeInsets.all(12),
-            itemCount: orders.length,
-            itemBuilder: (context, index) {
-              final order = orders[index].data() as Map<String, dynamic>? ?? {};
+            children: [
+              /// 🔥 HEADER
+              const SizedBox(height: 10),
+              const Text(
+                "Order History",
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 18),
 
-              // Handle items as Map or List
-              List<Map<String, dynamic>> items = [];
-              final itemsData = order['items'];
-              if (itemsData is List) {
-                items = List<Map<String, dynamic>>.from(itemsData);
-              } else if (itemsData is Map) {
-                items = itemsData.entries
-                    .map((e) => Map<String, dynamic>.from(e.value as Map))
-                    .toList();
-              }
+              /// 🔥 LIST
+              ...List.generate(orders.length, (index) {
+                final order =
+                    orders[index].data() as Map<String, dynamic>? ?? {};
 
-              double totalPrice = 0;
-              for (var item in items) {
-                final price = item['price'] ?? 0;
-                final qty = item['qty'] ?? 1;
-                totalPrice += (price is num ? price.toDouble() : 0) *
-                    (qty is num ? qty.toDouble() : 1);
-              }
+                // Handle items
+                List<Map<String, dynamic>> items = [];
+                final itemsData = order['items'];
+                if (itemsData is List) {
+                  items = List<Map<String, dynamic>>.from(itemsData);
+                } else if (itemsData is Map) {
+                  items = itemsData.entries
+                      .map((e) => Map<String, dynamic>.from(e.value as Map))
+                      .toList();
+                }
 
-              return GestureDetector(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => UserOrdersPage(orderId: orders[index].id),
-                    ),
-                  );
-                },
-                child: Card(
-                  color: Colors.white,
-                  margin: const EdgeInsets.symmetric(vertical: 6),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  elevation: 3,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "Order : ${orders[index].id}",
-                          style: const TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.bold),
+                double totalPrice = 0;
+                for (var item in items) {
+                  final price = item['price'] ?? 0;
+                  final qty = item['qty'] ?? 1;
+                  totalPrice += (price is num ? price.toDouble() : 0) *
+                      (qty is num ? qty.toDouble() : 1);
+                }
+
+                final status = (order['status'] ?? 'pending').toString();
+                final statusColor = getStatusColor(status);
+
+                return GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              UserOrdersPage(orderId: orders[index].id),
                         ),
-                        const SizedBox(height: 6),
-                        Text(
-                          "Number of items: ${items.length}",
-                          style: const TextStyle(fontSize: 14),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          "Total: ₦${totalPrice.toStringAsFixed(2)}",
-                          style: const TextStyle(
-                              fontSize: 14, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 6),
-                        Row(
+                      );
+                    },
+                    child: Card(
+                      color: Colors.white,
+                      margin: const EdgeInsets.symmetric(vertical: 6),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 2,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Spacer(),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: Colors.grey.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(8),
+                            /// 🔹 ORDER ID
+                            Text(
+                              "Order : ${orders[index].id}",
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
                               ),
-                              child: Text(
-                                " ${order['status'] ?? 'pending'}",
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.deepPurple),
-                              ),
+                            ),
+
+                            /// 🔥 DIVIDER
+                            const SizedBox(height: 6),
+                            Divider(
+                              height: 12,
+                              thickness: 1,
+                              color: Colors.grey.shade200,
+                            ),
+                            const SizedBox(height: 8),
+
+                            /// 🔹 DETAILS ROW
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                /// LEFT SIDE (ITEMS + TOTAL)
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        "Items: ${items.length}",
+                                        style: const TextStyle(fontSize: 13),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        "₦${totalPrice.toStringAsFixed(2)}",
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+
+                                /// 🔹 STATUS (RIGHT)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: statusColor.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    status.toUpperCase(),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: statusColor,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
+                      ),
+                    ));
+              }),
+            ],
           );
         },
       ),
@@ -13144,20 +13261,22 @@ class _RegisterPageState extends State<RegisterPage>
 
   final _formKey = GlobalKey<FormState>();
   bool isLoading = false;
+
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
 
   @override
   void initState() {
     super.initState();
+
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 500),
     );
-    _scaleAnimation = CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.elasticOut,
-    );
+
+    _scaleAnimation =
+        CurvedAnimation(parent: _animationController, curve: Curves.elasticOut);
+
     _animationController.forward();
   }
 
@@ -13173,6 +13292,7 @@ class _RegisterPageState extends State<RegisterPage>
     super.dispose();
   }
 
+  /// ================= SIGN UP =================
   Future<void> SignUp(BuildContext context) async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -13187,20 +13307,38 @@ class _RegisterPageState extends State<RegisterPage>
     );
 
     try {
-      await FirebaseAuth.instance.createUserWithEmailAndPassword(
+      /// 🔥 CREATE AUTH USER
+      UserCredential userCredential =
+          await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: emailController.text.trim(),
         password: passwordController.text.trim(),
       );
 
-      User? user = FirebaseAuth.instance.currentUser;
+      User? user = userCredential.user;
+
       if (user != null) {
-        await user.updateDisplayName(
-            "${firstNameController.text.trim()} ${lastNameController.text.trim()}");
+        final fullName =
+            "${firstNameController.text.trim()} ${lastNameController.text.trim()}";
+
+        /// 🔥 UPDATE DISPLAY NAME
+        await user.updateDisplayName(fullName);
+
+        /// 🔥 SAVE USER TO FIRESTORE
+        await FirebaseFirestore.instance.collection("users").doc(user.uid).set({
+          "uid": user.uid,
+          "firstName": firstNameController.text.trim(),
+          "lastName": lastNameController.text.trim(),
+          "fullName": fullName,
+          "email": emailController.text.trim(),
+          "phone": phoneNumberController.text.trim(),
+          "profileImage": "",
+          "createdAt": FieldValue.serverTimestamp(),
+        });
       }
 
-      Navigator.pop(context); // close loading
+      Navigator.pop(context); // close loader
 
-      // Show success dialog with animation
+      /// 🔥 SUCCESS DIALOG
       await showGeneralDialog(
         context: context,
         barrierDismissible: false,
@@ -13236,9 +13374,6 @@ class _RegisterPageState extends State<RegisterPage>
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.black,
                       foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
                     ),
                     child: const Text('Login'),
                   )
@@ -13248,10 +13383,9 @@ class _RegisterPageState extends State<RegisterPage>
           );
         },
       );
-
-      _animationController.forward();
     } catch (e) {
       Navigator.pop(context);
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Error during registration: $e")),
       );
@@ -13260,88 +13394,88 @@ class _RegisterPageState extends State<RegisterPage>
     }
   }
 
+  /// ================= UI =================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
+
+      /// 🔹 APP BAR
       appBar: AppBar(
-        //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
         scrolledUnderElevation: 0,
-
         leading: Padding(
           padding: const EdgeInsets.only(left: 10),
           child: GestureDetector(
             onTap: () => Navigator.pop(context),
             child: Container(
-              width: 25,
-              height: 25,
               decoration: BoxDecoration(
-                color: Colors.grey[100], // ✅ grey 50 look
+                color: Colors.grey[100],
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
-                Icons.arrow_back_ios,
-                size: 14,
-                color: Colors.black,
-              ),
+              child: const Icon(Icons.arrow_back_ios,
+                  size: 14, color: Colors.black),
             ),
           ),
         ),
-
-        title: const Padding(
-          padding: EdgeInsets.only(left: 8), // ✅ spacing from icon
-          child: Text(
-            'SignUp',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: Colors.black,
-            ),
-          ),
+        title: const Text(
+          'Sign Up',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
         ),
       ),
+
+      /// 🔹 BODY
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(16.0),
+          padding: const EdgeInsets.all(16),
           child: Form(
             key: _formKey,
             child: ListView(
               children: [
                 const SizedBox(height: 20),
+
                 buildTextField(firstNameController, 'First Name'),
                 const SizedBox(height: 10),
+
                 buildTextField(lastNameController, 'Last Name'),
                 const SizedBox(height: 10),
+
                 buildTextField(emailController, 'Email',
                     keyboardType: TextInputType.emailAddress),
                 const SizedBox(height: 10),
+
                 buildTextField(passwordController, 'Password',
                     obscureText: true),
                 const SizedBox(height: 10),
+
                 buildTextField(confirmPasswordController, 'Confirm Password',
                     obscureText: true),
                 const SizedBox(height: 10),
+
                 buildTextField(phoneNumberController, 'Phone Number',
                     keyboardType: TextInputType.phone),
-                const SizedBox(height: 20),
+
+                const SizedBox(height: 25),
+
+                /// 🔥 REGISTER BUTTON
                 GestureDetector(
                   onTap: () => SignUp(context),
                   child: Container(
                     height: 50,
-                    width: double.infinity,
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(14),
                       color: Colors.black,
                     ),
-                    child: const Text('REGISTER',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 17,
-                        )),
+                    child: const Text(
+                      'REGISTER',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -13352,33 +13486,40 @@ class _RegisterPageState extends State<RegisterPage>
     );
   }
 
+  /// ================= TEXT FIELD =================
   Widget buildTextField(TextEditingController controller, String label,
       {bool obscureText = false,
       TextInputType keyboardType = TextInputType.text}) {
     return TextFormField(
       controller: controller,
-      decoration: InputDecoration(
-        labelText: label,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8.0)),
-      ),
       obscureText: obscureText,
       keyboardType: keyboardType,
+      decoration: InputDecoration(
+        labelText: label,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+      ),
       validator: (value) {
         if (value == null || value.isEmpty) {
           return 'Please enter your $label';
         }
+
         if (label == 'Email' &&
             !RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value)) {
-          return 'Please enter a valid email';
+          return 'Enter a valid email';
         }
+
         if (label == 'Password' && value.length < 6) {
           return 'Password must be at least 6 characters';
         }
+
         if (label == 'Confirm Password' && value != passwordController.text) {
           return 'Passwords do not match';
         }
+
         if (label == 'Phone Number' && !RegExp(r'^\d{11}$').hasMatch(value)) {
-          return 'Please enter a valid phone number';
+          return 'Enter valid phone number';
         }
 
         return null;
@@ -14749,7 +14890,7 @@ class _LogisticsPageState extends State<LogisticsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Colors.grey[100],
       appBar: AppBar(
         //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
@@ -15064,7 +15205,7 @@ class _LogisticsPageState extends State<LogisticsPage> {
       height: 50,
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
-        color: Colors.grey[100],
+        color: Colors.grey,
         borderRadius: BorderRadius.circular(30),
         boxShadow: [
           BoxShadow(
@@ -15080,7 +15221,8 @@ class _LogisticsPageState extends State<LogisticsPage> {
 
           return Stack(
             children: [
-              /// 🔥 SLIDING BACKGROUND
+              /// 🔥 SLIDIN
+              /// G BACKGROUND
               AnimatedPositioned(
                 duration: const Duration(milliseconds: 300),
                 curve: Curves.easeInOutCubic,
@@ -15090,7 +15232,7 @@ class _LogisticsPageState extends State<LogisticsPage> {
                 child: Container(
                   width: width,
                   decoration: BoxDecoration(
-                    color: Colors.black,
+                    color: Colors.white,
                     borderRadius: BorderRadius.circular(30),
                   ),
                 ),
@@ -15144,7 +15286,7 @@ class _LogisticsPageState extends State<LogisticsPage> {
             AnimatedDefaultTextStyle(
               duration: const Duration(milliseconds: 250),
               style: TextStyle(
-                color: isSelected ? Colors.white : Colors.black,
+                color: isSelected ? Colors.black : Colors.white,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -20562,74 +20704,435 @@ class _helpState extends State<help> {
   }
 }
 
-class support extends StatefulWidget {
-  const support({Key? key}) : super(key: key);
+class Support extends StatefulWidget {
+  final String userName;
+
+  const Support({
+    Key? key,
+    required this.userName,
+  }) : super(key: key);
 
   @override
-  State<support> createState() => _supportState();
+  State<Support> createState() => _SupportState();
 }
 
-class _supportState extends State<support> {
+class _SupportState extends State<Support> {
+  final TextEditingController messageController = TextEditingController();
+
   @override
   Widget build(BuildContext context) {
+    final String userName = FirebaseAuth.instance.currentUser?.displayName ??
+        "User"; // 🔥 replace with dynamic user later
+
     return Scaffold(
-      appBar: AppBar(
-        //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
-        backgroundColor: Colors.white,
-        elevation: 0,
+      backgroundColor: Colors.grey[100],
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            /// ================= TOP BLACK SECTION =================
+            Stack(
+              children: [
+                /// 🔥 CURVED BACKGROUND
+                Container(
+                  height: 200,
+                  width: double.infinity,
+                  decoration: const BoxDecoration(
+                    color: Colors.black,
+                    borderRadius: BorderRadius.vertical(
+                      bottom: Radius.circular(40), // 🔥 curved bottom
+                    ),
+                  ),
+                ),
 
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 10),
-          child: GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              width: 25,
-              height: 25,
-              decoration: BoxDecoration(
-                color: Colors.grey[100], // ✅ grey 50 look
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.arrow_back_ios,
-                size: 14,
-                color: Colors.black,
+                /// 🔥 CONTENT
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      /// 👋 GREETING
+                      Text(
+                        "Hey, $userName 👋",
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+
+                      const SizedBox(height: 6),
+
+                      /// ❓ PROMPT
+                      const Text(
+                        "What can we help with?",
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 14,
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      /// 💬 MESSAGE CARD
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 10,
+                            )
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            /// INPUT
+                            Expanded(
+                              child: TextField(
+                                controller: messageController,
+                                decoration: const InputDecoration(
+                                  hintText: "Send a message...",
+                                  border: InputBorder.none,
+                                ),
+                              ),
+                            ),
+
+                            /// SEND BUTTON
+                            Container(
+                              decoration: BoxDecoration(
+                                color: Colors.black,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              padding: const EdgeInsets.all(8),
+                              child: const Icon(
+                                Icons.send,
+                                color: Colors.white,
+                                size: 18,
+                              ),
+                            )
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 20),
+
+            /// ================= SUPPORT CARDS =================
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                children: [
+                  _supportCard("Need help with orders?"),
+                  _supportCard("Need help with ride?"),
+                  _supportCard("Need help with logistics?"),
+                  _supportCard("Need help with transport?"),
+                  _supportCard("Need help with refunds?"),
+                ],
               ),
             ),
-          ),
-        ),
 
-        title: const Padding(
-          padding: EdgeInsets.only(left: 8), // ✅ spacing from icon
-          child: Text(
-            'Support',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: Colors.black,
-            ),
-          ),
+            const SizedBox(height: 20),
+          ],
         ),
       ),
-      body: const Center(
+    );
+  }
+
+  /// 🔥 SUPPORT CARD WIDGET
+  Widget _supportCard(String text) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(vertical: 18),
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          )
+        ],
+      ),
+      child: Center(
         child: Text(
-          'Text',
+          text,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
         ),
       ),
     );
   }
 }
 
-class profile extends StatefulWidget {
-  const profile({Key? key}) : super(key: key);
+class Profile extends StatefulWidget {
+  const Profile({Key? key}) : super(key: key);
 
   @override
-  State<profile> createState() => _profileState();
+  State<Profile> createState() => _ProfileState();
 }
 
-class _profileState extends State<profile> {
+class _ProfileState extends State<Profile> {
+  String name = "";
+  String email = "";
+  String phone = "";
+  bool loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUser();
+  }
+
+  Future<void> _loadUser() async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) return;
+
+    setState(() {
+      name = user.displayName ?? "User";
+      email = user.email ?? "";
+      phone = user.phoneNumber ?? "No phone"; // may be null
+      loading = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    return const Placeholder();
+    return Scaffold(
+      backgroundColor: Colors.grey[100],
+      body: loading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 50, 16, 20),
+              child: Column(
+                children: [
+                  /// ================= PROFILE CARD =================
+                  _profileCard(),
+
+                  const SizedBox(height: 16),
+
+                  /// ================= PERSONAL =================
+                  _sectionCard(
+                    title: "Personal",
+                    children: [
+                      _optionTile(
+                          "Saved addresses", Icons.location_on_outlined),
+                      _optionTile("Change password", Icons.lock_outline),
+                      _optionTile(
+                          "Wallet", Icons.account_balance_wallet_outlined),
+                      _optionTile("Manage privacy", Icons.privacy_tip_outlined),
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  /// ================= SETTINGS =================
+                  _sectionCard(
+                    title: "Settings",
+                    children: [
+                      _optionTile("Notifications", Icons.notifications_none),
+                      _optionTile("Theme", Icons.dark_mode_outlined),
+                      _optionTile("Language", Icons.language),
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  /// ================= PARTNER =================
+                  _sectionCard(
+                    title: "Partner",
+                    children: [
+                      _optionTile("Partners hub", Icons.handshake_outlined),
+                      _optionTile("Explore", Icons.explore_outlined),
+                    ],
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  /// ================= LOGOUT =================
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _logout,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text("Logout",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          )),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+    );
+  }
+
+  /// ================= PROFILE CARD =================
+  Widget _profileCard() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 10,
+          )
+        ],
+      ),
+      child: Column(
+        children: [
+          /// EDIT TEXT
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: const [
+              Spacer(),
+              Text(
+                "Edit",
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.blue,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              SizedBox()
+            ],
+          ),
+
+          const SizedBox(height: 10),
+
+          /// USER INFO
+          Row(
+            children: [
+              /// AVATAR
+              CircleAvatar(
+                radius: 28,
+                backgroundColor: Colors.grey[300],
+                child: const Icon(Icons.person, size: 28, color: Colors.black),
+              ),
+
+              const SizedBox(width: 12),
+
+              /// TEXTS
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 15),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(email,
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                  const SizedBox(height: 2),
+                  Text(phone,
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// ================= SECTION CARD =================
+  Widget _sectionCard({
+    required String title,
+    required List<Widget> children,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+          )
+        ],
+      ),
+      child: Column(
+        children: [
+          /// TITLE
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                title,
+                style:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              ),
+            ),
+          ),
+
+          /// DIVIDER
+          Divider(height: 1, color: Colors.grey.shade200),
+
+          /// OPTIONS
+          ...children,
+        ],
+      ),
+    );
+  }
+
+  /// ================= OPTION TILE =================
+  Widget _optionTile(String text, IconData icon) {
+    return InkWell(
+      onTap: () {},
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        child: Row(
+          children: [
+            /// 🔹 ICON
+            Icon(icon, size: 18, color: Colors.black87),
+
+            const SizedBox(width: 12),
+
+            /// 🔹 TEXT
+            Expanded(
+              child: Text(
+                text,
+                style: const TextStyle(fontSize: 13),
+              ),
+            ),
+
+            const Icon(Icons.arrow_forward_ios, size: 14),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// ================= LOGOUT =================
+  Future<void> _logout() async {
+    await FirebaseAuth.instance.signOut();
+
+    if (!mounted) return;
+
+    Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
   }
 }
 
