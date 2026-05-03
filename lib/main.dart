@@ -1,4 +1,3 @@
-import 'package:geocoding/geocoding.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:math';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -18,7 +17,7 @@ import 'package:flutter/services.dart';
 //import 'package:flutter_map/flutter_map.dart';
 //import 'package:latlong2/latlong.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
-
+import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fluttertoast/fluttertoast.dart';
@@ -4042,6 +4041,17 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Future<void> loadLocation() async {
+    /// 🔥 Start 10s timer
+    Future.delayed(const Duration(seconds: 10), () {
+      if (!hasShownLocationPopup && (isLoadingLocation || locationFailed)) {
+        hasShownLocationPopup = true;
+
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          showLocationPopup();
+        });
+      }
+    });
+
     try {
       LocationPermission permission = await Geolocator.checkPermission();
 
@@ -4067,23 +4077,14 @@ class _DashboardPageState extends State<DashboardPage> {
       setState(() {
         address =
             "${place.street ?? ""}, ${place.locality ?? ""}, ${place.country ?? ""}";
-        isLoadingLocation = false;
+        isLoadingLocation = false; // ✅ IMPORTANT
       });
     } catch (e) {
       setState(() {
         address = "Location unavailable";
         isLoadingLocation = false;
-        locationFailed = true;
+        locationFailed = true; // ✅ mark failure
       });
-
-      // 👇 trigger popup AFTER UI builds
-      if (!hasShownLocationPopup) {
-        hasShownLocationPopup = true;
-
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          showLocationPopup();
-        });
-      }
     }
   }
 
@@ -4304,6 +4305,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   ),
                   const SizedBox(height: 20),
                   if (savedAddresses.isNotEmpty) const Text("Saved Addresses"),
+                  if (savedAddresses.isEmpty) const Text("No saved addresses"),
                   ...savedAddresses.map((addr) => ListTile(
                         leading:
                             const Icon(Icons.location_on, color: Colors.black),
@@ -4392,25 +4394,40 @@ class _DashboardPageState extends State<DashboardPage> {
         ],
       ),
       bottomNavigationBar: Padding(
-        padding: const EdgeInsets.fromLTRB(
-            12, 0, 12, 12), // 👈 space around (floating look)
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(22),
-          child: Container(
-            height: 70,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(22),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.08),
-                  blurRadius: 12,
-                  offset: const Offset(0, -2),
-                ),
-              ],
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        child: Container(
+          height: 75,
+
+          /// 🔥 OUTER DECORATION (shadow + border FIXED here)
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
+
+            /// ✅ REAL SHADOW (stronger + layered)
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
+
+            /// ✅ SUBTLE BORDER (now visible)
+            border: Border.all(
+              color: Colors.grey.withOpacity(0.15),
+              width: 1,
             ),
+          ),
+
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(22),
             child: BottomNavigationBar(
-              backgroundColor: Colors.transparent, // 👈 MUST be transparent
+              backgroundColor: Colors.transparent,
               elevation: 0,
               currentIndex: _selectedIndex,
               onTap: (index) {
@@ -4418,40 +4435,33 @@ class _DashboardPageState extends State<DashboardPage> {
                   _selectedIndex = index;
                 });
               },
+              selectedLabelStyle: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+              unselectedLabelStyle: const TextStyle(
+                fontWeight: FontWeight.w500,
+                fontSize: 12,
+              ),
               selectedItemColor: Colors.black,
               unselectedItemColor: Colors.grey,
               type: BottomNavigationBarType.fixed,
               items: [
                 BottomNavigationBarItem(
-                  icon: Image.asset(
-                    'assets/images/home.png',
-                    width: 25,
-                    height: 25,
-                  ),
+                  icon: _buildNavItem('assets/images/home.png', 0),
                   label: 'Home',
                 ),
                 BottomNavigationBarItem(
-                  icon: Image.asset(
-                    'assets/images/clipboard.png',
-                    width: 25,
-                    height: 25,
-                  ),
+                  icon: _buildNavItem('assets/images/clipboard.png', 1),
                   label: 'Orders',
                 ),
                 BottomNavigationBarItem(
-                  icon: Image.asset(
-                    'assets/images/support.png',
-                    width: 22,
-                    height: 22,
-                  ),
+                  icon: _buildNavItem('assets/images/support.png', 2),
                   label: 'Support',
                 ),
                 BottomNavigationBarItem(
-                  icon: Image.asset(
-                    'assets/images/user-image-with-black-background.png',
-                    width: 22,
-                    height: 22,
-                  ),
+                  icon: _buildNavItem(
+                      'assets/images/user-image-with-black-background.png', 3),
                   label: 'Profile',
                 ),
               ],
@@ -4459,6 +4469,40 @@ class _DashboardPageState extends State<DashboardPage> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildNavItem(String iconPath, int index) {
+    final bool isSelected = _selectedIndex == index;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        /// 🔥 TOP INDICATOR (clean + smooth)
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeInOut,
+          height: 3,
+          width: isSelected ? 28 : 0,
+          margin: const EdgeInsets.only(bottom: 6),
+          decoration: BoxDecoration(
+            color: Colors.black,
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+
+        /// 🔥 ICON + SCALE EFFECT
+        AnimatedScale(
+          scale: isSelected ? 1.15 : 1.0,
+          duration: const Duration(milliseconds: 200),
+          child: Image.asset(
+            iconPath,
+            width: 24,
+            height: 24,
+            color: isSelected ? Colors.black : Colors.grey,
+          ),
+        ),
+      ],
     );
   }
 
@@ -4476,7 +4520,10 @@ class _DashboardPageState extends State<DashboardPage> {
                 children: [
                   Expanded(
                       child: GestureDetector(
-                    onTap: openLocationModal,
+                    onTap: () async {
+                      await fetchSavedAddresses(); // 🔥 ensure fresh data
+                      openLocationModal();
+                    },
                     child: Container(
                       height: 45,
                       width: 250,
@@ -4532,8 +4579,8 @@ class _DashboardPageState extends State<DashboardPage> {
                   GestureDetector(
                     onTap: () => openMenu(context),
                     child: Container(
-                      height: 35,
-                      width: 35,
+                      height: 45,
+                      width: 45,
                       decoration: BoxDecoration(
                           color: Colors.grey[100], shape: BoxShape.circle),
                       child: const Icon(Icons.notifications_none,
@@ -6307,7 +6354,7 @@ class _TransportPageState extends State<TransportPage> {
 
               const SizedBox(height: 20),
 
-              /// 🔹 PROVIDER INFO CARD
+              /// 🔹 PROVIDER CARD
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
@@ -6324,7 +6371,7 @@ class _TransportPageState extends State<TransportPage> {
                   children: [
                     CircleAvatar(
                       radius: 28,
-                      backgroundImage: NetworkImage(provider['imageUrl']),
+                      backgroundImage: NetworkImage(provider['imageUrl'] ?? ''),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -6332,7 +6379,7 @@ class _TransportPageState extends State<TransportPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            provider['name'],
+                            provider['name'] ?? '',
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 15,
@@ -6340,7 +6387,7 @@ class _TransportPageState extends State<TransportPage> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            provider['location'],
+                            provider['location'] ?? '',
                             style: TextStyle(
                               color: Colors.grey.shade600,
                               fontSize: 12,
@@ -6355,7 +6402,6 @@ class _TransportPageState extends State<TransportPage> {
 
               const SizedBox(height: 20),
 
-              /// 🔹 ROUTES TITLE
               const Text(
                 "Routes",
                 style: TextStyle(
@@ -6366,14 +6412,14 @@ class _TransportPageState extends State<TransportPage> {
 
               const SizedBox(height: 12),
 
-              /// 🔥 ROUTES LIST (CLICKABLE)
+              /// 🔥 ROUTES LIST
               ...routes.map((r) {
-                final data = r.data();
+                final data = r.data() as Map<String, dynamic>;
 
                 return InkWell(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(14),
                   onTap: () {
-                    Navigator.pop(context); // close modal
+                    Navigator.pop(context);
 
                     Navigator.push(
                       context,
@@ -6386,45 +6432,82 @@ class _TransportPageState extends State<TransportPage> {
                     );
                   },
                   child: Container(
-                    margin: const EdgeInsets.only(bottom: 10),
-                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(14),
+                    height: 110,
                     decoration: BoxDecoration(
                       color: Colors.grey[50],
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(14),
                       border: Border.all(color: Colors.grey.shade200),
                     ),
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        /// ROUTE INFO
+                        /// 🔥 LEFT SIDE (ROUTE FLOW)
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              /// FROM
+                              Text(
+                                data['from'] ?? '',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+
+                              const SizedBox(height: 6),
+
+                              /// ROUTE ICON
+                              const Icon(
+                                Icons.swap_vert,
+                                size: 18,
+                                color: Colors.black,
+                              ),
+
+                              const SizedBox(height: 6),
+
+                              /// TO
+                              Text(
+                                data['to'] ?? '',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        /// 🔥 RIGHT SIDE
                         Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             Text(
-                              "${data['from']} → ${data['to']}",
+                              "₦${data['price'] ?? ''}",
                               style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green,
+                                fontSize: 14,
                               ),
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              "Tap to book",
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.grey.shade600,
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.black,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(
+                                Icons.arrow_forward,
+                                color: Colors.white,
+                                size: 18,
                               ),
                             ),
                           ],
-                        ),
-
-                        /// PRICE
-                        Text(
-                          "₦${data['price']}",
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.green,
-                          ),
                         ),
                       ],
                     ),
@@ -6492,7 +6575,7 @@ class _TransportPageState extends State<TransportPage> {
 
                 /// 🔵 FROM BUTTON
                 _stateSelector(
-                  label: "From",
+                  label: "From :",
                   value: fromState,
                   onTap: () async {
                     final result = await _openStatePicker(states);
@@ -6509,7 +6592,7 @@ class _TransportPageState extends State<TransportPage> {
 
                 /// 🔵 TO BUTTON
                 _stateSelector(
-                  label: "To",
+                  label: "To :",
                   value: toState,
                   onTap: () async {
                     final filtered =
@@ -6517,7 +6600,8 @@ class _TransportPageState extends State<TransportPage> {
 
                     final result = await _openStatePicker(filtered);
                     if (result != null) {
-                      setState(() {
+                      setState:
+                      (() {
                         toState = result;
                       });
                     }
@@ -6596,7 +6680,10 @@ class _TransportPageState extends State<TransportPage> {
     );
   }
 
-  Future<String?> _openStatePicker(List<String> list) async {
+  Future<String?> _openStatePicker(
+    List<String> list, {
+    String? selectedState,
+  }) async {
     return showModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.white,
@@ -6610,9 +6697,77 @@ class _TransportPageState extends State<TransportPage> {
           itemBuilder: (context, index) {
             final state = list[index];
 
-            return ListTile(
-              title: Text(state),
-              onTap: () => Navigator.pop(context, state),
+            final bool isSelected = state == selectedState;
+
+            return Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => Navigator.pop(context, state),
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 14,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? Colors.black.withOpacity(0.05)
+                        : Colors.white,
+
+                    borderRadius: BorderRadius.circular(12),
+
+                    /// subtle border (stronger if selected)
+                    border: Border.all(
+                      color: isSelected ? Colors.black : Colors.grey.shade200,
+                    ),
+
+                    /// soft shadow
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.04),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.location_on,
+                        size: 18,
+                        color: Colors.black,
+                      ),
+                      const SizedBox(width: 10),
+
+                      /// state name
+                      Expanded(
+                        child: Text(
+                          state,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+
+                      /// selected indicator
+                      if (isSelected)
+                        const Icon(
+                          Icons.check_circle,
+                          size: 18,
+                          color: Colors.black,
+                        )
+                      else
+                        const Icon(
+                          Icons.arrow_forward_ios,
+                          size: 14,
+                          color: Colors.grey,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
             );
           },
         );
@@ -6984,11 +7139,10 @@ class TicketBookingPage extends StatefulWidget {
 class _TicketBookingPageState extends State<TicketBookingPage> {
   DateTime? departureDateTime;
   int ticketCount = 1;
+  bool loading = false;
 
   double get totalPrice =>
-      ticketCount * double.parse(widget.routeData['price']);
-
-  bool loading = false;
+      ticketCount * double.parse(widget.routeData['price'].toString());
 
   Future<void> _selectDepartureDateTime() async {
     final date = await showDatePicker(
@@ -7013,8 +7167,9 @@ class _TicketBookingPageState extends State<TicketBookingPage> {
 
   Future<void> _payWithPaystack() async {
     if (departureDateTime == null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text("Select departure time")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Select departure time")),
+      );
       return;
     }
 
@@ -7025,7 +7180,7 @@ class _TicketBookingPageState extends State<TicketBookingPage> {
       const String paystackSecretKey =
           'sk_test_661490bf9dc0914e122c2c043ab3aaf3a307d658';
 
-      final int amount = (totalPrice * 100).toInt(); // in kobo
+      final int amount = (totalPrice * 100).toInt();
       final String reference =
           "transport_${DateTime.now().millisecondsSinceEpoch}";
 
@@ -7042,32 +7197,37 @@ class _TicketBookingPageState extends State<TicketBookingPage> {
         }),
       );
 
-      if (response.statusCode != 200) throw "Unable to initialize payment";
+      if (response.statusCode != 200) {
+        throw "Unable to initialize payment";
+      }
 
       final data = jsonDecode(response.body);
       final checkoutUrl = data['data']['authorization_url'];
 
-      if (!await canLaunchUrl(Uri.parse(checkoutUrl))) {
-        throw "Could not launch payment page";
-      }
-
       await launchUrl(Uri.parse(checkoutUrl),
           mode: LaunchMode.externalApplication);
 
-      // Save ticket after payment (temporary assume success)
       await _saveTicket(reference);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text("Payment successful")));
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Payment successful")),
+      );
 
       Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (_) => TransportTicketsPage()),
-          (route) => false);
+        context,
+        MaterialPageRoute(
+          builder: (_) => TransportTicketPage(
+            ticketData: ticket,
+          ),
+        ),
+        (route) => false,
+      );
     } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("Payment failed: $e")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Payment failed: $e")),
+      );
     } finally {
       setState(() => loading = false);
     }
@@ -7099,174 +7259,144 @@ class _TicketBookingPageState extends State<TicketBookingPage> {
 
     return Scaffold(
       backgroundColor: Colors.white,
+
+      /// ================= APP BAR =================
       appBar: AppBar(
-        //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
         scrolledUnderElevation: 0,
-
         leading: Padding(
           padding: const EdgeInsets.only(left: 10),
           child: GestureDetector(
             onTap: () => Navigator.pop(context),
             child: Container(
-              width: 25,
-              height: 25,
               decoration: BoxDecoration(
-                color: Colors.grey[100], // ✅ grey 50 look
+                color: Colors.grey[100],
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
-                Icons.arrow_back_ios,
-                size: 14,
-                color: Colors.black,
-              ),
+              child: const Icon(Icons.arrow_back_ios,
+                  size: 14, color: Colors.black),
             ),
           ),
         ),
-
-        title: const Padding(
-          padding: EdgeInsets.only(left: 8), // ✅ spacing from icon
-          child: Text(
-            'Book Ticket',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: Colors.black,
-            ),
-          ),
+        title: const Text(
+          "Book Ticket",
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
         ),
       ),
+
+      /// ================= BODY =================
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            /// FROM → TO CARDS WITH LINE
-            Column(
-              children: [
-                _locationCard(route['from'], top: true),
-                _locationLine(),
-                _locationCard(route['to'], top: false),
-              ],
-            ),
-            const SizedBox(height: 20),
+            /// 🔥 PROVIDER CARD
+            _providerCard(provider),
 
-            /// Departure time
-            GestureDetector(
-              onTap: _selectDepartureDateTime,
-              child: AbsorbPointer(
-                child: TextFormField(
-                  decoration: InputDecoration(
-                    labelText: departureDateTime == null
-                        ? "Select Departure Time"
-                        : departureDateTime.toString(),
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                    suffixIcon: const Icon(Icons.calendar_month),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
 
-            /// Provider card
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 6,
-                      offset: const Offset(0, 3))
-                ],
-              ),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 28,
-                    backgroundImage: NetworkImage(provider['imageUrl']),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(provider['name'],
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 16)),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
+            /// 🔥 ROUTE FLOW CARD
+            _routeCard(route),
 
-            /// Visit branch card
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
-                  borderRadius: BorderRadius.circular(12)),
+            const SizedBox(height: 16),
+
+            /// 🔥 DEPARTURE CARD
+            _departureCard(),
+
+            const SizedBox(height: 16),
+
+            /// 🔥 TICKET COUNTER
+            _ticketCounter(),
+
+            const SizedBox(height: 30),
+
+            /// 🔥 BOOK BUTTON
+            _bookButton(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ================= WIDGETS =================
+
+  Widget _providerCard(dynamic provider) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 10,
+          )
+        ],
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 26,
+            backgroundImage: NetworkImage(provider['imageUrl']),
+          ),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(provider['name'],
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+              Text(provider['location'],
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+            ],
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _routeCard(dynamic route) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(route['from'],
+              style:
+                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+          const SizedBox(height: 6),
+          const Icon(Icons.swap_vert, size: 18),
+          const SizedBox(height: 6),
+          Text(route['to'],
+              style:
+                  const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+        ],
+      ),
+    );
+  }
+
+  Widget _departureCard() {
+    return GestureDetector(
+      onTap: _selectDepartureDateTime,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.calendar_month),
+            const SizedBox(width: 10),
+            Expanded(
               child: Text(
-                "Visit our branch at: ${provider['location']}\n to board.",
-                style: const TextStyle(fontSize: 14),
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            /// Tickets selector
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text("Number of tickets",
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                Row(
-                  children: [
-                    IconButton(
-                      onPressed: () {
-                        if (ticketCount > 1) setState(() => ticketCount--);
-                      },
-                      icon: const Icon(Icons.remove_circle_outline),
-                    ),
-                    Text("$ticketCount", style: const TextStyle(fontSize: 16)),
-                    IconButton(
-                      onPressed: () => setState(() => ticketCount++),
-                      icon: const Icon(Icons.add_circle_outline),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            /// Price card
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(12)),
-              child: Text(
-                "₦${totalPrice.toStringAsFixed(0)}",
-                style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    color: Colors.green),
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            /// Book button
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
-                onPressed: loading ? null : _payWithPaystack,
-                child: loading
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text("Book Ticket"),
+                departureDateTime == null
+                    ? "Select Departure Time"
+                    : departureDateTime.toString(),
               ),
             ),
           ],
@@ -7275,33 +7405,328 @@ class _TicketBookingPageState extends State<TicketBookingPage> {
     );
   }
 
-  Widget _locationCard(String location, {bool top = true}) {
+  Widget _ticketCounter() {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.amber.shade50,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
       ),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          CircleAvatar(
-            radius: 12,
-            backgroundColor: Colors.black,
-            child: const Icon(Icons.location_on, size: 14, color: Colors.white),
+          const Text("Tickets", style: TextStyle(fontWeight: FontWeight.bold)),
+          Row(
+            children: [
+              IconButton(
+                onPressed: () {
+                  if (ticketCount > 1) setState(() => ticketCount--);
+                },
+                icon: const Icon(Icons.remove),
+              ),
+              Text("$ticketCount"),
+              IconButton(
+                onPressed: () => setState(() => ticketCount++),
+                icon: const Icon(Icons.add),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          Text(location, style: const TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
     );
   }
 
-  Widget _locationLine() {
-    return Container(
-      height: 20,
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      width: 2,
-      color: Colors.black26,
+  Widget _bookButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton(
+        onPressed: loading ? null : _payWithPaystack,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.black,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+        child: loading
+            ? const CircularProgressIndicator(color: Colors.white)
+            : Text(
+                "Book Now • ₦${totalPrice.toStringAsFixed(0)}",
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold, color: Colors.white),
+              ),
+      ),
+    );
+  }
+}
+
+class TransportTicketPage extends StatefulWidget {
+  final dynamic ticketData;
+
+  const TransportTicketPage({super.key, required this.ticketData});
+
+  @override
+  State<TransportTicketPage> createState() => _TransportTicketPageState();
+}
+
+class _TransportTicketPageState extends State<TransportTicketPage> {
+  final GlobalKey _ticketKey = GlobalKey();
+  bool loadingCancel = false;
+
+  Future<void> _cancelTicket() async {
+    try {
+      setState(() => loadingCancel = true);
+
+      await FirebaseFirestore.instance
+          .collection("transport_tickets")
+          .doc(widget.ticketData.id)
+          .update({"status": "cancelled"});
+
+      setState(() {
+        widget.ticketData["status"] = "cancelled";
+      });
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (_) => const AlertDialog(
+          title: Text("Success"),
+          content: Text("Ticket cancelled successfully"),
+        ),
+      );
+    } finally {
+      setState(() => loadingCancel = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ticket = widget.ticketData;
+
+    return Scaffold(
+      backgroundColor: Colors.grey[100],
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        title: const Text("My Ticket",
+            style: TextStyle(color: Colors.black, fontSize: 14)),
+        iconTheme: const IconThemeData(color: Colors.black),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            /// ===================== TICKET CARD =====================
+            RepaintBoundary(
+              key: _ticketKey,
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [
+                      Color(0xff0f172a), // dark navy
+                      Color(0xff1e293b), // softer navy
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.15),
+                      blurRadius: 12,
+                      offset: const Offset(0, 6),
+                    )
+                  ],
+                ),
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    /// ================= PROVIDER =================
+                    Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 24,
+                          backgroundImage:
+                              NetworkImage(ticket["providerImage"] ?? ""),
+                        ),
+                        const SizedBox(width: 10),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              ticket["providerName"],
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              ticket["providerLocation"],
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    /// ================= TICKET ID =================
+                    const Text("TICKET ID",
+                        style: TextStyle(color: Colors.white70, fontSize: 11)),
+
+                    const SizedBox(height: 6),
+
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        ticket["ticketId"],
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    /// ================= STATUS =================
+                    const Text("STATUS",
+                        style: TextStyle(color: Colors.white70, fontSize: 11)),
+
+                    const SizedBox(height: 6),
+
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: ticket["status"] == "cancelled"
+                            ? Colors.red.withOpacity(0.2)
+                            : Colors.green.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        ticket["status"],
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    /// ================= ROUTE =================
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          ticket["from"],
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        const Icon(Icons.swap_vert,
+                            color: Colors.white, size: 18),
+                        const SizedBox(height: 6),
+                        Text(
+                          ticket["to"],
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    /// ================= BOOKED ON =================
+                    const Text("BOOKED ON",
+                        style: TextStyle(color: Colors.white70, fontSize: 11)),
+
+                    const SizedBox(height: 6),
+
+                    Text(
+                      ticket["createdAt"].toDate().toString().split(".").first,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    /// ================= PRICE =================
+                    Center(
+                      child: Text(
+                        "₦${ticket["price"]}",
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.greenAccent,
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 18),
+
+                    /// ================= BOARD BUTTON =================
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.black,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: () {},
+                        child: const Text("Board Ticket"),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            /// ================= ACTION BUTTONS =================
+            Row(
+              children: [
+                /// CANCEL
+                Expanded(
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    onPressed: loadingCancel ? null : _cancelTicket,
+                    child: const Text("Cancel Ticket"),
+                  ),
+                ),
+
+                const SizedBox(width: 10),
+
+                /// DOWNLOAD
+                Expanded(
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    onPressed: () {},
+                    child: const Text("Download"),
+                  ),
+                ),
+              ],
+            )
+          ],
+        ),
+      ),
     );
   }
 }
@@ -14364,24 +14789,74 @@ class _LogisticsPageState extends State<LogisticsPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // 🔹 Search Field
-            const Text("Track Order",
-                style: TextStyle(
-                    //fontWeight: FontWeight.bold,
-                    fontSize: 14)),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _trackingIdController,
-              decoration: InputDecoration(
-                hintText: "Enter Tracking ID",
-                filled: true,
-                fillColor: Colors.white,
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.search),
-                  onPressed: _searchTrackingId,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  // borderSide: const BorderSide(color: Colors.black12),
+            Card(
+              color: Colors.white,
+              elevation: 3,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "Track Order",
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+
+                    /// 🔍 SEARCH FIELD
+                    TextField(
+                      controller: _trackingIdController,
+                      decoration: InputDecoration(
+                        hintText: "Enter Tracking ID",
+                        filled: true,
+                        fillColor: Colors.grey.shade100,
+
+                        /// 🔥 STYLED SEARCH ICON
+                        suffixIcon: Padding(
+                          padding: const EdgeInsets.all(6),
+                          child: GestureDetector(
+                            onTap: _searchTrackingId,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.black,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(
+                                Icons.search,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                        ),
+
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 14),
+
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide.none,
+                        ),
+
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide.none,
+                        ),
+
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide:
+                              const BorderSide(color: Colors.black, width: 1),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
