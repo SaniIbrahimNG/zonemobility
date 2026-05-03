@@ -7207,7 +7207,7 @@ class _TicketBookingPageState extends State<TicketBookingPage> {
       await launchUrl(Uri.parse(checkoutUrl),
           mode: LaunchMode.externalApplication);
 
-      await _saveTicket(reference);
+      final ticketDoc = await _saveTicket(reference);
 
       if (!mounted) return;
 
@@ -7219,7 +7219,7 @@ class _TicketBookingPageState extends State<TicketBookingPage> {
         context,
         MaterialPageRoute(
           builder: (_) => TransportTicketPage(
-            ticketData: ticket,
+            ticketData: ticketDoc,
           ),
         ),
         (route) => false,
@@ -7233,13 +7233,16 @@ class _TicketBookingPageState extends State<TicketBookingPage> {
     }
   }
 
-  Future<void> _saveTicket(String reference) async {
+  Future<DocumentSnapshot> _saveTicket(String reference) async {
     final user = FirebaseAuth.instance.currentUser!;
-    await FirebaseFirestore.instance.collection("transport_tickets").add({
+
+    final docRef =
+        await FirebaseFirestore.instance.collection("transport_tickets").add({
       "ticketId": "TR${Random().nextInt(90000) + 10000}",
       "providerId": widget.providerData.id,
       "providerName": widget.providerData['name'],
       "providerLocation": widget.providerData['location'],
+      "providerImage": widget.providerData['imageUrl'], // 🔥 ADD THIS
       "from": widget.routeData['from'],
       "to": widget.routeData['to'],
       "departure": departureDateTime,
@@ -7250,6 +7253,8 @@ class _TicketBookingPageState extends State<TicketBookingPage> {
       "createdAt": FieldValue.serverTimestamp(),
       "paymentReference": reference,
     });
+
+    return await docRef.get(); // 🔥 RETURN SNAPSHOT
   }
 
   @override
@@ -7504,7 +7509,7 @@ class _TransportTicketPageState extends State<TransportTicketPage> {
     final ticket = widget.ticketData;
 
     return Scaffold(
-      backgroundColor: Colors.grey[100],
+      backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
@@ -7624,15 +7629,15 @@ class _TransportTicketPageState extends State<TransportTicketPage> {
                         Text(
                           ticket["from"],
                           style: const TextStyle(
-                            color: Colors.white,
+                            color: Color(0xffefe5e5),
                             fontWeight: FontWeight.bold,
                             fontSize: 14,
                           ),
                         ),
-                        const SizedBox(height: 6),
+                        // const SizedBox(height: 6),
                         const Icon(Icons.swap_vert,
-                            color: Colors.white, size: 18),
-                        const SizedBox(height: 6),
+                            color: Color(0xffe8e6ea), size: 18),
+                        //const SizedBox(height: 6),
                         Text(
                           ticket["to"],
                           style: const TextStyle(
@@ -7715,7 +7720,7 @@ class _TransportTicketPageState extends State<TransportTicketPage> {
                 Expanded(
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
+                      backgroundColor: Colors.black,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                     onPressed: () {},
