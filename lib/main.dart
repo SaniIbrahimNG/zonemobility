@@ -1,4 +1,4 @@
-import 'package:google_fonts/google_fonts.dart';
+/*  */ import 'package:google_fonts/google_fonts.dart';
 import 'dart:math';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -400,19 +400,18 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  int _selectedIndex = 0;
-
   LatLng? userLocation;
-  List<LatLng> nearbyDrivers = [];
 
   GoogleMapController? _mapController;
   Set<Marker> _markers = {};
 
   String pickupAddress = '';
+
   final TextEditingController _pickupController = TextEditingController();
-  FocusNode _pickupFocusNode = FocusNode();
+  final FocusNode _pickupFocusNode = FocusNode();
+
   final TextEditingController _destinationController = TextEditingController();
-  FocusNode _destinationFocusNode = FocusNode();
+  final FocusNode _destinationFocusNode = FocusNode();
 
   @override
   void dispose() {
@@ -426,9 +425,10 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _fetchUserLocation(); // Fetch location immediately
+    _fetchUserLocation();
   }
 
+  // 📍 Get user location
   Future<void> _fetchUserLocation() async {
     try {
       LocationPermission permission = await Geolocator.checkPermission();
@@ -450,47 +450,61 @@ class _HomePageState extends State<HomePage> {
         userLocation = LatLng(position.latitude, position.longitude);
       });
 
+      // 🔥 Autofill pickup
+      await _getAddressFromLatLng(
+        position.latitude,
+        position.longitude,
+      );
+
       _setMarkers();
-      _loadNearbyDrivers();
     } catch (e) {
       print("Error fetching location: $e");
     }
   }
 
-  void _loadNearbyDrivers() {
-    if (userLocation != null) {
-      nearbyDrivers = [
-        LatLng(userLocation!.latitude + 0.001, userLocation!.longitude + 0.001),
-        LatLng(userLocation!.latitude - 0.001, userLocation!.longitude - 0.001),
-      ];
-      _setMarkers();
+  // 📍 Convert coordinates → address
+  Future<void> _getAddressFromLatLng(double lat, double lng) async {
+    try {
+      List<Placemark> placemarks = await placemarkFromCoordinates(lat, lng);
+
+      if (placemarks.isNotEmpty) {
+        final place = placemarks.first;
+
+        String address =
+            "${place.street}, ${place.locality}, ${place.administrativeArea}";
+
+        setState(() {
+          pickupAddress = address;
+
+          // ✅ only autofill if user hasn't typed
+          if (_pickupController.text.isEmpty) {
+            _pickupController.text = address;
+          }
+        });
+      }
+    } catch (e) {
+      print("Error getting address: $e");
     }
   }
 
+  // 📍 Set only user marker
   void _setMarkers() {
-    final markers = <Marker>{};
-
-    if (userLocation != null) {
-      markers.add(Marker(
-        markerId: const MarkerId('user'),
-        position: userLocation!,
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
-      ));
-    }
-
-    for (int i = 0; i < nearbyDrivers.length; i++) {
-      markers.add(Marker(
-        markerId: MarkerId('driver_$i'),
-        position: nearbyDrivers[i],
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet),
-      ));
-    }
+    if (userLocation == null) return;
 
     setState(() {
-      _markers = markers;
+      _markers = {
+        Marker(
+          markerId: const MarkerId('user'),
+          position: userLocation!,
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueBlue,
+          ),
+        ),
+      };
     });
   }
 
+  // 🚗 Ride flow
   void _handleRideSelection(String rideType) async {
     if (userLocation == null) {
       showDialog(
@@ -520,6 +534,7 @@ class _HomePageState extends State<HomePage> {
       'DriverStatus': "driver_booked",
       'Code': "8492",
     });
+
     final rideId = requestDoc.id;
 
     Navigator.of(context).push(
@@ -532,6 +547,7 @@ class _HomePageState extends State<HomePage> {
           destination: _destinationController.text.trim(),
           onCancel: () async {
             Navigator.of(context).pop();
+
             await FirebaseFirestore.instance
                 .collection('ride_requests')
                 .doc(requestDoc.id)
@@ -561,159 +577,154 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        backgroundColor: Colors.white,
-        body: Stack(
-          children: [
-            // MAP (bottom)
-            if (userLocation != null)
-              GoogleMap(
-                initialCameraPosition: CameraPosition(
-                  target: userLocation!,
-                  zoom: 15,
-                ),
-                myLocationEnabled: true,
-                myLocationButtonEnabled: true,
-                markers: _markers,
-                onMapCreated: (controller) {
-                  _mapController = controller;
-                },
-              )
-            else
-              const Center(child: CircularProgressIndicator()),
-
-            // INPUT CARD
-            Positioned(
-              top: 50,
-              left: 16,
-              right: 16,
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.95),
-                  borderRadius: BorderRadius.circular(15),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    )
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    TextField(
-                      controller: _pickupController,
-                      decoration: const InputDecoration(
-                        hintText: "Pickup location",
-                        prefixIcon: Icon(Icons.my_location),
-                        border: InputBorder.none,
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    TextField(
-                      controller: _destinationController,
-                      decoration: const InputDecoration(
-                        hintText: "Where to?",
-                        prefixIcon: Icon(Icons.location_on),
-                        border: InputBorder.none,
-                      ),
-                    ),
-                  ],
-                ),
+      backgroundColor: Colors.white,
+      body: Stack(
+        children: [
+          // 🗺 MAP
+          if (userLocation != null)
+            GoogleMap(
+              initialCameraPosition: CameraPosition(
+                target: userLocation!,
+                zoom: 15,
               ),
-            ),
+              myLocationEnabled: true,
+              myLocationButtonEnabled: true,
+              markers: _markers,
+              onMapCreated: (controller) {
+                _mapController = controller;
+              },
+            )
+          else
+            const Center(child: CircularProgressIndicator()),
 
-            // DRIVERS INFO
-            Positioned(
-              bottom: 120,
-              left: 16,
-              right: 16,
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(15),
-                  boxShadow: [
-                    BoxShadow(
-                        color: Colors.black.withOpacity(0.1), blurRadius: 10),
-                  ],
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text("Nearby Drivers",
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                    Text("${nearbyDrivers.length}",
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, color: Colors.green)),
-                  ],
-                ),
+          // 🔥 BOTTOM BOOKING CARD
+          Positioned(
+            bottom: 20,
+            left: 16,
+            right: 16,
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 10,
+                  )
+                ],
               ),
-            ),
-
-            // RIDE BUTTONS
-            Positioned(
-              bottom: 20,
-              left: 16,
-              right: 16,
-              child: Row(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => _handleRideSelection("economy"),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
+                  TextField(
+                    controller: _pickupController,
+                    focusNode: _pickupFocusNode,
+                    decoration: InputDecoration(
+                      hintText: 'Pickup (Current Location)',
+                      filled: true,
+                      fillColor: Colors.grey[100],
+                      prefixIcon: Icon(
+                        Icons.radio_button_checked,
+                        color: Colors.grey[800],
                       ),
-                      child: const Text("Economy",
-                          style: TextStyle(color: Colors.white)),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => _handleRideSelection("premium"),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _destinationController,
+                    focusNode: _destinationFocusNode,
+                    decoration: InputDecoration(
+                      hintText: 'Enter Destination',
+                      filled: true,
+                      fillColor: Colors.grey[100],
+                      prefixIcon: Icon(
+                        Icons.location_on,
+                        color: Colors.green[800],
                       ),
-                      child: const Text("Premium",
-                          style: TextStyle(color: Colors.white)),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: () {
+                      if (_destinationController.text.trim().isEmpty) {
+                        _destinationFocusNode.requestFocus();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text("Please Enter Your Destination!"),
+                          ),
+                        );
+                        return;
+                      }
+
+                      showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        backgroundColor: Colors.transparent,
+                        builder: (context) =>
+                            RidePage(onSelect: _handleRideSelection),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      minimumSize: const Size.fromHeight(50),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
+                    child: const Text(
+                      'Book Ride',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
+          ),
 
-            // 🔥 BACK BUTTON (MUST BE LAST)
-            Positioned(
-              top: 50,
-              left: 16,
-              child: GestureDetector(
-                onTap: () => Navigator.pop(context),
-                child: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 8,
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.arrow_back_ios_new,
-                    size: 18,
-                    color: Colors.black,
-                  ),
+          // 🔙 BACK BUTTON
+          Positioned(
+            top: 50,
+            left: 16,
+            child: GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 8,
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.arrow_back_ios_new,
+                  size: 18,
+                  color: Colors.black,
                 ),
               ),
             ),
-          ],
-        ));
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -4584,7 +4595,13 @@ class _DashboardPageState extends State<DashboardPage> {
                       height: 45,
                       width: 45,
                       decoration: BoxDecoration(
-                          color: Colors.grey[100], shape: BoxShape.circle),
+                        color: Colors.transparent,
+                        borderRadius: BorderRadius.circular(25),
+                        border: Border.all(
+                          color: Color(0xff070303),
+                          width: 0.2,
+                        ),
+                      ),
                       child: const Icon(Icons.notifications_none,
                           color: Colors.black),
                     ),
@@ -10739,14 +10756,23 @@ class UserOrdersPage extends StatelessWidget {
   }
 }
 
-class UserOrdersListPage extends StatelessWidget {
+class UserOrdersListPage extends StatefulWidget {
   const UserOrdersListPage({super.key});
+
+  @override
+  State<UserOrdersListPage> createState() => _UserOrdersListPageState();
+}
+
+class _UserOrdersListPageState extends State<UserOrdersListPage> {
+  String _selectedTab = "ongoing"; // ongoing | completed
 
   Color getStatusColor(String status) {
     switch (status.toLowerCase()) {
       case 'pending':
         return Colors.orange;
       case 'processing':
+      case 'accepted':
+      case 'picked_up':
         return Colors.blue;
       case 'completed':
         return Colors.green;
@@ -10757,84 +10783,135 @@ class UserOrdersListPage extends StatelessWidget {
     }
   }
 
-  Widget buildSkeletonLoader() {
-    return ListView.builder(
-      padding: const EdgeInsets.all(12),
-      itemCount: 6,
-      itemBuilder: (context, index) {
-        return Shimmer.fromColors(
-          baseColor: Colors.grey[300]!,
-          highlightColor: Colors.grey[100]!,
-          child: Card(
-            margin: const EdgeInsets.symmetric(vertical: 6),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(height: 14, width: 150, color: Colors.white),
-                  const SizedBox(height: 8),
-                  Container(height: 12, width: 100, color: Colors.white),
-                  const SizedBox(height: 6),
-                  Container(height: 12, width: 120, color: Colors.white),
-                  const SizedBox(height: 10),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: Container(
-                      height: 20,
-                      width: 70,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                    ),
-                  )
-                ],
-              ),
-            ),
+  bool isOngoing(String status) {
+    return status != "completed";
+  }
+
+  Widget _segmentItem({
+    required String label,
+    required String value,
+    required int count,
+  }) {
+    final isSelected = _selectedTab == value;
+
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            _selectedTab = value;
+          });
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.white : Colors.black,
+            borderRadius: BorderRadius.circular(20),
           ),
-        );
-      },
+          alignment: Alignment.center,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: isSelected ? Colors.black : Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: isSelected ? Colors.black : Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  count.toString(),
+                  style: TextStyle(
+                    color: isSelected ? Colors.white : Colors.black,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
+  }
+
+  Widget buildSkeletonLoader() {
+    return const Center(child: CircularProgressIndicator());
+  }
+
+  String _formatDateTime(dynamic timestamp) {
+    if (timestamp == null) return "";
+
+    DateTime date;
+
+    if (timestamp is Timestamp) {
+      date = timestamp.toDate();
+    } else {
+      return "";
+    }
+
+    final formattedDate = "${date.day}/${date.month}/${date.year}";
+    final formattedTime =
+        "${date.hour}:${date.minute.toString().padLeft(2, '0')}";
+
+    return "$formattedDate • $formattedTime";
   }
 
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
+
     if (user == null) {
       return const Center(child: Text("User not logged in"));
     }
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Colors.grey[100],
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('orders')
             .where('userId', isEqualTo: user.uid)
             .snapshots(),
         builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(child: Text("Error: ${snapshot.error}"));
-          }
-
           if (!snapshot.hasData) {
             return buildSkeletonLoader();
           }
 
-          final orders = snapshot.data!.docs;
+          final allOrders = snapshot.data!.docs;
 
-          if (orders.isEmpty) {
+          if (allOrders.isEmpty) {
             return const Center(child: Text("You have no orders yet"));
           }
+
+          /// 🔥 SPLIT ORDERS
+          final ongoingOrders = allOrders.where((doc) {
+            final status =
+                (doc['status'] ?? 'pending').toString().toLowerCase();
+            return isOngoing(status);
+          }).toList();
+
+          final completedOrders = allOrders.where((doc) {
+            final status =
+                (doc['status'] ?? 'pending').toString().toLowerCase();
+            return status == "completed";
+          }).toList();
+
+          final ordersToShow =
+              _selectedTab == "ongoing" ? ongoingOrders : completedOrders;
 
           return ListView(
             padding: const EdgeInsets.all(12),
             children: [
-              /// 🔥 HEADER
               const SizedBox(height: 10),
+
+              /// 🔥 HEADER
               const Text(
                 "Order History",
                 style: TextStyle(
@@ -10842,127 +10919,178 @@ class UserOrdersListPage extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 18),
+
+              const SizedBox(height: 16),
+
+              /// 🔥 SEGMENTED TABS
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.black,
+                  borderRadius: BorderRadius.circular(25),
+                ),
+                child: Row(
+                  children: [
+                    _segmentItem(
+                      label: "Ongoing",
+                      value: "ongoing",
+                      count: ongoingOrders.length,
+                    ),
+                    _segmentItem(
+                      label: "Completed",
+                      value: "completed",
+                      count: completedOrders.length,
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 20),
 
               /// 🔥 LIST
-              ...List.generate(orders.length, (index) {
-                final order =
-                    orders[index].data() as Map<String, dynamic>? ?? {};
+              ...ordersToShow.map((doc) {
+                final order = doc.data() as Map<String, dynamic>? ?? {};
 
-                // Handle items
+                final status = (order['status'] ?? 'pending').toString();
+
+                /// ITEMS
                 List<Map<String, dynamic>> items = [];
                 final itemsData = order['items'];
+
                 if (itemsData is List) {
                   items = List<Map<String, dynamic>>.from(itemsData);
-                } else if (itemsData is Map) {
-                  items = itemsData.entries
-                      .map((e) => Map<String, dynamic>.from(e.value as Map))
-                      .toList();
                 }
 
                 double totalPrice = 0;
                 for (var item in items) {
                   final price = item['price'] ?? 0;
                   final qty = item['qty'] ?? 1;
-                  totalPrice += (price is num ? price.toDouble() : 0) *
-                      (qty is num ? qty.toDouble() : 1);
+                  totalPrice +=
+                      (price as num).toDouble() * (qty as num).toDouble();
                 }
 
-                final status = (order['status'] ?? 'pending').toString();
                 final statusColor = getStatusColor(status);
 
                 return GestureDetector(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              UserOrdersPage(orderId: orders[index].id),
-                        ),
-                      );
-                    },
-                    child: Card(
-                      color: Colors.white,
-                      margin: const EdgeInsets.symmetric(vertical: 6),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => UserOrdersPage(orderId: doc.id),
                       ),
-                      elevation: 2,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 10),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            /// 🔹 ORDER ID
-                            Text(
-                              "Order : ${orders[index].id}",
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
+                    );
+                  },
+                  child: Card(
+                    margin: const EdgeInsets.symmetric(vertical: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    elevation: 2,
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        children: [
+                          /// 🔹 ROW 1 (ICON)
+                          Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[100],
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.local_shipping),
+                          ),
+
+                          const SizedBox(height: 12),
+
+                          /// 🔹 ROW 2 (3 COLUMNS)
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              /// 🔸 ORDER ID + DIVIDER
+                              Column(
+                                children: [
+                                  const Text("Order ID",
+                                      style: TextStyle(fontSize: 11)),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    doc.id.substring(0, 6),
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Container(
+                                    width: 40,
+                                    height: 1.5,
+                                    color: Colors.black,
+                                  ),
+                                ],
                               ),
-                            ),
 
-                            /// 🔥 DIVIDER
-                            const SizedBox(height: 6),
-                            Divider(
-                              height: 12,
-                              thickness: 1,
-                              color: Colors.grey.shade200,
-                            ),
-                            const SizedBox(height: 8),
+                              /// 🔸 ITEMS
+                              Column(
+                                children: [
+                                  const Text("Items",
+                                      style: TextStyle(fontSize: 11)),
+                                  Text("${items.length}",
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.bold)),
+                                ],
+                              ),
 
-                            /// 🔹 DETAILS ROW
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                /// LEFT SIDE (ITEMS + TOTAL)
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        "Items: ${items.length}",
-                                        style: const TextStyle(fontSize: 13),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        "₦${totalPrice.toStringAsFixed(2)}",
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
+                              /// 🔸 PRICE
+                              Column(
+                                children: [
+                                  const Text("Price",
+                                      style: TextStyle(fontSize: 11)),
+                                  Text(
+                                    "₦${totalPrice.toStringAsFixed(0)}",
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 14),
+
+                          /// 🔹 ROW 3 (STATUS + DATE/TIME)
+                          Column(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: statusColor.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  status.toUpperCase(),
+                                  style: TextStyle(
+                                    color: statusColor,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
                                   ),
                                 ),
+                              ),
 
-                                /// 🔹 STATUS (RIGHT)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 5,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: statusColor.withOpacity(0.15),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Text(
-                                    status.toUpperCase(),
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                      color: statusColor,
-                                    ),
-                                  ),
+                              const SizedBox(height: 6),
+
+                              /// 🔥 DATE & TIME
+                              Text(
+                                _formatDateTime(order['createdAt']),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey[600],
                                 ),
-                              ],
-                            ),
-                          ],
-                        ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
-                    ));
+                    ),
+                  ),
+                );
               }),
             ],
           );
@@ -15205,7 +15333,7 @@ class _LogisticsPageState extends State<LogisticsPage> {
       height: 50,
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
-        color: Colors.grey,
+        color: Colors.grey[200],
         borderRadius: BorderRadius.circular(30),
         boxShadow: [
           BoxShadow(
@@ -15224,7 +15352,7 @@ class _LogisticsPageState extends State<LogisticsPage> {
               /// 🔥 SLIDIN
               /// G BACKGROUND
               AnimatedPositioned(
-                duration: const Duration(milliseconds: 300),
+                duration: const Duration(milliseconds: 400),
                 curve: Curves.easeInOutCubic,
                 left: isPending ? 0 : width,
                 top: 0,
@@ -17726,14 +17854,14 @@ class DeliveryAgentPage extends StatelessWidget {
 
   Widget _buildOrdersStream(
     BuildContext context, {
-    required String status,
+    required List<String> statuses,
     required User currentUser,
     bool showAccept = false,
   }) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('logistics_requests')
-          .where('status', isEqualTo: status)
+          .where('status', whereIn: statuses)
           .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
@@ -17751,32 +17879,63 @@ class DeliveryAgentPage extends StatelessWidget {
           itemBuilder: (context, index) {
             final doc = docs[index];
             final data = doc.data() as Map<String, dynamic>;
+            final status = data['status'];
 
-            return Card(
-              margin: const EdgeInsets.all(12),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(data['packageName'] ?? '',
-                        style: const TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 6),
-                    Text("Pickup: ${data['pickupAddress'] ?? ''}"),
-                    Text("Delivery: ${data['deliveryAddress'] ?? ''}"),
-                    Text("Price: ₦${data['price'] ?? 0}"),
-                    const SizedBox(height: 10),
-                    if (showAccept)
-                      ElevatedButton(
-                        onPressed: () async {
-                          await acceptRequest(context, doc.id);
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.black,
-                        ),
-                        child: const Text("Accept Order"),
+            return GestureDetector(
+              onTap: () {
+                // 🔥 NAVIGATION LOGIC
+                if (status == "picked_up") {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => DeliveryCodePage(requestId: doc.id),
+                    ),
+                  );
+                } else if (status == "accepted") {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => LogisticsDeliveryPage(requestId: doc.id),
+                    ),
+                  );
+                } else if (status == "completed") {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => OrderPlacedPage(orderId: doc.id),
+                    ),
+                  );
+                }
+              },
+              child: Card(
+                margin: const EdgeInsets.all(12),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        data['packageName'] ?? '',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
-                  ],
+                      const SizedBox(height: 6),
+                      Text("Pickup: ${data['pickupAddress'] ?? ''}"),
+                      Text("Delivery: ${data['deliveryAddress'] ?? ''}"),
+                      Text("Price: ₦${data['price'] ?? 0}"),
+                      Text("Status: $status"),
+                      const SizedBox(height: 10),
+                      if (showAccept)
+                        ElevatedButton(
+                          onPressed: () async {
+                            await acceptRequest(context, doc.id);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.black,
+                          ),
+                          child: const Text("Accept Order"),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             );
@@ -17928,20 +18087,25 @@ class DeliveryAgentPage extends StatelessWidget {
                   Expanded(
                     child: TabBarView(
                       children: [
+                        // 🔹 NEW
                         _buildOrdersStream(
                           context,
-                          status: 'pending',
+                          statuses: ['pending'],
                           showAccept: true,
                           currentUser: currentUser,
                         ),
+
+                        // 🔹 PENDING (accepted + picked_up)
                         _buildOrdersStream(
                           context,
-                          status: 'accepted',
+                          statuses: ['accepted', 'picked_up'],
                           currentUser: currentUser,
                         ),
+
+                        // 🔹 COMPLETED
                         _buildOrdersStream(
                           context,
-                          status: 'completed',
+                          statuses: ['completed'],
                           currentUser: currentUser,
                         ),
                       ],
@@ -20734,12 +20898,12 @@ class _SupportState extends State<Support> {
               children: [
                 /// 🔥 CURVED BACKGROUND
                 Container(
-                  height: 200,
+                  height: 250,
                   width: double.infinity,
                   decoration: const BoxDecoration(
                     color: Colors.black,
                     borderRadius: BorderRadius.vertical(
-                      bottom: Radius.circular(40), // 🔥 curved bottom
+                      bottom: Radius.circular(30), // 🔥 curved bottom
                     ),
                   ),
                 ),
@@ -20794,7 +20958,7 @@ class _SupportState extends State<Support> {
                               child: TextField(
                                 controller: messageController,
                                 decoration: const InputDecoration(
-                                  hintText: "Send a message...",
+                                  hintText: "Send us a message...",
                                   border: InputBorder.none,
                                 ),
                               ),
@@ -20863,7 +21027,8 @@ class _SupportState extends State<Support> {
           )
         ],
       ),
-      child: Center(
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
         child: Text(
           text,
           style: const TextStyle(
