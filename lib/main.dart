@@ -10980,6 +10980,7 @@ class _UserOrdersListPageState extends State<UserOrdersListPage> {
                     );
                   },
                   child: Card(
+                    color: Colors.white,
                     margin: const EdgeInsets.symmetric(vertical: 8),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
