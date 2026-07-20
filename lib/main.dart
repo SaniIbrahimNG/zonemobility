@@ -10913,14 +10913,14 @@ class _UserOrdersListPageState extends State<UserOrdersListPage> {
 
               /// 🔥 HEADER
               const Text(
-                "Order History",
+                "Orders",
                 style: TextStyle(
-                  fontSize: 22,
+                  fontSize: 20,
                   fontWeight: FontWeight.bold,
                 ),
               ),
 
-              const SizedBox(height: 16),
+              const SizedBox(height: 25),
 
               /// 🔥 SEGMENTED TABS
               Container(
@@ -10988,79 +10988,80 @@ class _UserOrdersListPageState extends State<UserOrdersListPage> {
                     elevation: 2,
                     child: Padding(
                       padding: const EdgeInsets.all(14),
-                      child: Column(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          /// 🔹 ROW 1 (ICON)
-                          Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: Colors.grey[100],
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(Icons.local_shipping),
-                          ),
-
-                          const SizedBox(height: 12),
-
-                          /// 🔹 ROW 2 (3 COLUMNS)
+                          /// 🔹 LEFT COLUMN
                           Column(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              /// 🔸 ORDER ID + DIVIDER
                               Row(
                                 children: [
-                                  const Text("Order ID",
-                                      style: TextStyle(fontSize: 11)),
-                                  const SizedBox(height: 4),
+                                  const SizedBox(
+                                    width: 60,
+                                    child: Text(
+                                      "Order id :",
+                                      style: TextStyle(fontSize: 11),
+                                    ),
+                                  ),
                                   Text(
                                     doc.id.substring(0, 6),
                                     style: const TextStyle(
-                                        fontWeight: FontWeight.bold),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Container(
-                                    width: 40,
-                                    height: 1.5,
-                                    color: Colors.black,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ],
                               ),
-
-                              /// 🔸 ITEMS
+                              const SizedBox(height: 8),
                               Row(
                                 children: [
-                                  const Text("Items",
-                                      style: TextStyle(fontSize: 11)),
-                                  Text("${items.length}",
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.bold)),
+                                  const SizedBox(
+                                    width: 60,
+                                    child: Text(
+                                      "Items :",
+                                      style: TextStyle(fontSize: 11),
+                                    ),
+                                  ),
+                                  Text(
+                                    "${items.length}",
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                                 ],
                               ),
-
-                              /// 🔸 PRICE
+                              const SizedBox(height: 8),
                               Row(
                                 children: [
-                                  const Text("Price",
-                                      style: TextStyle(fontSize: 11)),
+                                  const SizedBox(
+                                    width: 60,
+                                    child: Text(
+                                      "Price :",
+                                      style: TextStyle(fontSize: 11),
+                                    ),
+                                  ),
                                   Text(
                                     "₦${totalPrice.toStringAsFixed(0)}",
                                     style: const TextStyle(
-                                        fontWeight: FontWeight.bold),
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ],
                               ),
                             ],
                           ),
 
-                          const SizedBox(height: 14),
+                          const Spacer(),
 
-                          /// 🔹 ROW 3 (STATUS + DATE/TIME)
+                          /// 🔹 RIGHT COLUMN (STATUS + DATE)
                           Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 6),
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
                                 decoration: BoxDecoration(
                                   color: statusColor.withOpacity(0.15),
                                   borderRadius: BorderRadius.circular(20),
@@ -11070,16 +11071,14 @@ class _UserOrdersListPageState extends State<UserOrdersListPage> {
                                   style: TextStyle(
                                     color: statusColor,
                                     fontWeight: FontWeight.bold,
-                                    fontSize: 12,
+                                    fontSize: 10,
                                   ),
                                 ),
                               ),
-
-                              const SizedBox(height: 6),
-
-                              /// 🔥 DATE & TIME
+                              const SizedBox(height: 8),
                               Text(
                                 _formatDateTime(order['createdAt']),
+                                textAlign: TextAlign.right,
                                 style: TextStyle(
                                   fontSize: 11,
                                   color: Colors.grey[600],
