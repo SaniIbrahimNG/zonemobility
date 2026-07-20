@@ -11003,11 +11003,11 @@ class _UserOrdersListPageState extends State<UserOrdersListPage> {
                           const SizedBox(height: 12),
 
                           /// 🔹 ROW 2 (3 COLUMNS)
-                          Row(
+                          Column(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               /// 🔸 ORDER ID + DIVIDER
-                              Column(
+                              Row(
                                 children: [
                                   const Text("Order ID",
                                       style: TextStyle(fontSize: 11)),
@@ -11027,7 +11027,7 @@ class _UserOrdersListPageState extends State<UserOrdersListPage> {
                               ),
 
                               /// 🔸 ITEMS
-                              Column(
+                              Row(
                                 children: [
                                   const Text("Items",
                                       style: TextStyle(fontSize: 11)),
@@ -11038,7 +11038,7 @@ class _UserOrdersListPageState extends State<UserOrdersListPage> {
                               ),
 
                               /// 🔸 PRICE
-                              Column(
+                              Row(
                                 children: [
                                   const Text("Price",
                                       style: TextStyle(fontSize: 11)),
