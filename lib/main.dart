@@ -578,151 +578,179 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: Stack(
-        children: [
-          // 🗺 MAP
-          if (userLocation != null)
-            GoogleMap(
-              initialCameraPosition: CameraPosition(
-                target: userLocation!,
-                zoom: 15,
-              ),
-              myLocationEnabled: true,
-              myLocationButtonEnabled: true,
-              markers: _markers,
-              onMapCreated: (controller) {
-                _mapController = controller;
-              },
-            )
-          else
-            const Center(child: CircularProgressIndicator()),
-
-          // 🔥 BOTTOM BOOKING CARD
-          Positioned(
-            bottom: 20,
-            left: 16,
-            right: 16,
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 10,
-                  )
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+      body: SafeArea(
+        child: Column(
+          children: [
+            /// ===========================
+            /// 🗺 TOP SECTION (2/3 SCREEN)
+            /// ===========================
+            Expanded(
+              flex: 2,
+              child: Stack(
                 children: [
-                  TextField(
-                    controller: _pickupController,
-                    focusNode: _pickupFocusNode,
-                    decoration: InputDecoration(
-                      hintText: 'Pickup (Current Location)',
-                      filled: true,
-                      fillColor: Colors.grey[100],
-                      prefixIcon: Icon(
-                        Icons.radio_button_checked,
-                        color: Colors.grey[800],
+                  if (userLocation != null)
+                    GoogleMap(
+                      initialCameraPosition: CameraPosition(
+                        target: userLocation!,
+                        zoom: 15,
                       ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
-                      ),
+                      myLocationEnabled: true,
+                      myLocationButtonEnabled: true,
+                      markers: _markers,
+                      onMapCreated: (controller) {
+                        _mapController = controller;
+                      },
+                    )
+                  else
+                    const Center(
+                      child: CircularProgressIndicator(),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _destinationController,
-                    focusNode: _destinationFocusNode,
-                    decoration: InputDecoration(
-                      hintText: 'Enter Destination',
-                      filled: true,
-                      fillColor: Colors.grey[100],
-                      prefixIcon: Icon(
-                        Icons.location_on,
-                        color: Colors.green[800],
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  ElevatedButton(
-                    onPressed: () {
-                      if (_destinationController.text.trim().isEmpty) {
-                        _destinationFocusNode.requestFocus();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text("Please Enter Your Destination!"),
-                          ),
-                        );
-                        return;
-                      }
 
-                      showModalBottomSheet(
-                        context: context,
-                        isScrollControlled: true,
-                        backgroundColor: Colors.transparent,
-                        builder: (context) =>
-                            RidePage(onSelect: _handleRideSelection),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.black,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      minimumSize: const Size.fromHeight(50),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                    ),
-                    child: const Text(
-                      'Book Ride',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
+                  /// 🔙 Back Button
+                  Positioned(
+                    top: 16,
+                    left: 16,
+                    child: GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 8,
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.arrow_back_ios_new,
+                          size: 18,
+                          color: Colors.black,
+                        ),
                       ),
                     ),
                   ),
                 ],
               ),
             ),
-          ),
 
-          // 🔙 BACK BUTTON
-          Positioned(
-            top: 50,
-            left: 16,
-            child: GestureDetector(
-              onTap: () => Navigator.pop(context),
+            /// ===========================
+            /// 🚖 BOTTOM SECTION (1/3 SCREEN)
+            /// ===========================
+            Expanded(
+              flex: 1,
               child: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
+                width: double.infinity,
+                padding: const EdgeInsets.all(20),
+                decoration: const BoxDecoration(
                   color: Colors.white,
-                  shape: BoxShape.circle,
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(28),
+                  ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 8,
+                      color: Colors.black12,
+                      blurRadius: 12,
+                      offset: Offset(0, -2),
                     ),
                   ],
                 ),
-                child: const Icon(
-                  Icons.arrow_back_ios_new,
-                  size: 18,
-                  color: Colors.black,
+                child: Column(
+                  children: [
+                    /// Pickup
+                    TextField(
+                      controller: _pickupController,
+                      focusNode: _pickupFocusNode,
+                      decoration: InputDecoration(
+                        hintText: 'Pickup location',
+                        filled: true,
+                        fillColor: Colors.grey[100],
+                        prefixIcon: Icon(
+                          Icons.radio_button_checked,
+                          color: Colors.grey[800],
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 14),
+
+                    /// Destination
+                    TextField(
+                      controller: _destinationController,
+                      focusNode: _destinationFocusNode,
+                      decoration: InputDecoration(
+                        hintText: 'Where to?',
+                        filled: true,
+                        fillColor: Colors.grey[100],
+                        prefixIcon: Icon(
+                          Icons.location_on,
+                          color: Colors.green,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+
+                    const Spacer(),
+
+                    /// Book Button
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          if (_destinationController.text.trim().isEmpty) {
+                            _destinationFocusNode.requestFocus();
+
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  "Please Enter Your Destination!",
+                                ),
+                              ),
+                            );
+                            return;
+                          }
+
+                          showModalBottomSheet(
+                            context: context,
+                            isScrollControlled: true,
+                            backgroundColor: Colors.transparent,
+                            builder: (context) =>
+                                RidePage(onSelect: _handleRideSelection),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.black,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                        ),
+                        child: const Text(
+                          "Book",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -848,7 +876,7 @@ class _RideBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const _BannerContainer(
-      colors: [Color(0xff0c0925), Color(0xFF8E76FE)],
+      colors: [Color(0xff250921), Color(0xFF8E76FE)],
       image: 'assets/images/shopping-bag.png',
       text: "Skip the stress.\nShop in comfort anytime!",
     );
@@ -4438,7 +4466,7 @@ class _DashboardPageState extends State<DashboardPage> {
           ),
 
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: BorderRadius.circular(8),
             child: BottomNavigationBar(
               backgroundColor: Colors.transparent,
               elevation: 0,
@@ -4531,6 +4559,16 @@ class _DashboardPageState extends State<DashboardPage> {
             children: [
               Row(
                 children: [
+                  Text('Hello ,', style: GoogleFonts.caveat(fontSize: 15)),
+                  const SizedBox(width: 8),
+                  Text('${widget.userName} 👋',
+                      style: GoogleFonts.caveat(
+                          fontWeight: FontWeight.bold, fontSize: 15)),
+                ],
+              ),
+              SizedBox(height: 10),
+              Row(
+                children: [
                   Expanded(
                       child: GestureDetector(
                     onTap: () async {
@@ -4538,16 +4576,12 @@ class _DashboardPageState extends State<DashboardPage> {
                       openLocationModal();
                     },
                     child: Container(
-                      height: 45,
+                      height: 35,
                       width: 250,
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       decoration: BoxDecoration(
                         color: Colors.transparent,
-                        borderRadius: BorderRadius.circular(25),
-                        border: Border.all(
-                          color: Color(0xff070303),
-                          width: 0.2,
-                        ),
+                        borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(
                         children: [
@@ -4592,30 +4626,20 @@ class _DashboardPageState extends State<DashboardPage> {
                   GestureDetector(
                     onTap: () => openMenu(context),
                     child: Container(
-                      height: 45,
-                      width: 45,
-                      decoration: BoxDecoration(
-                        color: Colors.transparent,
-                        borderRadius: BorderRadius.circular(25),
-                        border: Border.all(
-                          color: Color(0xff070303),
-                          width: 0.2,
+                        height: 45,
+                        width: 45,
+                        decoration: BoxDecoration(
+                          color: Colors.black,
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                      ),
-                      child: const Icon(Icons.notifications_none,
-                          color: Colors.black),
-                    ),
+                        child: const Center(
+                            child: (Text('N 2800',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 8,
+                                  color: Colors.white,
+                                ))))),
                   )
-                ],
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Text('Hello ,', style: GoogleFonts.caveat(fontSize: 15)),
-                  const SizedBox(width: 8),
-                  Text('${widget.userName} 👋',
-                      style: GoogleFonts.caveat(
-                          fontWeight: FontWeight.bold, fontSize: 15)),
                 ],
               ),
             ],
@@ -4630,6 +4654,12 @@ class _DashboardPageState extends State<DashboardPage> {
               children: [
                 const AutoScrollingBanners(),
                 const SizedBox(height: 10),
+                Text('Quick Action',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.grey[300],
+                    )),
+                SizedBox(height: 10),
 
                 // Services Grid
                 GridView.count(
@@ -20898,12 +20928,22 @@ class _SupportState extends State<Support> {
               children: [
                 /// 🔥 CURVED BACKGROUND
                 Container(
-                  height: 250,
+                  height: 200,
                   width: double.infinity,
-                  decoration: const BoxDecoration(
-                    color: Colors.black,
-                    borderRadius: BorderRadius.vertical(
-                      bottom: Radius.circular(30), // 🔥 curved bottom
+                  decoration: BoxDecoration(
+                    color: const Color(
+                        0xFF181818), // Dark charcoal instead of pure black
+                    borderRadius: const BorderRadius.vertical(
+                      bottom: Radius.circular(12),
+                    ),
+                  ),
+                ),
+
+                /// ✨ AMBER DOODLE LINES
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: CustomPaint(
+                      painter: HeaderDoodlePainter(),
                     ),
                   ),
                 ),
@@ -20919,7 +20959,7 @@ class _SupportState extends State<Support> {
                         "Hey, $userName 👋",
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 20,
+                          fontSize: 15,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -20931,7 +20971,7 @@ class _SupportState extends State<Support> {
                         "What can we help with?",
                         style: TextStyle(
                           color: Colors.white70,
-                          fontSize: 14,
+                          fontSize: 12,
                         ),
                       ),
 
@@ -20940,20 +20980,21 @@ class _SupportState extends State<Support> {
                       /// 💬 MESSAGE CARD
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 10),
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.white,
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: BorderRadius.circular(12),
                           boxShadow: [
                             BoxShadow(
                               color: Colors.black.withOpacity(0.1),
                               blurRadius: 10,
-                            )
+                            ),
                           ],
                         ),
                         child: Row(
                           children: [
-                            /// INPUT
                             Expanded(
                               child: TextField(
                                 controller: messageController,
@@ -20963,8 +21004,6 @@ class _SupportState extends State<Support> {
                                 ),
                               ),
                             ),
-
-                            /// SEND BUTTON
                             Container(
                               decoration: BoxDecoration(
                                 color: Colors.black,
@@ -20976,7 +21015,7 @@ class _SupportState extends State<Support> {
                                 color: Colors.white,
                                 size: 18,
                               ),
-                            )
+                            ),
                           ],
                         ),
                       ),
@@ -20985,7 +21024,6 @@ class _SupportState extends State<Support> {
                 ),
               ],
             ),
-
             const SizedBox(height: 20),
 
             /// ================= SUPPORT CARDS =================
@@ -21039,6 +21077,61 @@ class _SupportState extends State<Support> {
       ),
     );
   }
+}
+
+class HeaderDoodlePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.amber.withOpacity(0.18)
+      ..strokeWidth = 1.2
+      ..style = PaintingStyle.stroke;
+
+    final path = Path();
+
+    // Left doodle
+    path.moveTo(15, 35);
+    path.quadraticBezierTo(40, 10, 65, 35);
+    path.quadraticBezierTo(90, 60, 115, 35);
+
+    // Top right
+    path.moveTo(size.width - 120, 25);
+    path.quadraticBezierTo(size.width - 80, 5, size.width - 45, 30);
+    path.quadraticBezierTo(size.width - 15, 55, size.width - 5, 25);
+
+    // Bottom left
+    path.moveTo(25, size.height - 45);
+    path.quadraticBezierTo(55, size.height - 70, 90, size.height - 45);
+
+    // Bottom right
+    path.moveTo(size.width - 100, size.height - 55);
+    path.quadraticBezierTo(
+        size.width - 60, size.height - 85, size.width - 20, size.height - 55);
+
+    canvas.drawPath(path, paint);
+
+    // Small decorative circles
+    canvas.drawCircle(
+      const Offset(55, 90),
+      3,
+      paint,
+    );
+
+    canvas.drawCircle(
+      Offset(size.width - 70, 120),
+      4,
+      paint,
+    );
+
+    canvas.drawCircle(
+      Offset(size.width * .5, 45),
+      2,
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(CustomPainter oldDelegate) => false;
 }
 
 class Profile extends StatefulWidget {
