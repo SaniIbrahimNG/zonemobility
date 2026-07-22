@@ -4577,7 +4577,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     },
                     child: Container(
                       height: 35,
-                      width: 250,
+                      width: 240,
                       //padding: const EdgeInsets.symmetric(horizontal: 12),
                       decoration: BoxDecoration(
                         color: Colors.transparent,
@@ -4605,7 +4605,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
-                                      fontSize: 14,
+                                      fontSize: 12,
                                     ),
                                   ),
                                 ),
@@ -4627,9 +4627,9 @@ class _DashboardPageState extends State<DashboardPage> {
                     onTap: () => openMenu(context),
                     child: Container(
                         height: 35,
-                        width: 45,
+                        width: 50,
                         decoration: BoxDecoration(
-                          color: Colors.black,
+                          color: const Color(0xFF181818),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: const Center(
@@ -4658,7 +4658,8 @@ class _DashboardPageState extends State<DashboardPage> {
                 Text('Quick Action',
                     style: TextStyle(
                       fontSize: 11,
-                      color: Colors.grey[500],
+                      color: Colors.black,
+                      fontWeight: FontWeight.bold,
                     )),
                 SizedBox(height: 10),
 
@@ -5924,366 +5925,447 @@ class _TransportPageState extends State<TransportPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[100],
-      appBar: AppBar(
-        //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
-        backgroundColor: Colors.white,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 10),
-          child: GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              width: 25,
-              height: 25,
-              decoration: BoxDecoration(
-                color: Colors.grey[100], // ✅ grey 50 look
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.arrow_back_ios,
-                size: 14,
-                color: Colors.black,
-              ),
-            ),
-          ),
-        ),
-
-        title: const Padding(
-          padding: EdgeInsets.only(left: 8), // ✅ spacing from icon
-          child: Text(
-            'Transport',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
-              color: Colors.black,
-            ),
-          ),
-        ),
-      ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        // padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             /// 🔍 SEARCH BAR
-            Center(
-              child: Container(
-                height: 50,
-                width: 350,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white),
-                ),
-                child: const TextField(
-                  decoration: InputDecoration(
-                    hintText: "Search providers",
-                    border: InputBorder.none,
-                    icon: Icon(Icons.search),
-                  ),
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            /// SERVICE CARDS
-            Row(
+            Stack(
               children: [
-                Expanded(
-                  child: GestureDetector(
-                    onTap: _openMassTransitModal,
-                    child: _serviceCard(
-                      icon: Image.asset(
-                        'assets/images/bus.png',
-                        width: 26,
-                        height: 26,
-                        fit: BoxFit.contain,
-                      ),
-                      title: "Mass Transit",
-                      subtitle: "Book intercity bus transits.",
+                /// 🔥 RIPPLED HEADER
+                ClipPath(
+                  clipper: HeaderWaveClipper(),
+                  child: Container(
+                    height: 200,
+                    width: double.infinity,
+                    color: const Color(0xFF181818),
+                  ),
+                ),
+
+                /// ✨ AMBER DOODLES
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: CustomPaint(
+                      painter: HeaderDoodlePainter(),
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _serviceCard(
-                    icon: Image.asset(
-                      'assets/images/plane.png',
-                      width: 26,
-                      height: 26,
-                      fit: BoxFit.contain,
+
+                SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        /// 🔙 BACK + TITLE
+                        Row(
+                          children: [
+                            GestureDetector(
+                              onTap: () => Navigator.pop(context),
+                              child: Container(
+                                width: 30,
+                                height: 30,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(.12),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.arrow_back_ios_new,
+                                  size: 16,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            const Text(
+                              "Transport",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 18),
+
+                        /// 🔍 SEARCH CARD
+                        Card(
+                          color: Colors.white,
+                          elevation: 5,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 12,
+                            ),
+                            child: SizedBox(
+                              height: 42,
+                              child: TextField(
+                                decoration: InputDecoration(
+                                  hintText: "Search providers",
+                                  hintStyle: const TextStyle(fontSize: 13),
+                                  filled: true,
+                                  fillColor: Colors.grey.shade100,
+                                  prefixIcon: const Icon(
+                                    Icons.search,
+                                    size: 20,
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide: const BorderSide(
+                                      color: Colors.black,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    title: "Flights",
-                    subtitle: "Book flight tickets.",
                   ),
                 ),
               ],
             ),
 
-            const SizedBox(height: 25),
+            const SizedBox(height: 20),
 
-            /// 🔥 PROVIDERS
-            const Text(
-              "Explore Providers",
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-
-            const SizedBox(height: 12),
-
-            SizedBox(
-              height: 130,
-              child: StreamBuilder(
-                stream: FirebaseFirestore.instance
-                    .collection('providers')
-                    .snapshots(),
-                builder: (context, AsyncSnapshot snapshot) {
-                  if (!snapshot.hasData) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-
-                  final providers = snapshot.data.docs;
-
-                  return ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: providers.length,
-                    itemBuilder: (context, index) {
-                      final p = providers[index];
-
-                      return InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: () => _openProviderModal(p),
-                        child: Container(
-                          width: 300,
-                          margin: const EdgeInsets.only(right: 12),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            // border: Border.all(color: Colors.white),
+            /// SERVICE CARDS
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    "Services",
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                  SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: _openMassTransitModal,
+                          child: _serviceCard(
+                            icon: Image.asset(
+                              'assets/images/bus.png',
+                              width: 26,
+                              height: 26,
+                              fit: BoxFit.contain,
+                            ),
+                            title: "Mass Transit",
+                            subtitle: "Book intercity bus transits.",
                           ),
-                          child: Row(
-                            children: [
-                              CircleAvatar(
-                                radius: 25,
-                                backgroundImage: NetworkImage(p['imageUrl']),
-                              ),
-                              const SizedBox(width: 10),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _serviceCard(
+                          icon: Image.asset(
+                            'assets/images/plane.png',
+                            width: 26,
+                            height: 26,
+                            fit: BoxFit.contain,
+                          ),
+                          title: "Flights",
+                          subtitle: "Book flight tickets.",
+                        ),
+                      ),
+                    ],
+                  ),
 
-                              /// NAME + LOCATION
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisAlignment: MainAxisAlignment.center,
+                  const SizedBox(height: 25),
+
+                  /// 🔥 PROVIDERS
+                  const Text(
+                    "Explore Providers",
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  SizedBox(
+                    height: 130,
+                    child: StreamBuilder(
+                      stream: FirebaseFirestore.instance
+                          .collection('providers')
+                          .snapshots(),
+                      builder: (context, AsyncSnapshot snapshot) {
+                        if (!snapshot.hasData) {
+                          return const Center(
+                              child: CircularProgressIndicator());
+                        }
+
+                        final providers = snapshot.data.docs;
+
+                        return ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: providers.length,
+                          itemBuilder: (context, index) {
+                            final p = providers[index];
+
+                            return InkWell(
+                              borderRadius: BorderRadius.circular(12),
+                              onTap: () => _openProviderModal(p),
+                              child: Container(
+                                width: 300,
+                                margin: const EdgeInsets.only(right: 12),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(12),
+                                  // border: Border.all(color: Colors.white),
+                                ),
+                                child: Row(
                                   children: [
-                                    Text(
-                                      p['name'],
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.bold),
+                                    CircleAvatar(
+                                      radius: 25,
+                                      backgroundImage:
+                                          NetworkImage(p['imageUrl']),
                                     ),
-                                    Text(p['location']),
+                                    const SizedBox(width: 10),
+
+                                    /// NAME + LOCATION
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Text(
+                                            p['name'],
+                                            style: const TextStyle(
+                                                fontWeight: FontWeight.bold),
+                                          ),
+                                          Text(p['location']),
+                                        ],
+                                      ),
+                                    ),
+
+                                    /// STATE BADGE
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.green.shade50,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(p['state']),
+                                    )
                                   ],
                                 ),
                               ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 20),
 
-                              /// STATE BADGE
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: Colors.green.shade50,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(p['state']),
-                              )
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 20),
+                  const Text(
+                    "Recents",
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
 
-            const Text(
-              "Recents",
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-              ),
-            ),
+                  const SizedBox(height: 12),
+                  StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('transport_tickets')
+                        .where('userId',
+                            isEqualTo: FirebaseAuth.instance.currentUser?.uid)
+                        // .orderBy('createdAt', descending: true)
+                        .limit(10)
+                        .snapshots(),
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
 
-            const SizedBox(height: 12),
-            StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('transport_tickets')
-                  .where('userId',
-                      isEqualTo: FirebaseAuth.instance.currentUser?.uid)
-                  // .orderBy('createdAt', descending: true)
-                  .limit(10)
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+                      final docs = snapshot.data!.docs;
 
-                final docs = snapshot.data!.docs;
+                      if (docs.isEmpty) {
+                        return const Padding(
+                          padding: EdgeInsets.all(10),
+                          child: Text("No recent tickets yet"),
+                        );
+                      }
 
-                if (docs.isEmpty) {
-                  return const Padding(
-                    padding: EdgeInsets.all(10),
-                    child: Text("No recent tickets yet"),
-                  );
-                }
+                      return Column(
+                        children: docs.map((doc) {
+                          final data = doc.data() as Map<String, dynamic>;
 
-                return Column(
-                  children: docs.map((doc) {
-                    final data = doc.data() as Map<String, dynamic>;
+                          final from = data['from'] ?? 'Unknown';
+                          final to = data['to'] ?? 'Unknown';
+                          final price = data['price'] ?? 0;
+                          final provider = data['providerName'] ?? 'Provider';
+                          final location = data['providerLocation'] ?? '';
+                          final status = data['status'] ?? 'pending';
+                          final ticketId = data['ticketId'] ?? '';
 
-                    final from = data['from'] ?? 'Unknown';
-                    final to = data['to'] ?? 'Unknown';
-                    final price = data['price'] ?? 0;
-                    final provider = data['providerName'] ?? 'Provider';
-                    final location = data['providerLocation'] ?? '';
-                    final status = data['status'] ?? 'pending';
-                    final ticketId = data['ticketId'] ?? '';
+                          final departure = data['departure'] as Timestamp?;
+                          final createdAt = data['createdAt'] as Timestamp?;
 
-                    final departure = data['departure'] as Timestamp?;
-                    final createdAt = data['createdAt'] as Timestamp?;
-
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(14),
-                        // border: Border.all(color: Colors.grey.shade200),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
-                            blurRadius: 8,
-                            offset: const Offset(0, 3),
-                          )
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          /// TOP ROW (route + status)
-                          Row(
-                            children: [
-                              Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: Colors.black,
-                                  borderRadius: BorderRadius.circular(30),
-                                ),
-                                child: const Icon(
-                                  Icons.directions_bus,
-                                  color: Colors.white,
-                                  size: 18,
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(14),
+                              // border: Border.all(color: Colors.grey.shade200),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.05),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 3),
+                                )
+                              ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                /// TOP ROW (route + status)
+                                Row(
                                   children: [
-                                    Text(
-                                      "$from → $to",
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
+                                    Container(
+                                      width: 40,
+                                      height: 40,
+                                      decoration: BoxDecoration(
+                                        color: Colors.black,
+                                        borderRadius: BorderRadius.circular(30),
+                                      ),
+                                      child: const Icon(
+                                        Icons.directions_bus,
+                                        color: Colors.white,
+                                        size: 18,
                                       ),
                                     ),
-                                    const SizedBox(height: 4),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            "$from → $to",
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            provider,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey[600],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: status == "valid"
+                                            ? Colors.green.withOpacity(0.1)
+                                            : Colors.orange.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        status.toUpperCase(),
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                          color: status == "valid"
+                                              ? Colors.green
+                                              : Colors.orange,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+
+                                const SizedBox(height: 10),
+
+                                /// SECOND ROW (details)
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
                                     Text(
-                                      provider,
+                                      "₦$price",
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    Text(
+                                      "ID: $ticketId",
                                       style: TextStyle(
-                                        fontSize: 12,
+                                        fontSize: 11,
+                                        color: Colors.grey[500],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+
+                                const SizedBox(height: 6),
+
+                                /// FOOTER (dates)
+                                Row(
+                                  children: [
+                                    Icon(Icons.schedule,
+                                        size: 14, color: Colors.grey[600]),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      departure != null
+                                          ? "Dep: ${DateTime.fromMillisecondsSinceEpoch(departure.millisecondsSinceEpoch).toString().split('.')[0]}"
+                                          : "No departure",
+                                      style: TextStyle(
+                                        fontSize: 11,
                                         color: Colors.grey[600],
                                       ),
                                     ),
                                   ],
                                 ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: status == "valid"
-                                      ? Colors.green.withOpacity(0.1)
-                                      : Colors.orange.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  status.toUpperCase(),
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: status == "valid"
-                                        ? Colors.green
-                                        : Colors.orange,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-
-                          const SizedBox(height: 10),
-
-                          /// SECOND ROW (details)
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                "₦$price",
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              Text(
-                                "ID: $ticketId",
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.grey[500],
-                                ),
-                              ),
-                            ],
-                          ),
-
-                          const SizedBox(height: 6),
-
-                          /// FOOTER (dates)
-                          Row(
-                            children: [
-                              Icon(Icons.schedule,
-                                  size: 14, color: Colors.grey[600]),
-                              const SizedBox(width: 4),
-                              Text(
-                                departure != null
-                                    ? "Dep: ${DateTime.fromMillisecondsSinceEpoch(departure.millisecondsSinceEpoch).toString().split('.')[0]}"
-                                    : "No departure",
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                );
-              },
-            ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            )
           ],
         ),
       ),
@@ -15058,14 +15140,12 @@ class _LogisticsPageState extends State<LogisticsPage> {
             // 🔹 Search Field
             Stack(children: [
               /// 🔥 CURVED HEADER
-              Container(
-                height: 200,
-                width: double.infinity,
-                decoration: const BoxDecoration(
-                  color: Color(0xFF181818),
-                  borderRadius: BorderRadius.vertical(
-                    bottom: Radius.circular(22),
-                  ),
+              ClipPath(
+                clipper: HeaderWaveClipper(),
+                child: Container(
+                  height: 250,
+                  width: double.infinity,
+                  color: const Color(0xFF181818),
                 ),
               ),
 
@@ -15136,8 +15216,8 @@ class _LogisticsPageState extends State<LogisticsPage> {
                               const Text(
                                 "Track Order",
                                 style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12,
+                                  //fontWeight: FontWeight.w600,
                                 ),
                               ),
                               const SizedBox(height: 8),
@@ -15207,10 +15287,11 @@ class _LogisticsPageState extends State<LogisticsPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // 🔹 Redesigned Service Cards
-                  Text('Sevices',
+                  Text('Services',
                       style: TextStyle(
                         color: Colors.black,
-                        fontSize: 11,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
                       )),
                   SizedBox(height: 10),
                   Row(
@@ -15239,7 +15320,8 @@ class _LogisticsPageState extends State<LogisticsPage> {
                   Text('Recents',
                       style: TextStyle(
                         color: Colors.black,
-                        fontSize: 11,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
                       )),
                   SizedBox(height: 10),
 
@@ -20990,15 +21072,12 @@ class _SupportState extends State<Support> {
             Stack(
               children: [
                 /// 🔥 CURVED BACKGROUND
-                Container(
-                  height: 250,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: const Color(
-                        0xFF181818), // Dark charcoal instead of pure black
-                    borderRadius: const BorderRadius.vertical(
-                      bottom: Radius.circular(14),
-                    ),
+                ClipPath(
+                  clipper: HeaderWaveClipper(),
+                  child: Container(
+                    height: 250,
+                    width: double.infinity,
+                    color: const Color(0xFF181818),
                   ),
                 ),
 
@@ -21140,6 +21219,47 @@ class _SupportState extends State<Support> {
       ),
     );
   }
+}
+
+class HeaderWaveClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    final path = Path();
+
+    path.lineTo(0, size.height - 25);
+
+    // 🌊 First ripple
+    path.quadraticBezierTo(
+      size.width * 0.15,
+      size.height + 15,
+      size.width * 0.33,
+      size.height - 20,
+    );
+
+    // 🌊 Second ripple
+    path.quadraticBezierTo(
+      size.width * 0.50,
+      size.height - 55,
+      size.width * 0.66,
+      size.height - 20,
+    );
+
+    // 🌊 Third ripple
+    path.quadraticBezierTo(
+      size.width * 0.83,
+      size.height + 15,
+      size.width,
+      size.height - 25,
+    );
+
+    path.lineTo(size.width, 0);
+    path.close();
+
+    return path;
+  }
+
+  @override
+  bool shouldReclip(CustomClipper<Path> oldClipper) => false;
 }
 
 class HeaderDoodlePainter extends CustomPainter {
