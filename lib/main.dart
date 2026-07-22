@@ -4578,7 +4578,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     child: Container(
                       height: 35,
                       width: 250,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      //padding: const EdgeInsets.symmetric(horizontal: 12),
                       decoration: BoxDecoration(
                         color: Colors.transparent,
                         borderRadius: BorderRadius.circular(8),
@@ -4626,7 +4626,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   GestureDetector(
                     onTap: () => openMenu(context),
                     child: Container(
-                        height: 45,
+                        height: 35,
                         width: 45,
                         decoration: BoxDecoration(
                           color: Colors.black,
@@ -4651,13 +4651,14 @@ class _DashboardPageState extends State<DashboardPage> {
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const AutoScrollingBanners(),
                 const SizedBox(height: 10),
                 Text('Quick Action',
                     style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.grey[300],
+                      fontSize: 11,
+                      color: Colors.grey[500],
                     )),
                 SizedBox(height: 10),
 
@@ -15049,303 +15050,367 @@ class _LogisticsPageState extends State<LogisticsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[100],
-      appBar: AppBar(
-        //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
-        backgroundColor: Colors.white,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 10),
-          child: GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              width: 25,
-              height: 25,
-              decoration: BoxDecoration(
-                color: Colors.grey[100], // ✅ grey 50 look
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.arrow_back_ios,
-                size: 14,
-                color: Colors.black,
-              ),
-            ),
-          ),
-        ),
-
-        title: const Padding(
-          padding: EdgeInsets.only(left: 8), // ✅ spacing from icon
-          child: Text(
-            'Logistics',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
-              color: Colors.black,
-            ),
-          ),
-        ),
-      ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        //padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // 🔹 Search Field
-            Card(
-              color: Colors.white,
-              elevation: 3,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
+            Stack(children: [
+              /// 🔥 CURVED HEADER
+              Container(
+                height: 200,
+                width: double.infinity,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF181818),
+                  borderRadius: BorderRadius.vertical(
+                    bottom: Radius.circular(22),
+                  ),
+                ),
               ),
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      "Track Order",
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
 
-                    /// 🔍 SEARCH FIELD
-                    TextField(
-                      controller: _trackingIdController,
-                      decoration: InputDecoration(
-                        hintText: "Enter Tracking ID",
-                        filled: true,
-                        fillColor: Colors.grey.shade100,
+              /// ✨ AMBER DOODLE
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: CustomPaint(
+                    painter: HeaderDoodlePainter(),
+                  ),
+                ),
+              ),
 
-                        /// 🔥 STYLED SEARCH ICON
-                        suffixIcon: Padding(
-                          padding: const EdgeInsets.all(6),
-                          child: GestureDetector(
-                            onTap: _searchTrackingId,
+              SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      /// 🔙 BACK + TITLE
+                      Row(
+                        children: [
+                          GestureDetector(
+                            onTap: () => Navigator.pop(context),
                             child: Container(
+                              width: 30,
+                              height: 30,
                               decoration: BoxDecoration(
-                                color: Colors.black,
-                                borderRadius: BorderRadius.circular(8),
+                                color: Colors.white.withOpacity(.12),
+                                shape: BoxShape.circle,
                               ),
                               child: const Icon(
-                                Icons.search,
+                                Icons.arrow_back_ios_new,
+                                size: 16,
                                 color: Colors.white,
-                                size: 20,
                               ),
                             ),
                           ),
-                        ),
-
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 14),
-
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide.none,
-                        ),
-
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide.none,
-                        ),
-
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide:
-                              const BorderSide(color: Colors.black, width: 1),
-                        ),
+                          const SizedBox(width: 14),
+                          const Text(
+                            "Logistics",
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
 
-            const SizedBox(height: 20),
+                      const SizedBox(height: 18),
 
-            // 🔹 Redesigned Service Cards (Instant & Waybills)
-            Row(
-              children: [
-                Expanded(
-                  child: _ServiceCard(
-                    title: "Instant",
-                    description: "Send packages within your city.",
-                    iconPath: "assets/images/transport (1).png",
-                    onTap: () => _openService("Lastmile Delivery"),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: _ServiceCard(
-                    title: "Waybills",
-                    description: "Send packages nationwide safely.",
-                    iconPath: "assets/images/waybill (2).png",
-                    onTap: () => _openService("Waybills"),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 30),
-
-            /// 🔹 Tabs (Pending / Completed)
-            StreamBuilder<QuerySnapshot>(
-              stream: _userLogisticsRequests(),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return const Center(child: Text("No activity here"));
-                }
-
-                final docs = snapshot.data?.docs ?? [];
-
-                /// 🔥 COUNTS
-                final pendingCount = docs.where((doc) {
-                  final data = doc.data() as Map<String, dynamic>;
-                  final status =
-                      (data['status'] ?? '').toString().toLowerCase();
-                  return status != "completed";
-                }).length;
-
-                final completedCount = docs.where((doc) {
-                  final data = doc.data() as Map<String, dynamic>;
-                  final status =
-                      (data['status'] ?? '').toString().toLowerCase();
-                  return status == "completed";
-                }).length;
-
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    /// 🔹 Tabs NOW HAVE ACCESS TO COUNTS
-                    _buildSegmentedTabs(
-                      pendingCount: pendingCount,
-                      completedCount: completedCount,
-                    ),
-                    const SizedBox(height: 15),
-
-                    /// 🔥 FILTER LOGIC
-                    ...docs.where((doc) {
-                      final data = doc.data() as Map<String, dynamic>;
-                      final status =
-                          (data['status'] ?? '').toString().toLowerCase();
-
-                      if (_selectedTab == "completed") {
-                        return status == "completed";
-                      } else {
-                        return status != "completed";
-                      }
-                    }).map((doc) {
-                      final data = doc.data() as Map<String, dynamic>;
-                      final packageName = data['packageName'] ?? '';
-                      final price = data['price'] ?? '';
-                      final status = data['status'] ?? '';
-                      final createdAt =
-                          (data['createdAt'] as Timestamp).toDate();
-
-                      Color statusColor;
-                      switch (status.toLowerCase()) {
-                        case 'awaiting_pickup':
-                        case 'picked_up':
-                          statusColor = Colors.orange;
-                          break;
-                        case 'completed':
-                          statusColor = Colors.green;
-                          break;
-                        default:
-                          statusColor = Colors.blueGrey;
-                      }
-
-                      return InkWell(
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => OrderPlacedPage(orderId: doc.id),
-                            ),
-                          );
-                        },
-                        child: Container(
-                          height: 75,
-                          width: double.infinity,
-                          margin: const EdgeInsets.symmetric(vertical: 5),
-                          padding: const EdgeInsets.symmetric(horizontal: 10),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(8),
+                      /// 🔍 TRACK ORDER CARD
+                      /// 🔍 TRACK ORDER CARD
+                      Card(
+                        color: Colors.white,
+                        elevation: 5,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
                           ),
-                          child: Row(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Image.asset(
-                                "assets/images/up-right.png",
-                                height: 25,
-                                width: 25,
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      packageName,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      "₦$price",
-                                      style: const TextStyle(
-                                        color: Colors.green,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
+                              const Text(
+                                "Track Order",
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
-                              Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: statusColor.withOpacity(0.15),
-                                      borderRadius: BorderRadius.circular(6),
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                height: 42,
+                                child: TextField(
+                                  controller: _trackingIdController,
+                                  decoration: InputDecoration(
+                                    hintText: "Enter Tracking ID",
+                                    hintStyle: const TextStyle(fontSize: 13),
+                                    filled: true,
+                                    fillColor: Colors.grey.shade100,
+                                    suffixIcon: Padding(
+                                      padding: const EdgeInsets.all(4),
+                                      child: GestureDetector(
+                                        onTap: _searchTrackingId,
+                                        child: Container(
+                                          decoration: BoxDecoration(
+                                            color: Colors.black,
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                          child: const Icon(
+                                            Icons.search,
+                                            color: Colors.white,
+                                            size: 18,
+                                          ),
+                                        ),
+                                      ),
                                     ),
-                                    child: Text(
-                                      status,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: statusColor,
-                                        fontWeight: FontWeight.w500,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 8,
+                                    ),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                      borderSide: const BorderSide(
+                                        color: Colors.black,
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(height: 5),
-                                  Text(
-                                    DateFormat('dd/MM/yyyy').format(createdAt),
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey,
-                                    ),
-                                  ),
-                                ],
+                                ),
                               ),
                             ],
                           ),
                         ),
-                      );
-                    }).toList(),
-                  ],
-                );
-              },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ]),
+
+            const SizedBox(height: 10),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 🔹 Redesigned Service Cards
+                  Text('Sevices',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontSize: 11,
+                      )),
+                  SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _ServiceCard(
+                          title: "Instant",
+                          description: "Send packages within your city.",
+                          iconPath: "assets/images/transport (1).png",
+                          onTap: () => _openService("Lastmile Delivery"),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: _ServiceCard(
+                          title: "Waybills",
+                          description: "Send packages nationwide safely.",
+                          iconPath: "assets/images/waybill (2).png",
+                          onTap: () => _openService("Waybills"),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 30),
+
+                  Text('Recents',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontSize: 11,
+                      )),
+                  SizedBox(height: 10),
+
+                  /// 🔹 Tabs (Pending / Completed)
+                  StreamBuilder<QuerySnapshot>(
+                    stream: _userLogisticsRequests(),
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                        return const Center(child: Text("No activity here"));
+                      }
+
+                      final docs = snapshot.data?.docs ?? [];
+
+                      /// 🔥 COUNTS
+                      final pendingCount = docs.where((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        final status =
+                            (data['status'] ?? '').toString().toLowerCase();
+                        return status != "completed";
+                      }).length;
+
+                      final completedCount = docs.where((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        final status =
+                            (data['status'] ?? '').toString().toLowerCase();
+                        return status == "completed";
+                      }).length;
+
+                      return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            /// 🔹 Tabs NOW HAVE ACCESS TO COUNTS
+                            _buildSegmentedTabs(
+                              pendingCount: pendingCount,
+                              completedCount: completedCount,
+                            ),
+                            const SizedBox(height: 15),
+
+                            /// 🔥 FILTER LOGIC
+                            ...docs.where((doc) {
+                              final data = doc.data() as Map<String, dynamic>;
+                              final status = (data['status'] ?? '')
+                                  .toString()
+                                  .toLowerCase();
+
+                              if (_selectedTab == "completed") {
+                                return status == "completed";
+                              } else {
+                                return status != "completed";
+                              }
+                            }).map((doc) {
+                              final data = doc.data() as Map<String, dynamic>;
+                              final packageName = data['packageName'] ?? '';
+                              final price = data['price'] ?? '';
+                              final status = data['status'] ?? '';
+                              final createdAt =
+                                  (data['createdAt'] as Timestamp).toDate();
+
+                              Color statusColor;
+                              switch (status.toLowerCase()) {
+                                case 'awaiting_pickup':
+                                case 'picked_up':
+                                  statusColor = Colors.orange;
+                                  break;
+                                case 'completed':
+                                  statusColor = Colors.green;
+                                  break;
+                                default:
+                                  statusColor = Colors.blueGrey;
+                              }
+
+                              return InkWell(
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          OrderPlacedPage(orderId: doc.id),
+                                    ),
+                                  );
+                                },
+                                child: Container(
+                                  height: 75,
+                                  width: double.infinity,
+                                  margin:
+                                      const EdgeInsets.symmetric(vertical: 5),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Image.asset(
+                                        "assets/images/up-right.png",
+                                        height: 25,
+                                        width: 25,
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              packageName,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              "₦$price",
+                                              style: const TextStyle(
+                                                color: Colors.green,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.end,
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 8, vertical: 3),
+                                            decoration: BoxDecoration(
+                                              color:
+                                                  statusColor.withOpacity(0.15),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                            ),
+                                            child: Text(
+                                              status,
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: statusColor,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 5),
+                                          Text(
+                                            DateFormat('dd/MM/yyyy')
+                                                .format(createdAt),
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ]);
+                    },
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -15363,7 +15428,7 @@ class _LogisticsPageState extends State<LogisticsPage> {
       height: 50,
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
-        color: Colors.grey[200],
+        color: Colors.grey[500],
         borderRadius: BorderRadius.circular(30),
         boxShadow: [
           BoxShadow(
@@ -15493,6 +15558,7 @@ class _LogisticsPageState extends State<LogisticsPage> {
   }) {
     return InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
       child: Container(
         height: 160,
         padding: const EdgeInsets.all(14),
@@ -15509,45 +15575,42 @@ class _LogisticsPageState extends State<LogisticsPage> {
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.start,
           children: [
-            /// 🔥 ROW 1 → ICON + TITLE
-            Row(
-              children: [
-                Container(
-                  height: 43,
-                  width: 43,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.grey[100], // keeps icon visible
-                  ),
-                  padding: const EdgeInsets.all(8),
-                  child: Image.asset(iconPath),
-                ),
-                const SizedBox(width: 15),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: const TextStyle(
-                      color: Colors.black, // ✅ PURE WHITE
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-              ],
+            /// 🔥 ICON
+            Container(
+              height: 43,
+              width: 43,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.grey[100],
+              ),
+              padding: const EdgeInsets.all(8),
+              child: Image.asset(iconPath),
             ),
 
-            const SizedBox(height: 10),
+            const SizedBox(height: 14),
 
-            /// 🔥 ROW 2 → DESCRIPTION
+            /// 🔥 TITLE
+            Text(
+              title,
+              style: const TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+              ),
+            ),
+
+            const SizedBox(height: 6),
+
+            /// 🔥 DESCRIPTION
             Text(
               description,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Colors.grey[700], // softer white
+                color: Colors.grey[700],
                 fontSize: 11,
+                height: 1.4,
               ),
             ),
           ],
@@ -20928,13 +20991,13 @@ class _SupportState extends State<Support> {
               children: [
                 /// 🔥 CURVED BACKGROUND
                 Container(
-                  height: 200,
+                  height: 250,
                   width: double.infinity,
                   decoration: BoxDecoration(
                     color: const Color(
                         0xFF181818), // Dark charcoal instead of pure black
                     borderRadius: const BorderRadius.vertical(
-                      bottom: Radius.circular(12),
+                      bottom: Radius.circular(14),
                     ),
                   ),
                 ),
@@ -20975,13 +21038,13 @@ class _SupportState extends State<Support> {
                         ),
                       ),
 
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 25),
 
                       /// 💬 MESSAGE CARD
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 8,
+                          horizontal: 8,
+                          vertical: 6,
                         ),
                         decoration: BoxDecoration(
                           color: Colors.white,
