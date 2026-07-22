@@ -4582,7 +4582,7 @@ class _DashboardPageState extends State<DashboardPage> {
                       Text(
                         'Hello,',
                         style: GoogleFonts.caveat(
-                          fontSize: 22,
+                          fontSize: 18,
                           color: Colors.white70,
                         ),
                       ),
@@ -4593,7 +4593,7 @@ class _DashboardPageState extends State<DashboardPage> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.caveat(
-                            fontSize: 24,
+                            fontSize: 22,
                             fontWeight: FontWeight.bold,
                             color: Colors.white,
                           ),
@@ -4617,7 +4617,7 @@ class _DashboardPageState extends State<DashboardPage> {
                             height: 46,
                             padding: const EdgeInsets.symmetric(horizontal: 12),
                             decoration: BoxDecoration(
-                              color: Colors.white,
+                              color: Colors.transparent,
                               borderRadius: BorderRadius.circular(12),
                               boxShadow: const [
                                 BoxShadow(
@@ -4645,6 +4645,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                     style: const TextStyle(
                                       fontSize: 13,
                                       fontWeight: FontWeight.w500,
+                                      color: Colors.white,
                                     ),
                                   ),
                                 ),
@@ -6041,7 +6042,7 @@ class _TransportPageState extends State<TransportPage> {
 
                         /// 🔍 SEARCH CARD
                         Card(
-                          color: Colors.white,
+                          color: Colors.Transparent,
                           elevation: 5,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -8478,12 +8479,41 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
     );
   }
 
+  final List<String> _searchSuggestions = [
+    "shuttles",
+    "routes",
+    "institutions",
+    "campuses",
+    "cities",
+  ];
+
+  int _currentSuggestion = 0;
+
+  Timer? _searchHintTimer;
+
   Widget _avatarFallback() {
     return Container(
       width: 52,
       height: 52,
       color: Colors.grey[200],
       child: const Icon(Icons.person, color: Colors.grey),
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+
+    _searchHintTimer = Timer.periodic(
+      const Duration(seconds: 2),
+      (_) {
+        if (!mounted) return;
+
+        setState(() {
+          _currentSuggestion =
+              (_currentSuggestion + 1) % _searchSuggestions.length;
+        });
+      },
     );
   }
 
@@ -8679,7 +8709,8 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                               ),
                             ),
                           ),
-                          const Spacer(),
+                          // const Spacer(),
+                          SizedBox(height: 20),
                           const Text(
                             "Shuttle",
                             style: TextStyle(
@@ -8697,7 +8728,7 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                       /// 🔍 SEARCH BAR
                       Card(
                         elevation: 5,
-                        color: Colors.white,
+                        color: Colors.transparent,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -8708,39 +8739,84 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                           ),
                           child: SizedBox(
                             height: 42,
-                            child: TextField(
-                              controller: _searchController,
-                              decoration: InputDecoration(
-                                hintText: "Search shuttles",
-                                hintStyle: TextStyle(
-                                  color: Colors.grey[500],
-                                  fontSize: 13,
-                                ),
-                                filled: true,
-                                fillColor: Colors.grey.shade100,
-                                prefixIcon: const Icon(
-                                  Icons.search,
-                                  size: 20,
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                  borderSide: BorderSide.none,
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                  borderSide: BorderSide.none,
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                  borderSide: const BorderSide(
-                                    color: Colors.black,
+                            child: Stack(
+                              alignment: Alignment.centerLeft,
+                              children: [
+                                TextField(
+                                  controller: _searchController,
+                                  decoration: InputDecoration(
+                                    filled: true,
+                                    fillColor: Colors.grey.shade100,
+                                    prefixIcon: const Icon(
+                                      Icons.search,
+                                      size: 20,
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 8,
+                                    ),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                      borderSide: const BorderSide(
+                                        color: Colors.black,
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              ),
+                                IgnorePointer(
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(left: 50),
+                                    child: Row(
+                                      children: [
+                                        Text(
+                                          "Search ",
+                                          style: TextStyle(
+                                            color: Colors.grey[500],
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                        AnimatedSwitcher(
+                                          duration:
+                                              const Duration(milliseconds: 400),
+                                          transitionBuilder:
+                                              (child, animation) {
+                                            return FadeTransition(
+                                              opacity: animation,
+                                              child: SlideTransition(
+                                                position: Tween<Offset>(
+                                                  begin: const Offset(0, .35),
+                                                  end: Offset.zero,
+                                                ).animate(animation),
+                                                child: child,
+                                              ),
+                                            );
+                                          },
+                                          child: Text(
+                                            _searchSuggestions[
+                                                _currentSuggestion],
+                                            key: ValueKey(
+                                              _searchSuggestions[
+                                                  _currentSuggestion],
+                                            ),
+                                            style: TextStyle(
+                                              color: Colors.grey[500],
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
@@ -8859,6 +8935,8 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
 
   @override
   void dispose() {
+    _searchController.dispose();
+    _searchHintTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
