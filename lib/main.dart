@@ -15496,6 +15496,685 @@ class PackageTrackingViewPage extends StatelessWidget {
   }
 }
 
+enum SenderCategory {
+  business,
+  personal,
+}
+
+class LogisticsEntryPage extends StatefulWidget {
+  final String serviceType;
+
+  const LogisticsEntryPage({
+    Key? key,
+    required this.serviceType,
+  }) : super(key: key);
+
+  @override
+  State<LogisticsEntryPage> createState() => _LogisticsEntryPageState();
+}
+
+class _LogisticsEntryPageState extends State<LogisticsEntryPage>
+    with SingleTickerProviderStateMixin {
+  bool _checkingUser = true;
+
+  SenderCategory? _selectedCategory;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkUserStatus();
+  }
+
+  Future<void> _checkUserStatus() async {
+    final uid = FirebaseAuth.instance.currentUser!.uid;
+
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('logistics')
+          .doc('profile')
+          .get();
+
+      if (!mounted) return;
+
+      if (doc.exists) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PackageDetailsPage(
+              serviceType: widget.serviceType,
+            ),
+          ),
+        );
+
+        return;
+      }
+
+      setState(() {
+        _checkingUser = false;
+      });
+    } catch (e) {
+      setState(() {
+        _checkingUser = false;
+      });
+    }
+  }
+
+  Future<void> _continue() async {
+    if (_selectedCategory == null) return;
+
+    final uid = FirebaseAuth.instance.currentUser!.uid;
+
+    await FirebaseFirestore.instance
+        .collection("users")
+        .doc(uid)
+        .collection("logistics")
+        .doc("profile")
+        .set({
+      "senderType": _selectedCategory == SenderCategory.business
+          ? "business"
+          : "personal",
+      "createdAt": FieldValue.serverTimestamp(),
+    });
+
+    if (!mounted) return;
+
+    if (_selectedCategory == SenderCategory.business) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const BusinessDetailsPage(),
+        ),
+      );
+    } else {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PackageDetailsPage(
+            serviceType: widget.serviceType,
+          ),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_checkingUser) {
+      return const Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(
+          child: CircularProgressIndicator(
+            color: Colors.black,
+          ),
+        ),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 22,
+            vertical: 18,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    size: 18,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 35),
+              const Text(
+                "Select your category",
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                "Select your category to get a tailored experience according to your needs.",
+                style: TextStyle(
+                  fontSize: 15,
+                  color: Colors.grey.shade700,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 35),
+              _categoryCard(
+                title: "Business",
+                description:
+                    "Perfect for businesses, online stores and SMEs that send packages regularly.",
+                icon: Icons.business_center_rounded,
+                accentColor: Colors.deepPurple,
+                selected: _selectedCategory == SenderCategory.business,
+                onTap: () {
+                  setState(() {
+                    _selectedCategory = SenderCategory.business;
+                  });
+                },
+              ),
+              const SizedBox(height: 18),
+              _categoryCard(
+                title: "Personal",
+                description:
+                    "For personal deliveries to family, friends or occasional customers.",
+                icon: Icons.person_outline_rounded,
+                accentColor: Colors.green,
+                selected: _selectedCategory == SenderCategory.personal,
+                onTap: () {
+                  setState(() {
+                    _selectedCategory = SenderCategory.personal;
+                  });
+                },
+              ),
+              const Spacer(),
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  onPressed: _selectedCategory == null ? null : _continue,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.black,
+                    disabledBackgroundColor: Colors.grey.shade300,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: const Text(
+                    "Continue",
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ================= CATEGORY CARD =================
+  Widget _categoryCard({
+    required String title,
+    required String description,
+    required IconData icon,
+    required Color accentColor,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeInOut,
+        width: double.infinity,
+        height: 150,
+        decoration: BoxDecoration(
+          color: selected ? Colors.grey.shade50 : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? Colors.black : Colors.grey.shade200,
+            width: selected ? 1.5 : 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(selected ? 0.08 : 0.04),
+              blurRadius: selected ? 18 : 10,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            // Accent strip
+            Container(
+              width: 5,
+              height: double.infinity,
+              decoration: BoxDecoration(
+                color: accentColor,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(20),
+                  bottomLeft: Radius.circular(20),
+                ),
+              ),
+            ),
+
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: accentColor.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Icon(
+                            icon,
+                            color: accentColor,
+                            size: 24,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        AnimatedOpacity(
+                          duration: const Duration(milliseconds: 200),
+                          opacity: selected ? 1 : 0,
+                          child: Container(
+                            width: 28,
+                            height: 28,
+                            decoration: const BoxDecoration(
+                              color: Colors.black,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.check,
+                              size: 16,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      description,
+                      style: TextStyle(
+                        fontSize: 14,
+                        height: 1.5,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class BusinessDetailsPage extends StatefulWidget {
+  final String serviceType;
+
+  const BusinessDetailsPage({
+    Key? key,
+    required this.serviceType,
+  }) : super(key: key);
+
+  @override
+  State<BusinessDetailsPage> createState() => _BusinessDetailsPageState();
+}
+
+class _BusinessDetailsPageState extends State<BusinessDetailsPage> {
+  final _formKey = GlobalKey<FormState>();
+
+  final _businessNameController = TextEditingController();
+  final _cityController = TextEditingController();
+  final _addressController = TextEditingController();
+  final _phoneController = TextEditingController();
+
+  bool _loading = false;
+
+  String? _selectedState;
+
+  Future<void> _onboardBusiness() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    if (_selectedState == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Please select a state."),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+    });
+
+    final uid = FirebaseAuth.instance.currentUser!.uid;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection("users")
+          .doc(uid)
+          .collection("logistics")
+          .doc("profile")
+          .set({
+        "senderType": "business",
+        "businessName": _businessNameController.text.trim(),
+        "state": _selectedState,
+        "city": _cityController.text.trim(),
+        "address": _addressController.text.trim(),
+        "phone": _phoneController.text.trim(),
+        "profileCompleted": true,
+        "createdAt": FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      if (!mounted) return;
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PackageDetailsPage(
+            serviceType: widget.serviceType,
+          ),
+        ),
+      );
+    } catch (e) {
+      setState(() {
+        _loading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString()),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 22,
+            vertical: 18,
+          ),
+          child: Form(
+            key: _formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.arrow_back_ios_new_rounded,
+                        size: 18,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 35),
+                  const Text(
+                    "Business Details",
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    "Fill out your business details to get a tailored logistics experience according to your needs.",
+                    style: TextStyle(
+                      color: Colors.grey.shade700,
+                      height: 1.5,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const SizedBox(height: 35),
+                  _buildField(
+                    controller: _businessNameController,
+                    label: "Business Name",
+                  ),
+                  const SizedBox(height: 18),
+                  _stateDropdown(),
+                  const SizedBox(height: 18),
+                  _buildField(
+                    controller: _cityController,
+                    label: "City",
+                  ),
+                  const SizedBox(height: 18),
+                  _buildField(
+                    controller: _addressController,
+                    label: "Business Address",
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 18),
+                  _buildField(
+                    controller: _phoneController,
+                    label: "Phone Number",
+                    keyboardType: TextInputType.phone,
+                  ),
+                  const SizedBox(height: 40),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: ElevatedButton(
+                      onPressed: _loading ? null : _onboardBusiness,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.black,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: _loading
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text(
+                              "Onboard",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 25),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ================= STATES =================
+
+  final List<String> _states = const [
+    "Abia",
+    "Adamawa",
+    "Akwa Ibom",
+    "Anambra",
+    "Bauchi",
+    "Bayelsa",
+    "Benue",
+    "Borno",
+    "Cross River",
+    "Delta",
+    "Ebonyi",
+    "Edo",
+    "Ekiti",
+    "Enugu",
+    "Federal Capital Territory",
+    "Gombe",
+    "Imo",
+    "Jigawa",
+    "Kaduna",
+    "Kano",
+    "Katsina",
+    "Kebbi",
+    "Kogi",
+    "Kwara",
+    "Lagos",
+    "Nasarawa",
+    "Niger",
+    "Ogun",
+    "Ondo",
+    "Osun",
+    "Oyo",
+    "Plateau",
+    "Rivers",
+    "Sokoto",
+    "Taraba",
+    "Yobe",
+    "Zamfara",
+  ];
+
+  // ================= STATE DROPDOWN =================
+
+  Widget _stateDropdown() {
+    return DropdownButtonFormField<String>(
+      value: _selectedState,
+      decoration: _inputDecoration("State"),
+      borderRadius: BorderRadius.circular(16),
+      icon: const Icon(Icons.keyboard_arrow_down_rounded),
+      items: _states
+          .map(
+            (state) => DropdownMenuItem(
+              value: state,
+              child: Text(state),
+            ),
+          )
+          .toList(),
+      onChanged: (value) {
+        setState(() {
+          _selectedState = value;
+        });
+      },
+      validator: (value) {
+        if (value == null) {
+          return "Please select a state";
+        }
+        return null;
+      },
+    );
+  }
+
+  // ================= TEXT FIELD =================
+
+  Widget _buildField({
+    required TextEditingController controller,
+    required String label,
+    int maxLines = 1,
+    TextInputType keyboardType = TextInputType.text,
+  }) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: keyboardType,
+      maxLines: maxLines,
+      validator: (value) {
+        if (value == null || value.trim().isEmpty) {
+          return "Required";
+        }
+        return null;
+      },
+      decoration: _inputDecoration(label),
+    );
+  }
+
+  // ================= INPUT DECORATION =================
+
+  InputDecoration _inputDecoration(String label) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: TextStyle(
+        color: Colors.grey.shade700,
+      ),
+      filled: true,
+      fillColor: Colors.grey.shade100,
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: 18,
+        vertical: 18,
+      ),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(
+          color: Colors.black,
+          width: 1.2,
+        ),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(
+          color: Colors.red,
+        ),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(
+          color: Colors.red,
+          width: 1.2,
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _businessNameController.dispose();
+    _cityController.dispose();
+    _addressController.dispose();
+    _phoneController.dispose();
+    super.dispose();
+  }
+}
+
 class LogisticsPage extends StatefulWidget {
   const LogisticsPage({super.key});
   @override
@@ -16057,7 +16736,7 @@ class _LogisticsPageState extends State<LogisticsPage> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => PackageDetailsPage(serviceType: serviceType),
+        builder: (_) => LogisticsEntryPage(serviceType: serviceType),
       ),
     );
   }
@@ -21503,12 +22182,19 @@ class _SupportState extends State<Support> {
             Stack(
               children: [
                 /// 🔥 CURVED BACKGROUND
-                ClipPath(
-                  clipper: HeaderWaveClipper(),
-                  child: Container(
-                    height: 250,
-                    width: double.infinity,
+                Container(
+                  height: 200,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
                     color: const Color(0xFF181818),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.15),
+                        blurRadius: 20,
+                        spreadRadius: 2,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
                   ),
                 ),
 
