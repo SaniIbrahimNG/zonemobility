@@ -15564,39 +15564,47 @@ class _LogisticsEntryPageState extends State<LogisticsEntryPage>
   Future<void> _continue() async {
     if (_selectedCategory == null) return;
 
-    final uid = FirebaseAuth.instance.currentUser!.uid;
+    try {
+      final uid = FirebaseAuth.instance.currentUser!.uid;
 
-    await FirebaseFirestore.instance
-        .collection("users")
-        .doc(uid)
-        .collection("logistics")
-        .doc("profile")
-        .set({
-      "senderType": _selectedCategory == SenderCategory.business
-          ? "business"
-          : "personal",
-      "createdAt": FieldValue.serverTimestamp(),
-    });
+      await FirebaseFirestore.instance
+          .collection("users")
+          .doc(uid)
+          .collection("logistics")
+          .doc("profile")
+          .set({
+        "senderType": _selectedCategory == SenderCategory.business
+            ? "business"
+            : "personal",
+        "createdAt": FieldValue.serverTimestamp(),
+      });
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    if (_selectedCategory == SenderCategory.business) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => BusinessDetailsPage(
-            serviceType: widget.serviceType,
+      if (_selectedCategory == SenderCategory.business) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => BusinessDetailsPage(
+              serviceType: widget.serviceType,
+            ),
           ),
-        ),
-      );
-    } else {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => PackageDetailsPage(
-            serviceType: widget.serviceType,
+        );
+      } else {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PackageDetailsPage(
+              serviceType: widget.serviceType,
+            ),
           ),
-        ),
+        );
+      }
+    } catch (e) {
+      debugPrint("Logistics onboarding error: $e");
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
       );
     }
   }
@@ -15849,11 +15857,17 @@ class _BusinessDetailsPageState extends State<BusinessDetailsPage> {
   final _formKey = GlobalKey<FormState>();
 
   final _businessNameController = TextEditingController();
-  final _cityController = TextEditingController();
+  // final _cityController = TextEditingController();
   final _addressController = TextEditingController();
   final _phoneController = TextEditingController();
 
   bool _loading = false;
+
+  String? _selectedLocation;
+
+  List<String> _locations = [];
+
+  bool _loadingLocations = false;
 
   String? _selectedState;
 
@@ -15885,7 +15899,7 @@ class _BusinessDetailsPageState extends State<BusinessDetailsPage> {
         "senderType": "business",
         "businessName": _businessNameController.text.trim(),
         "state": _selectedState,
-        "city": _cityController.text.trim(),
+        "location": _selectedLocation,
         "address": _addressController.text.trim(),
         "phone": _phoneController.text.trim(),
         "profileCompleted": true,
@@ -15913,6 +15927,55 @@ class _BusinessDetailsPageState extends State<BusinessDetailsPage> {
         ),
       );
     }
+  }
+
+  Widget _locationDropdown() {
+    return DropdownButtonFormField<String>(
+      value: _selectedLocation,
+      decoration: _inputDecoration("Location"),
+      borderRadius: BorderRadius.circular(16),
+      icon: const Icon(Icons.keyboard_arrow_down_rounded),
+      items: _locations
+          .map(
+            (location) => DropdownMenuItem(
+              value: location,
+              child: Text(location),
+            ),
+          )
+          .toList(),
+      onChanged: (value) {
+        setState(() {
+          _selectedLocation = value;
+        });
+      },
+      validator: (value) {
+        if (value == null) {
+          return "Please select a location";
+        }
+        return null;
+      },
+    );
+  }
+
+  Future<void> _loadStates() async {
+    try {
+      final states = await LocationService.getStates();
+
+      setState(() {
+        _states = states;
+        _loadingStates = false;
+      });
+    } catch (_) {
+      setState(() {
+        _loadingStates = false;
+      });
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStates();
   }
 
   @override
@@ -15969,12 +16032,24 @@ class _BusinessDetailsPageState extends State<BusinessDetailsPage> {
                     label: "Business Name",
                   ),
                   const SizedBox(height: 18),
-                  _stateDropdown(),
+                  _loadingStates
+                      ? const Center(
+                          child: CircularProgressIndicator(
+                            color: Colors.black,
+                          ),
+                        )
+                      : _stateDropdown(),
                   const SizedBox(height: 18),
-                  _buildField(
-                    controller: _cityController,
-                    label: "City",
-                  ),
+                  _loadingLocations
+                      ? const Center(
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(vertical: 20),
+                            child: CircularProgressIndicator(
+                              color: Colors.black,
+                            ),
+                          ),
+                        )
+                      : _locationDropdown(),
                   const SizedBox(height: 18),
                   _buildField(
                     controller: _addressController,
@@ -16030,46 +16105,9 @@ class _BusinessDetailsPageState extends State<BusinessDetailsPage> {
 
   // ================= STATES =================
 
-  final List<String> _states = const [
-    "Abia",
-    "Adamawa",
-    "Akwa Ibom",
-    "Anambra",
-    "Bauchi",
-    "Bayelsa",
-    "Benue",
-    "Borno",
-    "Cross River",
-    "Delta",
-    "Ebonyi",
-    "Edo",
-    "Ekiti",
-    "Enugu",
-    "Federal Capital Territory",
-    "Gombe",
-    "Imo",
-    "Jigawa",
-    "Kaduna",
-    "Kano",
-    "Katsina",
-    "Kebbi",
-    "Kogi",
-    "Kwara",
-    "Lagos",
-    "Nasarawa",
-    "Niger",
-    "Ogun",
-    "Ondo",
-    "Osun",
-    "Oyo",
-    "Plateau",
-    "Rivers",
-    "Sokoto",
-    "Taraba",
-    "Yobe",
-    "Zamfara",
-  ];
+  List<String> _states = [];
 
+  bool _loadingStates = true;
   // ================= STATE DROPDOWN =================
 
   Widget _stateDropdown() {
@@ -16086,10 +16124,36 @@ class _BusinessDetailsPageState extends State<BusinessDetailsPage> {
             ),
           )
           .toList(),
-      onChanged: (value) {
+      onChanged: (value) async {
+        if (value == null) return;
+
         setState(() {
           _selectedState = value;
+          _selectedLocation = null;
+          _locations = [];
+          _loadingLocations = true;
         });
+
+        try {
+          final locations = await LocationService.getLocations(value);
+
+          locations.sort();
+
+          if (!mounted) return;
+
+          setState(() {
+            _locations = locations;
+            _loadingLocations = false;
+          });
+        } catch (e) {
+          setState(() {
+            _loadingLocations = false;
+          });
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(e.toString())),
+          );
+        }
       },
       validator: (value) {
         if (value == null) {
@@ -16170,10 +16234,44 @@ class _BusinessDetailsPageState extends State<BusinessDetailsPage> {
   @override
   void dispose() {
     _businessNameController.dispose();
-    _cityController.dispose();
+    // _cityController.dispose();
     _addressController.dispose();
     _phoneController.dispose();
     super.dispose();
+  }
+}
+
+class LocationService {
+  static const String _baseUrl = "https://nga-states-lga.onrender.com";
+
+  /// Returns all states
+  static Future<List<String>> getStates() async {
+    final response = await http.get(
+      Uri.parse("$_baseUrl/fetch"),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception("Unable to fetch states.");
+    }
+
+    final List data = json.decode(response.body);
+
+    return data.map<String>((e) => e["state"].toString()).toList();
+  }
+
+  /// Returns LGAs for a state
+  static Future<List<String>> getLocations(String state) async {
+    final response = await http.get(
+      Uri.parse("$_baseUrl/?state=${Uri.encodeComponent(state)}"),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception("Unable to fetch locations.");
+    }
+
+    final data = json.decode(response.body);
+
+    return List<String>.from(data);
   }
 }
 
@@ -16938,12 +17036,40 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
     }
   }
 
-  void _updateStepProgress() {
-    if (_currentStep == 0 && _validateStep(0)) {
-      setState(() => _currentStep = 1);
-    } else if (_currentStep == 1 && _validateStep(1)) {
+  void _nextStep() {
+    if (_currentStep == 0) {
+      if (_packageNameController.text.isEmpty ||
+          _selectedCategory == null ||
+          _selectedSize == null ||
+          _estimatedValueController.text.isEmpty ||
+          _selectedFromCity == null ||
+          _selectedToCity == null) {
+        return;
+      }
+    }
+
+    if (_currentStep == 1) {
+      if (_senderNameController.text.isEmpty ||
+          _senderContactController.text.isEmpty ||
+          _pickupAddressController.text.isEmpty) {
+        return;
+      }
+
       _saveSenderDetails();
-      setState(() => _currentStep = 2);
+    }
+
+    if (_currentStep < 2) {
+      setState(() {
+        _currentStep++;
+      });
+    }
+  }
+
+  void _previousStep() {
+    if (_currentStep > 0) {
+      setState(() {
+        _currentStep--;
+      });
     }
   }
 
@@ -16967,6 +17093,8 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
       'receiverContact': _receiverContactController.text.trim(),
       'trackingId': trackingId,
       'userId': userId,
+      'packageSize': _selectedSize,
+      'estimatedValue': _estimatedValueController.text.trim(),
 
       // 🔥 LOGISTICS DATA ADDED
       'fromCity': _selectedFromCity,
@@ -16998,7 +17126,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
           _selectedToCity = null;
           _calculatedPrice = null;
         });
-        _updateStepProgress();
+        _nextStep();
       },
     );
   }
@@ -17033,7 +17161,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
           _selectedToCity = val;
           _calculatePrice();
         });
-        _updateStepProgress();
+        _nextStep();
       },
     );
   }
@@ -17101,28 +17229,108 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
     );
   }
 
+  String? _selectedSize;
+
+  final List<String> _packageSizes = [
+    "Small",
+    "Medium",
+    "Large",
+  ];
+
+  final _estimatedValueController = TextEditingController();
+
+  Widget _packageSizeSelector() {
+    return Row(
+      children: _packageSizes.map((size) {
+        final selected = _selectedSize == size;
+
+        return Expanded(
+          child: GestureDetector(
+            onTap: () {
+              setState(() {
+                _selectedSize = size;
+              });
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              margin: EdgeInsets.only(
+                right: size != _packageSizes.last ? 10 : 0,
+              ),
+              height: 55,
+              decoration: BoxDecoration(
+                color: selected ? Colors.black : Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: selected ? Colors.black : Colors.grey.shade300,
+                ),
+              ),
+              child: Center(
+                child: Text(
+                  size,
+                  style: TextStyle(
+                    color: selected ? Colors.white : Colors.black87,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
   // ================= SECTIONS =================
   Widget _packageSection() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildTextField(_packageNameController, 'Package Name',
-            onChanged: (_) => _updateStepProgress()),
-        const SizedBox(height: 12),
+        _buildTextField(
+          _packageNameController,
+          "Package Name",
+        ),
+        const SizedBox(height: 20),
         DropdownButtonFormField<String>(
           value: _selectedCategory,
-          decoration: _inputDecoration('Category'),
+          decoration: _inputDecoration("Category"),
           items: _categories
-              .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+              .map(
+                (e) => DropdownMenuItem(
+                  value: e,
+                  child: Text(e),
+                ),
+              )
               .toList(),
           onChanged: (val) {
-            setState(() => _selectedCategory = val);
-            _updateStepProgress(); // 🔥 THIS WAS MISSING
+            setState(() {
+              _selectedCategory = val;
+            });
           },
         ),
+        const SizedBox(height: 22),
+        const Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            "Package Size",
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 15,
+            ),
+          ),
+        ),
         const SizedBox(height: 12),
+        _packageSizeSelector(),
+        const SizedBox(height: 22),
+        _buildTextField(
+          _estimatedValueController,
+          "Estimated Value (₦)",
+          keyboardType: TextInputType.number,
+        ),
+        const SizedBox(height: 20),
         _cityDropdown(),
-        const SizedBox(height: 12),
+        const SizedBox(height: 20),
         _destinationDropdown(),
+        _priceCard(),
       ],
     );
   }
@@ -17159,20 +17367,20 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
         _buildTextField(
           _senderNameController,
           "Sender Name",
-          onChanged: (_) => _updateStepProgress(),
+          onChanged: (_) => _nextStep(),
         ),
         const SizedBox(height: 12),
         _buildTextField(
           _senderContactController,
           "Phone",
           keyboardType: TextInputType.phone,
-          onChanged: (_) => _updateStepProgress(),
+          onChanged: (_) => _nextStep(),
         ),
         SizedBox(height: 12),
         _buildTextField(
           _pickupAddressController,
           "Pickup Location",
-          onChanged: (_) => _updateStepProgress(),
+          onChanged: (_) => _nextStep(),
         ),
       ],
     );
@@ -17188,6 +17396,115 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
         const SizedBox(height: 12),
         _buildTextField(_deliveryAddressController, "Delivery Location"),
       ],
+    );
+  }
+
+  String get _stepTitle {
+    switch (_currentStep) {
+      case 0:
+        return "Package Details";
+      case 1:
+        return "Sender Details";
+      case 2:
+        return "Receiver Details";
+      default:
+        return "";
+    }
+  }
+
+  String get _stepSubtitle {
+    switch (_currentStep) {
+      case 0:
+        return "Tell us about the package you're sending.";
+      case 1:
+        return "Where should we pick up your package?";
+      case 2:
+        return "Who should receive this package?";
+      default:
+        return "";
+    }
+  }
+
+  Widget _progressBar() {
+    return TweenAnimationBuilder<double>(
+      duration: const Duration(milliseconds: 350),
+      tween: Tween(
+        begin: 0,
+        end: (_currentStep + 1) / 3,
+      ),
+      builder: (_, value, __) {
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(100),
+          child: LinearProgressIndicator(
+            value: value,
+            minHeight: 8,
+            backgroundColor: Colors.grey.shade200,
+            valueColor: const AlwaysStoppedAnimation<Color>(Colors.black),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCurrentStep() {
+    switch (_currentStep) {
+      case 0:
+        return _packageSection();
+
+      case 1:
+        return _senderSection();
+
+      case 2:
+        return _receiverSection();
+
+      default:
+        return const SizedBox();
+    }
+  }
+
+  Widget _priceCard() {
+    if (_calculatedPrice == null) {
+      return const SizedBox();
+    }
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 20),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.black,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.local_shipping_rounded,
+            color: Colors.white,
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Text(
+                  "Estimated Delivery Fee",
+                  style: TextStyle(
+                    color: Colors.white70,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            "₦${NumberFormat("#,###").format(_calculatedPrice)}",
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -17241,64 +17558,78 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
             controller: _scrollController,
             child: Column(
               children: [
-                Center(
-                  child: Container(
-                    height: 70,
-                    width: 350,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
-                      color: Colors.black,
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: Text(
-                          'Fill out the details below to send packages instantly.',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          )),
-                    ),
+                Text(
+                  _stepTitle,
+                  style: const TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
-                _sectionCard(
-                  step: 0,
-                  iconWidget: Image.asset('assets/images/package.png',
-                      width: 24, height: 24),
-                  title: "Package Details",
-                  subtitle: "Tell us what you are sending",
-                  child: _packageSection(),
+                const SizedBox(height: 8),
+                Text(
+                  _stepSubtitle,
+                  style: TextStyle(
+                    color: Colors.grey.shade700,
+                    fontSize: 15,
+                    height: 1.5,
+                  ),
                 ),
-                _sectionCard(
-                  step: 1,
-                  iconWidget: Image.asset('assets/images/supplier.png',
-                      width: 24, height: 24),
-                  title: "Sender Details",
-                  subtitle: "Where should we pickup this package ?",
-                  child: _senderSection(),
+                const SizedBox(height: 25),
+                _progressBar(),
+                const SizedBox(height: 35),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 350),
+                  transitionBuilder: (child, animation) {
+                    return SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(.15, 0),
+                        end: Offset.zero,
+                      ).animate(animation),
+                      child: FadeTransition(
+                        opacity: animation,
+                        child: child,
+                      ),
+                    );
+                  },
+                  child: Container(
+                    key: ValueKey(_currentStep),
+                    child: _buildCurrentStep(),
+                  ),
                 ),
-                _sectionCard(
-                  step: 2,
-                  iconWidget: Image.asset('assets/images/traveling.png',
-                      width: 24, height: 24),
-                  title: "Receiver Details",
-                  subtitle: "Where should we deliver this package ?",
-                  child: _receiverSection(),
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _goToPreview,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.black,
-                    ),
-                    child: const Text(
-                      "Continue",
-                      style: TextStyle(
-                        color: Colors.white,
+                SizedBox(height: 20),
+                Row(
+                  children: [
+                    if (_currentStep > 0)
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: _previousStep,
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(55),
+                          ),
+                          child: const Text("Back"),
+                        ),
+                      ),
+                    if (_currentStep > 0) const SizedBox(width: 14),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          if (_currentStep == 2) {
+                            _goToPreview();
+                          } else {
+                            _nextStep();
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.black,
+                          minimumSize: const Size.fromHeight(55),
+                        ),
+                        child: Text(
+                          _currentStep == 2 ? "Continue" : "Next",
+                          style: const TextStyle(color: Colors.white),
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 )
               ],
             ),
