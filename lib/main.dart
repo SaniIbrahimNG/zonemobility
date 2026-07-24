@@ -15584,7 +15584,9 @@ class _LogisticsEntryPageState extends State<LogisticsEntryPage>
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => const BusinessDetailsPage(),
+          builder: (_) => BusinessDetailsPage(
+            serviceType: widget.serviceType,
+          ),
         ),
       );
     } else {
