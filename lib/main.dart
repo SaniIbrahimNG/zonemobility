@@ -4600,7 +4600,7 @@ class _DashboardPageState extends State<DashboardPage> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.caveat(
-                            fontSize: 22,
+                            fontSize: 20,
                             fontWeight: FontWeight.bold,
                             color: Colors.white,
                           ),
@@ -5990,12 +5990,19 @@ class _TransportPageState extends State<TransportPage> {
             Stack(
               children: [
                 /// 🔥 RIPPLED HEADER
-                ClipPath(
-                  clipper: HeaderWaveClipper(),
-                  child: Container(
-                    height: 200,
-                    width: double.infinity,
+                Container(
+                  height: 200,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
                     color: const Color(0xFF181818),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.15),
+                        blurRadius: 20,
+                        spreadRadius: 2,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
                   ),
                 ),
 
@@ -8673,12 +8680,19 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
           Stack(
             children: [
               /// 🔥 RIPPLED HEADER
-              ClipPath(
-                clipper: HeaderWaveClipper(),
-                child: Container(
-                  height: 185,
-                  width: double.infinity,
+              Container(
+                height: 200,
+                width: double.infinity,
+                decoration: BoxDecoration(
                   color: const Color(0xFF181818),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.15),
+                      blurRadius: 20,
+                      spreadRadius: 2,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
                 ),
               ),
 
@@ -10518,12 +10532,19 @@ class _ShoppingSectionPageState extends State<ShoppingSectionPage>
               Stack(
                 children: [
                   /// 🔥 RIPPLED HEADER
-                  ClipPath(
-                    clipper: HeaderWaveClipper(),
-                    child: Container(
-                      height: 185,
-                      width: double.infinity,
+                  Container(
+                    height: 200,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
                       color: const Color(0xFF181818),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.15),
+                          blurRadius: 20,
+                          spreadRadius: 2,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
                     ),
                   ),
 
@@ -10560,7 +10581,8 @@ class _ShoppingSectionPageState extends State<ShoppingSectionPage>
                                   ),
                                 ),
                               ),
-                              const Spacer(),
+                              SizedBox(height: 10),
+                              // const Spacer(),
                               const Text(
                                 'Shop Essentials',
                                 style: TextStyle(
@@ -10578,7 +10600,7 @@ class _ShoppingSectionPageState extends State<ShoppingSectionPage>
                           /// 🔍 SEARCH BAR
                           Card(
                             elevation: 5,
-                            color: Colors.white,
+                            color: Colors.transparent,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
@@ -11317,12 +11339,19 @@ class _UserOrdersListPageState extends State<UserOrdersListPage> {
               Stack(
                 children: [
                   /// 🔥 RIPPLED HEADER
-                  ClipPath(
-                    clipper: HeaderWaveClipper(),
-                    child: Container(
-                      height: 190,
-                      width: double.infinity,
+                  Container(
+                    height: 200,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
                       color: const Color(0xFF181818),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.15),
+                          blurRadius: 20,
+                          spreadRadius: 2,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
                     ),
                   ),
 
@@ -11340,12 +11369,13 @@ class _UserOrdersListPageState extends State<UserOrdersListPage> {
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
                       child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
                             "Orders",
                             style: TextStyle(
                               color: Colors.white,
-                              fontSize: 22,
+                              fontSize: 20,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -11414,7 +11444,7 @@ class _UserOrdersListPageState extends State<UserOrdersListPage> {
                     );
                   },
                   child: Padding(
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(4),
                     child: Card(
                       color: Colors.white,
                       margin: const EdgeInsets.symmetric(vertical: 8),
@@ -12678,12 +12708,19 @@ class _FoodSectionPageState extends State<FoodSectionPage>
             Stack(
               children: [
                 /// 🔥 RIPPLED HEADER
-                ClipPath(
-                  clipper: HeaderWaveClipper(),
-                  child: Container(
-                    height: 185,
-                    width: double.infinity,
+                Container(
+                  height: 150,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
                     color: const Color(0xFF181818),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.15),
+                        blurRadius: 20,
+                        spreadRadius: 2,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
                   ),
                 ),
 
@@ -12720,7 +12757,8 @@ class _FoodSectionPageState extends State<FoodSectionPage>
                                 ),
                               ),
                             ),
-                            const Spacer(),
+                            SizedBox(height: 10),
+                            //const Spacer(),
                             const Text(
                               "Order Food",
                               style: TextStyle(
@@ -12735,7 +12773,7 @@ class _FoodSectionPageState extends State<FoodSectionPage>
                         const SizedBox(height: 18),
                         Card(
                           elevation: 5,
-                          color: Colors.white,
+                          color: Colors.transparent,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -15525,12 +15563,19 @@ class _LogisticsPageState extends State<LogisticsPage> {
             // 🔹 Search Field
             Stack(children: [
               /// 🔥 CURVED HEADER
-              ClipPath(
-                clipper: HeaderWaveClipper(),
-                child: Container(
-                  height: 250,
-                  width: double.infinity,
+              Container(
+                height: 200,
+                width: double.infinity,
+                decoration: BoxDecoration(
                   color: const Color(0xFF181818),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.15),
+                      blurRadius: 20,
+                      spreadRadius: 2,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
                 ),
               ),
 
@@ -15585,7 +15630,7 @@ class _LogisticsPageState extends State<LogisticsPage> {
                       /// 🔍 TRACK ORDER CARD
                       /// 🔍 TRACK ORDER CARD
                       Card(
-                        color: Colors.white,
+                        color: Colors.transparent,
                         elevation: 5,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -15602,6 +15647,7 @@ class _LogisticsPageState extends State<LogisticsPage> {
                                 "Track Order",
                                 style: TextStyle(
                                   fontSize: 12,
+                                  color: Colors.white,
                                   //fontWeight: FontWeight.w600,
                                 ),
                               ),
