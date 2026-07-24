@@ -4553,12 +4553,19 @@ class _DashboardPageState extends State<DashboardPage> {
         Stack(
           children: [
             /// 🔥 RIPPLED HEADER
-            ClipPath(
-              clipper: HeaderWaveClipper(),
-              child: Container(
-                height: 190,
-                width: double.infinity,
+            Container(
+              height: 200,
+              width: double.infinity,
+              decoration: BoxDecoration(
                 color: const Color(0xFF181818),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.15),
+                    blurRadius: 20,
+                    spreadRadius: 2,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
               ),
             ),
 
@@ -6042,7 +6049,7 @@ class _TransportPageState extends State<TransportPage> {
 
                         /// 🔍 SEARCH CARD
                         Card(
-                          color: Colors.Transparent,
+                          color: Colors.transparent,
                           elevation: 5,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
