@@ -8849,50 +8849,81 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
             ],
           ),
           Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    "What are you looking for?",
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
+            child: SingleChildScrollView(
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "What are you looking for?",
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
 
-                  const SizedBox(height: 16),
+                    const SizedBox(height: 16),
 
-                  // ── Two Category Cards ───────────────
-                  Row(
-                    children: [
-                      GestureDetector(
-                        onTap: _openInstitutionsModal,
-                        child: _categoryCard(
-                          icon: Icons.directions_bus_rounded,
-                          iconColor: Colors.blue,
-                          bgColor: Colors.blue.withOpacity(0.08),
-                          title: "Shuttle",
-                          description: "Book shuttle bus tickets",
+                    // ── Two Category Cards ───────────────
+                    Row(
+                      children: [
+                        GestureDetector(
+                          onTap: _openInstitutionsModal,
+                          child: _categoryCard(
+                            icon: Icons.directions_bus_rounded,
+                            iconColor: Colors.blue,
+                            bgColor: Colors.blue.withOpacity(0.08),
+                            title: "Shuttle",
+                            description: "Book shuttle bus tickets",
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 14),
-                      GestureDetector(
-                        onTap: () {
-                          // TODO: Commute flow
-                        },
-                        child: _categoryCard(
-                          icon: Icons.commute_rounded,
-                          iconColor: Colors.teal,
-                          bgColor: Colors.teal.withOpacity(0.08),
-                          title: "Commute",
-                          description: "Book shuttle tickets in your city",
+                        const SizedBox(width: 14),
+                        GestureDetector(
+                          onTap: () {
+                            // TODO: Commute flow
+                          },
+                          child: _categoryCard(
+                            icon: Icons.commute_rounded,
+                            iconColor: Colors.teal,
+                            bgColor: Colors.teal.withOpacity(0.08),
+                            title: "Commute",
+                            description: "Book shuttle tickets in your city",
+                          ),
                         ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 28),
+
+                    const Text(
+                      "Explore Providers",
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
                       ),
-                    ],
-                  ),
-                ],
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    _buildOnlineDrivers(),
+
+                    const SizedBox(height: 28),
+
+                    const Text(
+                      "Recents",
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    _buildRecentTickets(),
+                  ],
+                ),
               ),
             ),
           ),
@@ -8990,6 +9021,371 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildOnlineDrivers() {
+    return SizedBox(
+      height: 175,
+      child: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection("shuttle_drivers")
+            .where("status", isEqualTo: "online")
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: 3,
+              itemBuilder: (_, __) => Container(
+                width: 240,
+                margin: const EdgeInsets.only(right: 14),
+                child: _driverShimmer(),
+              ),
+            );
+          }
+
+          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+            return Center(
+              child: Text(
+                "No providers online.",
+                style: TextStyle(color: Colors.grey[500]),
+              ),
+            );
+          }
+
+          final docs = snapshot.data!.docs;
+
+          return ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: docs.length,
+            itemBuilder: (context, index) {
+              final data = docs[index].data() as Map<String, dynamic>;
+
+              return _providerCard(data);
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _providerCard(Map<String, dynamic> data) {
+    final image = data["vehicleImage"] ?? "";
+    final code = data["driverCode"] ?? "";
+    final vehicle = data["vehicleName"] ?? "";
+    final institution = data["activeInstitution"] ?? "";
+    final pickup = data["pickupLocation"] ?? "";
+    final destination = data["destinationLocation"] ?? "";
+    final price = data["price"] ?? 0;
+
+    final capacity = data["vehicleCapacity"] ?? 0;
+    final boarded = data["boardedPassengers"] ?? 0;
+
+    final seats = capacity - boarded;
+
+    return Container(
+      width: 280,
+      margin: const EdgeInsets.only(right: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(.06),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(18),
+              topRight: Radius.circular(18),
+            ),
+            child: image.toString().isEmpty
+                ? Container(
+                    height: 150,
+                    color: Colors.grey.shade200,
+                    child: const Center(
+                      child: Icon(
+                        Icons.directions_bus,
+                        size: 60,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  )
+                : Image.network(
+                    image,
+                    height: 150,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        vehicle,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 17,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade50,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        "$seats Seats",
+                        style: TextStyle(
+                          color: Colors.green.shade700,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
+                    )
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    const Icon(Icons.badge, size: 16),
+                    const SizedBox(width: 6),
+                    Text(code),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.school, size: 16),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        institution,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.location_on, size: 16),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        "$pickup → $destination",
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 15),
+                Row(
+                  children: [
+                    Text(
+                      "₦$price",
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                      ),
+                    ),
+                    const Spacer(),
+                    ElevatedButton(
+                      onPressed: seats <= 0
+                          ? null
+                          : () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      ShuttlePaymentPage(driverData: data),
+                                ),
+                              );
+                            },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.black,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: const Text(
+                        "Book",
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    )
+                  ],
+                )
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecentTickets() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection("shuttle_tickets")
+          .where(
+            "userId",
+            isEqualTo: FirebaseAuth.instance.currentUser!.uid,
+          )
+          // .orderBy("createdAt", descending: true)
+          .limit(10)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(30),
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Column(
+              children: [
+                Icon(
+                  Icons.history,
+                  size: 40,
+                  color: Colors.grey,
+                ),
+                SizedBox(height: 10),
+                Text(
+                  "No recent shuttle bookings.",
+                  style: TextStyle(
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return Column(
+          children: snapshot.data!.docs.map((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 14),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(.05),
+                    blurRadius: 8,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: Colors.black,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(
+                      Icons.directions_bus,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          data["driverName"] ?? "Driver",
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          "${data["pickupLocation"] ?? ""} → ${data["destinationLocation"] ?? ""}",
+                          style: TextStyle(
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          "Seat ${data["seatNumber"] ?? "-"}",
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        "₦${data["price"] ?? 0}",
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          (data["status"] ?? "Booked").toString().toUpperCase(),
+                          style: TextStyle(
+                            color: Colors.green.shade700,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 11,
+                          ),
+                        ),
+                      )
+                    ],
+                  )
+                ],
+              ),
+            );
+          }).toList(),
+        );
+      },
     );
   }
 
@@ -10524,251 +10920,257 @@ class _ShoppingSectionPageState extends State<ShoppingSectionPage>
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Stack(
-                children: [
-                  /// 🔥 RIPPLED HEADER
-                  Container(
-                    height: 200,
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF181818),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.15),
-                          blurRadius: 20,
-                          spreadRadius: 2,
-                          offset: const Offset(0, 8),
+        child: Column(
+          children: [
+            Stack(
+              children: [
+                /// 🔥 RIPPLED HEADER
+                Container(
+                  height: 200,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF181818),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.15),
+                        blurRadius: 20,
+                        spreadRadius: 2,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                ),
+
+                /// ✨ AMBER DOODLES
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: CustomPaint(
+                      painter: HeaderDoodlePainter(),
+                    ),
+                  ),
+                ),
+
+                SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 26),
+                    child: Column(
+                      children: [
+                        /// 🔙 BACK + TITLE
+                        Row(
+                          children: [
+                            GestureDetector(
+                              onTap: () => Navigator.pop(context),
+                              child: Container(
+                                width: 34,
+                                height: 34,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(.12),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.arrow_back_ios_new,
+                                  size: 16,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                            SizedBox(height: 10),
+                            // const Spacer(),
+                            const Text(
+                              'Shop Essentials',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const Spacer(flex: 2),
+                          ],
+                        ),
+
+                        const SizedBox(height: 18),
+
+                        /// 🔍 SEARCH BAR
+                        Card(
+                          elevation: 5,
+                          color: Colors.transparent,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
+                            child: SizedBox(
+                              height: 42,
+                              child: TextField(
+                                decoration: InputDecoration(
+                                  hintText: 'Search',
+                                  hintStyle: const TextStyle(fontSize: 13),
+                                  filled: true,
+                                  fillColor: Colors.grey.shade100,
+                                  prefixIcon: const Icon(
+                                    Icons.search,
+                                    size: 20,
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide: const BorderSide(
+                                      color: Colors.black,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
                       ],
                     ),
                   ),
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 12),
 
-                  /// ✨ AMBER DOODLES
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: CustomPaint(
-                        painter: HeaderDoodlePainter(),
-                      ),
-                    ),
+                  const Text(
+                    "Categories",
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                   ),
 
-                  SafeArea(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 20, 16, 26),
-                      child: Column(
-                        children: [
-                          /// 🔙 BACK + TITLE
-                          Row(
-                            children: [
-                              GestureDetector(
-                                onTap: () => Navigator.pop(context),
-                                child: Container(
-                                  width: 34,
-                                  height: 34,
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(.12),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.arrow_back_ios_new,
-                                    size: 16,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                              SizedBox(height: 10),
-                              // const Spacer(),
-                              const Text(
-                                'Shop Essentials',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const Spacer(flex: 2),
-                            ],
+                  const SizedBox(height: 6),
+
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: ["All", "Groceries", "Pharma"].map((cat) {
+                      bool isSelected = selectedCategory == cat;
+
+                      return GestureDetector(
+                        onTap: () => setState(() => selectedCategory = cat),
+                        child: Container(
+                          height: 28,
+                          width: 90,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: isSelected ? Colors.black : Colors.grey,
+                            borderRadius: BorderRadius.circular(8),
                           ),
+                          child: Text(
+                            cat,
+                            style: TextStyle(
+                                color: isSelected
+                                    ? Colors.white
+                                    : Colors.grey[600]),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
 
-                          const SizedBox(height: 18),
+                  const SizedBox(height: 10),
 
-                          /// 🔍 SEARCH BAR
-                          Card(
-                            elevation: 5,
-                            color: Colors.transparent,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 10,
-                              ),
-                              child: SizedBox(
-                                height: 42,
-                                child: TextField(
-                                  decoration: InputDecoration(
-                                    hintText: 'Search',
-                                    hintStyle: const TextStyle(fontSize: 13),
-                                    filled: true,
-                                    fillColor: Colors.grey.shade100,
-                                    prefixIcon: const Icon(
-                                      Icons.search,
-                                      size: 20,
-                                    ),
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 8,
-                                    ),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(10),
-                                      borderSide: BorderSide.none,
-                                    ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(10),
-                                      borderSide: BorderSide.none,
-                                    ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(10),
-                                      borderSide: const BorderSide(
-                                        color: Colors.black,
+                  /// PRODUCTS
+                  Expanded(
+                    child: _ShoppingVendorIds.isEmpty
+                        ? _buildShimmerList()
+                        : StreamBuilder<QuerySnapshot>(
+                            stream: FirebaseFirestore.instance
+                                .collection('products')
+                                .where('vendorId', whereIn: _ShoppingVendorIds)
+                                .snapshots(),
+                            builder: (context, snapshot) {
+                              if (!snapshot.hasData) {
+                                return _buildShimmerList();
+                              }
+
+                              final docs = snapshot.data!.docs;
+
+                              return ListView.builder(
+                                itemCount: docs.length,
+                                itemBuilder: (context, index) {
+                                  final doc = docs[index];
+
+                                  final data =
+                                      doc.data() as Map<String, dynamic>;
+
+                                  final imageKey = GlobalKey();
+
+                                  return GestureDetector(
+                                    onTap: () => _flyToCart(imageKey, data),
+                                    child: Container(
+                                      height: 85,
+                                      margin: const EdgeInsets.symmetric(
+                                          vertical: 6),
+                                      child: Row(
+                                        children: [
+                                          Container(
+                                            key: imageKey,
+                                            width: 60,
+                                            height: 60,
+                                            child: ClipOval(
+                                              child: Image.network(
+                                                data['image'] ?? '',
+                                                fit: BoxFit.cover,
+                                                errorBuilder: (_, __, ___) {
+                                                  return Image.asset(
+                                                    data['fallbackAsset'] ??
+                                                        "assets/images/food.png",
+                                                    fit: BoxFit.cover,
+                                                  );
+                                                },
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              children: [
+                                                Text(
+                                                  data['name'] ?? '',
+                                                  style: const TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.bold),
+                                                ),
+                                                Text(
+                                                  "₦${data['price']}",
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
-                                  ),
-                                ),
-                              ),
-                            ),
+                                  );
+                                },
+                              );
+                            },
                           ),
-                        ],
-                      ),
-                    ),
                   ),
                 ],
               ),
-
-              const SizedBox(height: 12),
-
-              const Text(
-                "Categories",
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-
-              const SizedBox(height: 6),
-
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: ["All", "Groceries", "Pharma"].map((cat) {
-                  bool isSelected = selectedCategory == cat;
-
-                  return GestureDetector(
-                    onTap: () => setState(() => selectedCategory = cat),
-                    child: Container(
-                      height: 28,
-                      width: 90,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: isSelected ? Colors.black : Colors.grey,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        cat,
-                        style: TextStyle(
-                            color:
-                                isSelected ? Colors.white : Colors.grey[600]),
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-
-              const SizedBox(height: 10),
-
-              /// PRODUCTS
-              Expanded(
-                child: _ShoppingVendorIds.isEmpty
-                    ? _buildShimmerList()
-                    : StreamBuilder<QuerySnapshot>(
-                        stream: FirebaseFirestore.instance
-                            .collection('products')
-                            .where('vendorId', whereIn: _ShoppingVendorIds)
-                            .snapshots(),
-                        builder: (context, snapshot) {
-                          if (!snapshot.hasData) {
-                            return _buildShimmerList();
-                          }
-
-                          final docs = snapshot.data!.docs;
-
-                          return ListView.builder(
-                            itemCount: docs.length,
-                            itemBuilder: (context, index) {
-                              final doc = docs[index];
-
-                              final data = doc.data() as Map<String, dynamic>;
-
-                              final imageKey = GlobalKey();
-
-                              return GestureDetector(
-                                onTap: () => _flyToCart(imageKey, data),
-                                child: Container(
-                                  height: 85,
-                                  margin:
-                                      const EdgeInsets.symmetric(vertical: 6),
-                                  child: Row(
-                                    children: [
-                                      Container(
-                                        key: imageKey,
-                                        width: 60,
-                                        height: 60,
-                                        child: ClipOval(
-                                          child: Image.network(
-                                            data['image'] ?? '',
-                                            fit: BoxFit.cover,
-                                            errorBuilder: (_, __, ___) {
-                                              return Image.asset(
-                                                data['fallbackAsset'] ??
-                                                    "assets/images/food.png",
-                                                fit: BoxFit.cover,
-                                              );
-                                            },
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
-                                          children: [
-                                            Text(
-                                              data['name'] ?? '',
-                                              style: const TextStyle(
-                                                  fontWeight: FontWeight.bold),
-                                            ),
-                                            Text(
-                                              "₦${data['price']}",
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                          );
-                        },
-                      ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -17808,7 +18210,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
   InputDecoration _inputDecoration(String label) => InputDecoration(
         labelText: label,
         filled: true,
-        fillColor: Colors.white,
+        fillColor: Colors.grey[100],
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide.none,
@@ -18441,7 +18843,8 @@ class OrderPlacedPage extends StatelessWidget {
                           const SizedBox(height: 12),
 
                           /// 🔥 CODE CARD
-                          if (status == "pending") _codeCard(pickupCode),
+                          if (status == "pending" || status == "accepted")
+                            _codeCard(pickupCode),
 
                           if (status == "pickedup")
                             Row(
@@ -19669,7 +20072,7 @@ class DeliveryAgentPage extends StatelessWidget {
             return GestureDetector(
               onTap: () {
                 // 🔥 NAVIGATION LOGIC
-                if (status == "picked_up") {
+                if (status == "pickedup") {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -19883,7 +20286,7 @@ class DeliveryAgentPage extends StatelessWidget {
                         // 🔹 PENDING (accepted + picked_up)
                         _buildOrdersStream(
                           context,
-                          statuses: ['accepted', 'picked_up'],
+                          statuses: ['accepted', 'pickedup'],
                           currentUser: currentUser,
                         ),
 
@@ -19898,23 +20301,6 @@ class DeliveryAgentPage extends StatelessWidget {
                   ),
                 ],
               ),
-      ),
-    );
-  }
-}
-
-// Placeholder page for driver deliveries
-class DriverDeliveriesPage extends StatelessWidget {
-  const DriverDeliveriesPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("My Deliveries"),
-      ),
-      body: const Center(
-        child: Text("Here the deliveries will be listed based on status."),
       ),
     );
   }
