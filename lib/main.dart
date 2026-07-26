@@ -15652,8 +15652,8 @@ class _LogisticsEntryPageState extends State<LogisticsEntryPage>
               const Text(
                 "Select your category",
                 style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w700,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
               const SizedBox(height: 10),
@@ -15742,7 +15742,7 @@ class _LogisticsEntryPageState extends State<LogisticsEntryPage>
         width: double.infinity,
         height: 150,
         decoration: BoxDecoration(
-          color: selected ? Colors.grey.shade50 : Colors.white,
+          color: selected ? Colors.white : Colors.grey[100],
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: selected ? Colors.black : Colors.grey.shade200,
@@ -15759,17 +15759,6 @@ class _LogisticsEntryPageState extends State<LogisticsEntryPage>
         child: Row(
           children: [
             // Accent strip
-            Container(
-              width: 5,
-              height: double.infinity,
-              decoration: BoxDecoration(
-                color: accentColor,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(20),
-                  bottomLeft: Radius.circular(20),
-                ),
-              ),
-            ),
 
             Expanded(
               child: Padding(
@@ -15932,17 +15921,14 @@ class _BusinessDetailsPageState extends State<BusinessDetailsPage> {
   Widget _locationDropdown() {
     return DropdownButtonFormField<String>(
       value: _selectedLocation,
-      decoration: _inputDecoration("Location"),
-      borderRadius: BorderRadius.circular(16),
-      icon: const Icon(Icons.keyboard_arrow_down_rounded),
-      items: _locations
-          .map(
-            (location) => DropdownMenuItem(
-              value: location,
-              child: Text(location),
-            ),
-          )
-          .toList(),
+      isExpanded: true,
+      decoration: _inputDecoration("City / LGA"),
+      items: _locations.map((location) {
+        return DropdownMenuItem(
+          value: location,
+          child: Text(location),
+        );
+      }).toList(),
       onChanged: (value) {
         setState(() {
           _selectedLocation = value;
@@ -15961,14 +15947,22 @@ class _BusinessDetailsPageState extends State<BusinessDetailsPage> {
     try {
       final states = await LocationService.getStates();
 
+      if (!mounted) return;
+
       setState(() {
         _states = states;
         _loadingStates = false;
       });
-    } catch (_) {
+    } catch (e) {
+      if (!mounted) return;
+
       setState(() {
         _loadingStates = false;
       });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
     }
   }
 
@@ -16113,6 +16107,7 @@ class _BusinessDetailsPageState extends State<BusinessDetailsPage> {
   Widget _stateDropdown() {
     return DropdownButtonFormField<String>(
       value: _selectedState,
+      isExpanded: true,
       decoration: _inputDecoration("State"),
       borderRadius: BorderRadius.circular(16),
       icon: const Icon(Icons.keyboard_arrow_down_rounded),
@@ -16195,7 +16190,7 @@ class _BusinessDetailsPageState extends State<BusinessDetailsPage> {
         color: Colors.grey.shade700,
       ),
       filled: true,
-      fillColor: Colors.grey.shade100,
+      fillColor: Colors.white,
       contentPadding: const EdgeInsets.symmetric(
         horizontal: 18,
         vertical: 18,
@@ -16242,36 +16237,37 @@ class _BusinessDetailsPageState extends State<BusinessDetailsPage> {
 }
 
 class LocationService {
-  static const String _baseUrl = "https://nga-states-lga.onrender.com";
+  static Map<String, dynamic>? _cache;
+
+  static Future<void> _load() async {
+    if (_cache != null) return;
+
+    final jsonString = await rootBundle.loadString(
+      'assets/data/nigerian-states.json',
+    );
+
+    _cache = json.decode(jsonString);
+  }
 
   /// Returns all states
   static Future<List<String>> getStates() async {
-    final response = await http.get(
-      Uri.parse("$_baseUrl/fetch"),
-    );
+    await _load();
 
-    if (response.statusCode != 200) {
-      throw Exception("Unable to fetch states.");
-    }
+    final states = _cache!.keys.cast<String>().toList();
+    states.sort();
 
-    final List data = json.decode(response.body);
-
-    return data.map<String>((e) => e["state"].toString()).toList();
+    return states;
   }
 
-  /// Returns LGAs for a state
+  /// Returns all locations for a state
   static Future<List<String>> getLocations(String state) async {
-    final response = await http.get(
-      Uri.parse("$_baseUrl/?state=${Uri.encodeComponent(state)}"),
-    );
+    await _load();
 
-    if (response.statusCode != 200) {
-      throw Exception("Unable to fetch locations.");
-    }
+    final locations = List<String>.from(_cache![state] ?? []);
 
-    final data = json.decode(response.body);
+    locations.sort();
 
-    return List<String>.from(data);
+    return locations;
   }
 }
 
@@ -16936,6 +16932,9 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
   bool _useSavedSender = false;
   int _currentStep = 0;
   String? _selectedCategory;
+  bool _loadingSenderProfile = true;
+  bool _editingSender = false;
+  String? _senderType;
 
   final List<String> _categories = [
     'Document',
@@ -16956,6 +16955,53 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
   void initState() {
     super.initState();
     _fetchRoutes();
+    _loadSenderProfile();
+  }
+
+  Future<void> _loadSenderProfile() async {
+    final uid = FirebaseAuth.instance.currentUser!.uid;
+
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection("users")
+          .doc(uid)
+          .collection("logistics")
+          .doc("profile")
+          .get();
+
+      if (!doc.exists) {
+        setState(() {
+          _loadingSenderProfile = false;
+        });
+        return;
+      }
+
+      final data = doc.data()!;
+
+      _senderType = data["senderType"];
+
+      if (_senderType == "business") {
+        _senderNameController.text = data["businessName"] ?? "";
+
+        _senderContactController.text = data["phone"] ?? "";
+
+        final address = data["address"] ?? "";
+        final city = data["city"] ?? "";
+        final state = data["state"] ?? "";
+
+        _pickupAddressController.text = "$address, $city, $state";
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _loadingSenderProfile = false;
+      });
+    } catch (_) {
+      setState(() {
+        _loadingSenderProfile = false;
+      });
+    }
   }
 
   Future<void> _fetchRoutes() async {
@@ -17116,7 +17162,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
 
     return DropdownButtonFormField<String>(
       value: _selectedFromCity,
-      decoration: _inputDecoration("Pickup City"),
+      decoration: _inputDecoration("From"),
       items: cities
           .map((c) => DropdownMenuItem(value: c, child: Text(c)))
           .toList(),
@@ -17140,7 +17186,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
 
     return DropdownButtonFormField<String>(
       value: _selectedToCity,
-      decoration: _inputDecoration("Delivery Destination"),
+      decoration: _inputDecoration("To"),
       items: dests.map<DropdownMenuItem<String>>((d) {
         final name = d['name'];
 
@@ -17280,6 +17326,150 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
     );
   }
 
+  Widget _senderForm() {
+    return Column(
+      children: [
+        GestureDetector(
+          onTap: () async {
+            setState(() => _useSavedSender = !_useSavedSender);
+            if (_useSavedSender) await _loadSavedSender();
+          },
+          child: Row(
+            children: [
+              // Spacer(),
+              Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.black, width: 1),
+                  color: _useSavedSender ? Colors.black : Colors.transparent,
+                ),
+                child: _useSavedSender
+                    ? const Icon(Icons.check, size: 10, color: Colors.white)
+                    : null,
+              ),
+              const SizedBox(width: 8),
+              const Text("Use my details", style: TextStyle(fontSize: 10)),
+            ],
+          ),
+        ),
+        SizedBox(height: 8),
+        _buildTextField(
+          _senderNameController,
+          "Sender Name",
+          onChanged: (_) => _nextStep(),
+        ),
+        const SizedBox(height: 12),
+        _buildTextField(
+          _senderContactController,
+          "Phone",
+          keyboardType: TextInputType.phone,
+          onChanged: (_) => _nextStep(),
+        ),
+        SizedBox(height: 12),
+        _buildTextField(
+          _pickupAddressController,
+          "Pickup Location",
+          onChanged: (_) => _nextStep(),
+        ),
+
+        // 👇 EVERYTHING currently inside _senderSection()
+      ],
+    );
+  }
+
+  Widget _senderSummaryCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: Colors.grey.shade200,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(.05),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: Colors.black12,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  _senderType == "business" ? Icons.business : Icons.person,
+                  color: Colors.black,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _senderType == "business"
+                          ? "Business Profile"
+                          : "Personal Profile",
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _senderNameController.text,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 22),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.phone_outlined),
+            title: Text(_senderContactController.text),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.location_on_outlined),
+            title: Text(_pickupAddressController.text),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.edit_outlined),
+              label: const Text("Edit Details"),
+              onPressed: () {
+                setState(() {
+                  _editingSender = true;
+                });
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ================= SECTIONS =================
   Widget _packageSection() {
     return Column(
@@ -17330,60 +17520,28 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
         _cityDropdown(),
         const SizedBox(height: 20),
         _destinationDropdown(),
-        _priceCard(),
+        //_priceCard(),
       ],
     );
   }
 
   Widget _senderSection() {
-    return Column(
-      children: [
-        GestureDetector(
-          onTap: () async {
-            setState(() => _useSavedSender = !_useSavedSender);
-            if (_useSavedSender) await _loadSavedSender();
-          },
-          child: Row(
-            children: [
-              // Spacer(),
-              Container(
-                width: 20,
-                height: 20,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.black, width: 1),
-                  color: _useSavedSender ? Colors.black : Colors.transparent,
-                ),
-                child: _useSavedSender
-                    ? const Icon(Icons.check, size: 10, color: Colors.white)
-                    : null,
-              ),
-              const SizedBox(width: 8),
-              const Text("Use my details", style: TextStyle(fontSize: 10)),
-            ],
+    if (_loadingSenderProfile) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(40),
+          child: CircularProgressIndicator(
+            color: Colors.black,
           ),
         ),
-        SizedBox(height: 8),
-        _buildTextField(
-          _senderNameController,
-          "Sender Name",
-          onChanged: (_) => _nextStep(),
-        ),
-        const SizedBox(height: 12),
-        _buildTextField(
-          _senderContactController,
-          "Phone",
-          keyboardType: TextInputType.phone,
-          onChanged: (_) => _nextStep(),
-        ),
-        SizedBox(height: 12),
-        _buildTextField(
-          _pickupAddressController,
-          "Pickup Location",
-          onChanged: (_) => _nextStep(),
-        ),
-      ],
-    );
+      );
+    }
+
+    if (!_editingSender) {
+      return _senderSummaryCard();
+    }
+
+    return _senderForm();
   }
 
   Widget _receiverSection() {
@@ -17394,7 +17552,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
         _buildTextField(_receiverContactController, "Phone",
             keyboardType: TextInputType.phone),
         const SizedBox(height: 12),
-        _buildTextField(_deliveryAddressController, "Delivery Location"),
+        _buildTextField(_deliveryAddressController, "Delivery Address"),
       ],
     );
   }
@@ -17434,12 +17592,12 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
       ),
       builder: (_, value, __) {
         return ClipRRect(
-          borderRadius: BorderRadius.circular(100),
+          //borderRadius: BorderRadius.circular(100),
           child: LinearProgressIndicator(
             value: value,
             minHeight: 8,
             backgroundColor: Colors.grey.shade200,
-            valueColor: const AlwaysStoppedAnimation<Color>(Colors.black),
+            valueColor: const AlwaysStoppedAnimation<Color>(Colors.green),
           ),
         );
       },
@@ -17550,90 +17708,98 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
           ),
         ),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Form(
-          key: _formKey,
-          child: SingleChildScrollView(
-            controller: _scrollController,
-            child: Column(
-              children: [
-                Text(
-                  _stepTitle,
-                  style: const TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  _stepSubtitle,
-                  style: TextStyle(
-                    color: Colors.grey.shade700,
-                    fontSize: 15,
-                    height: 1.5,
-                  ),
-                ),
-                const SizedBox(height: 25),
-                _progressBar(),
-                const SizedBox(height: 35),
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 350),
-                  transitionBuilder: (child, animation) {
-                    return SlideTransition(
-                      position: Tween<Offset>(
-                        begin: const Offset(.15, 0),
-                        end: Offset.zero,
-                      ).animate(animation),
-                      child: FadeTransition(
-                        opacity: animation,
-                        child: child,
-                      ),
-                    );
-                  },
-                  child: Container(
-                    key: ValueKey(_currentStep),
-                    child: _buildCurrentStep(),
-                  ),
-                ),
-                SizedBox(height: 20),
-                Row(
-                  children: [
-                    if (_currentStep > 0)
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: _previousStep,
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size.fromHeight(55),
-                          ),
-                          child: const Text("Back"),
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            SizedBox(height: 25),
+            _progressBar(),
+            const SizedBox(height: 15),
+            Padding(
+              padding: const EdgeInsets.all(18),
+              child: Form(
+                key: _formKey,
+                child: SingleChildScrollView(
+                  controller: _scrollController,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _stepTitle,
+                        style: const TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                    if (_currentStep > 0) const SizedBox(width: 14),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () {
-                          if (_currentStep == 2) {
-                            _goToPreview();
-                          } else {
-                            _nextStep();
-                          }
+                      const SizedBox(height: 8),
+                      Text(
+                        _stepSubtitle,
+                        style: TextStyle(
+                          color: Colors.grey.shade700,
+                          fontSize: 15,
+                          height: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 25),
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 350),
+                        transitionBuilder: (child, animation) {
+                          return SlideTransition(
+                            position: Tween<Offset>(
+                              begin: const Offset(.15, 0),
+                              end: Offset.zero,
+                            ).animate(animation),
+                            child: FadeTransition(
+                              opacity: animation,
+                              child: child,
+                            ),
+                          );
                         },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.black,
-                          minimumSize: const Size.fromHeight(55),
-                        ),
-                        child: Text(
-                          _currentStep == 2 ? "Continue" : "Next",
-                          style: const TextStyle(color: Colors.white),
+                        child: Container(
+                          key: ValueKey(_currentStep),
+                          child: _buildCurrentStep(),
                         ),
                       ),
-                    ),
-                  ],
-                )
-              ],
+                      SizedBox(height: 20),
+                      Row(
+                        children: [
+                          if (_currentStep > 0)
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: _previousStep,
+                                style: OutlinedButton.styleFrom(
+                                  minimumSize: const Size.fromHeight(55),
+                                ),
+                                child: const Text("Back"),
+                              ),
+                            ),
+                          if (_currentStep > 0) const SizedBox(width: 14),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () {
+                                if (_currentStep == 2) {
+                                  _goToPreview();
+                                } else {
+                                  _nextStep();
+                                }
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.black,
+                                minimumSize: const Size.fromHeight(55),
+                              ),
+                              child: Text(
+                                _currentStep == 2 ? "Continue" : "Next",
+                                style: const TextStyle(color: Colors.white),
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    ],
+                  ),
+                ),
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -17642,7 +17808,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
   InputDecoration _inputDecoration(String label) => InputDecoration(
         labelText: label,
         filled: true,
-        fillColor: Colors.grey[100],
+        fillColor: Colors.white,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide.none,
@@ -17699,7 +17865,7 @@ class PackagePreviewPage extends StatelessWidget {
         title: const Padding(
           padding: EdgeInsets.only(left: 8),
           child: Text(
-            'Package Preview',
+            '',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.bold,
@@ -17734,16 +17900,17 @@ class PackagePreviewPage extends StatelessWidget {
                     ),
                     const SizedBox(height: 20),
 
-                    /// 🔹 EXISTING UI
-                    _buildServicePreviewUI(serviceType),
-
-                    /// 🔥 NEW: FROM / TO
                     if (packageData['fromCity'] != null)
                       _buildDetail("From", packageData['fromCity']),
                     if (packageData['toCity'] != null)
                       _buildDetail("To", packageData['toCity']),
 
                     const SizedBox(height: 10),
+
+                    /// 🔹 EXISTING UI
+                    _buildServicePreviewUI(serviceType),
+
+                    /// 🔥 NEW: FROM / TO
 
                     /// 🔥 NEW: PRICE DISPLAY
                     if (packageData['price'] != null)

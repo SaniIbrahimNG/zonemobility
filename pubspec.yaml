@@ -117,6 +117,7 @@ flutter:
     - assets/images/support.png
     - assets/images/home.png
     - assets/images/clipboard.png
+    - assets/data/nigerian-states.json
 
 
 # ✅ MUST stay at root level
