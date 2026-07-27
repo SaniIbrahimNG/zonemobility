@@ -8731,7 +8731,7 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                             ),
                           ),
                           // const Spacer(),
-                          SizedBox(height: 20),
+                          SizedBox(width: 14),
                           const Text(
                             "Shuttle",
                             style: TextStyle(
@@ -8857,7 +8857,7 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      "What are you looking for?",
+                      "Services",
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
@@ -8898,9 +8898,9 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                     const SizedBox(height: 28),
 
                     const Text(
-                      "Explore Providers",
+                      "Available Providers",
                       style: TextStyle(
-                        fontSize: 15,
+                        fontSize: 14,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -9026,7 +9026,7 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
 
   Widget _buildOnlineDrivers() {
     return SizedBox(
-      height: 175,
+      height: 150,
       child: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection("shuttle_drivers")
@@ -9038,8 +9038,8 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
               scrollDirection: Axis.horizontal,
               itemCount: 3,
               itemBuilder: (_, __) => Container(
-                width: 240,
-                margin: const EdgeInsets.only(right: 14),
+                width: 250,
+                margin: const EdgeInsets.only(right: 15),
                 child: _driverShimmer(),
               ),
             );
@@ -9048,21 +9048,148 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
             return Center(
               child: Text(
-                "No providers online.",
-                style: TextStyle(color: Colors.grey[500]),
+                "No shuttles available at the moment.",
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                ),
               ),
             );
           }
 
-          final docs = snapshot.data!.docs;
-
           return ListView.builder(
             scrollDirection: Axis.horizontal,
-            itemCount: docs.length,
+            //  physics: const BouncingScrollPhysics(),
+            itemCount: snapshot.data!.docs.length,
             itemBuilder: (context, index) {
-              final data = docs[index].data() as Map<String, dynamic>;
+              final data =
+                  snapshot.data!.docs[index].data() as Map<String, dynamic>;
 
-              return _providerCard(data);
+              final image = data["vehicleImage"] ?? "";
+              final vehicle = data["vehicleName"] ?? "";
+              final institution = data["activeInstitution"] ?? "";
+              final capacity = data["vehicleCapacity"] ?? 0;
+              final boarded = data["boardedPassengers"] ?? 0;
+              final seatsLeft = capacity - boarded;
+              final isFull = seatsLeft <= 0;
+
+              return GestureDetector(
+                onTap: isFull
+                    ? null
+                    : () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                ShuttlePaymentPage(driverData: data),
+                          ),
+                        );
+                      },
+                child: Container(
+                  width: 250,
+                  margin: const EdgeInsets.only(right: 15),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, 5),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      /// Vehicle Row
+                      Row(
+                        children: [
+                          ClipOval(
+                            child: image.toString().isNotEmpty
+                                ? Image.network(
+                                    image,
+                                    width: 35,
+                                    height: 35,
+                                    fit: BoxFit.cover,
+                                  )
+                                : Container(
+                                    width: 35,
+                                    height: 35,
+                                    color: Colors.grey.shade200,
+                                    child: const Icon(
+                                      Icons.directions_bus,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              vehicle,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const Spacer(),
+
+                      Text(
+                        institution,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade700,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isFull
+                                  ? Colors.red.shade50
+                                  : Colors.green.shade50,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              isFull ? "Full" : "$seatsLeft Seats Left",
+                              style: TextStyle(
+                                color:
+                                    isFull ? Colors.red : Colors.green.shade700,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            "₦${data["price"] ?? 0}",
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              );
             },
           );
         },
@@ -9247,7 +9374,6 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
             "userId",
             isEqualTo: FirebaseAuth.instance.currentUser!.uid,
           )
-          // .orderBy("createdAt", descending: true)
           .limit(10)
           .snapshots(),
       builder: (context, snapshot) {
@@ -9291,96 +9417,165 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
           children: snapshot.data!.docs.map((doc) {
             final data = doc.data() as Map<String, dynamic>;
 
-            return Container(
-              margin: const EdgeInsets.only(bottom: 14),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(.05),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
+            final pickup = data["pickupLocation"] ?? "";
+            final destination = data["destinationLocation"] ?? "";
+            final status = (data["status"] ?? "Booked").toString();
+            final price = data["price"] ?? 0;
+
+            Color statusColor;
+
+            switch (status.toLowerCase()) {
+              case "completed":
+                statusColor = Colors.green;
+                break;
+
+              case "cancelled":
+                statusColor = Colors.red;
+                break;
+
+              case "ongoing":
+                statusColor = Colors.orange;
+                break;
+
+              case "pending":
+                statusColor = Colors.blue;
+                break;
+
+              default:
+                statusColor = Colors.black;
+            }
+
+            return Center(
+              child: Container(
+                width: 350,
+                height: 100,
+                margin: const EdgeInsets.only(bottom: 14),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: Colors.grey.shade200,
                   ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: Colors.black,
-                      borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(.05),
+                      blurRadius: 12,
+                      offset: const Offset(0, 5),
                     ),
-                    child: const Icon(
-                      Icons.directions_bus,
-                      color: Colors.white,
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    /// Shuttle Icon
+                    Container(
+                      width: 58,
+                      height: 58,
+                      decoration: const BoxDecoration(
+                        color: Colors.black,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.directions_bus_rounded,
+                        color: Colors.white,
+                        size: 28,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+
+                    const SizedBox(width: 16),
+
+                    /// Pickup & Destination
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.arrow_upward_rounded,
+                                color: Colors.green.shade700,
+                                size: 15,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  pickup,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.arrow_downward_rounded,
+                                color: Colors.red.shade700,
+                                size: 15,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  destination,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey.shade700,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(width: 12),
+
+                    /// Status & Price
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: statusColor.withOpacity(.12),
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                          child: Text(
+                            status.toUpperCase(),
+                            style: TextStyle(
+                              color: statusColor,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
                         Text(
-                          data["driverName"] ?? "Driver",
+                          "₦$price",
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
-                        ),
-                        const SizedBox(height: 5),
-                        Text(
-                          "${data["pickupLocation"] ?? ""} → ${data["destinationLocation"] ?? ""}",
-                          style: TextStyle(
-                            color: Colors.grey.shade700,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          "Seat ${data["seatNumber"] ?? "-"}",
-                          style: TextStyle(
-                            color: Colors.grey.shade600,
-                            fontSize: 13,
+                            fontSize: 18,
+                            color: Colors.black,
                           ),
                         ),
                       ],
                     ),
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        "₦${data["price"] ?? 0}",
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.green.shade50,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          (data["status"] ?? "Booked").toString().toUpperCase(),
-                          style: TextStyle(
-                            color: Colors.green.shade700,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 11,
-                          ),
-                        ),
-                      )
-                    ],
-                  )
-                ],
+                  ],
+                ),
               ),
             );
           }).toList(),
@@ -10920,257 +11115,165 @@ class _ShoppingSectionPageState extends State<ShoppingSectionPage>
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: Column(
-          children: [
-            Stack(
-              children: [
-                /// 🔥 RIPPLED HEADER
-                Container(
-                  height: 200,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF181818),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.15),
-                        blurRadius: 20,
-                        spreadRadius: 2,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                ),
-
-                /// ✨ AMBER DOODLES
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: CustomPaint(
-                      painter: HeaderDoodlePainter(),
-                    ),
-                  ),
-                ),
-
-                SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 26),
-                    child: Column(
-                      children: [
-                        /// 🔙 BACK + TITLE
-                        Row(
-                          children: [
-                            GestureDetector(
-                              onTap: () => Navigator.pop(context),
-                              child: Container(
-                                width: 34,
-                                height: 34,
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(.12),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.arrow_back_ios_new,
-                                  size: 16,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                            SizedBox(height: 10),
-                            // const Spacer(),
-                            const Text(
-                              'Shop Essentials',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const Spacer(flex: 2),
-                          ],
-                        ),
-
-                        const SizedBox(height: 18),
-
-                        /// 🔍 SEARCH BAR
-                        Card(
-                          elevation: 5,
-                          color: Colors.transparent,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 10,
-                            ),
-                            child: SizedBox(
-                              height: 42,
-                              child: TextField(
-                                decoration: InputDecoration(
-                                  hintText: 'Search',
-                                  hintStyle: const TextStyle(fontSize: 13),
-                                  filled: true,
-                                  fillColor: Colors.grey.shade100,
-                                  prefixIcon: const Icon(
-                                    Icons.search,
-                                    size: 20,
-                                  ),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
-                                  ),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                    borderSide: BorderSide.none,
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                    borderSide: BorderSide.none,
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                    borderSide: const BorderSide(
-                                      color: Colors.black,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 children: [
-                  const SizedBox(height: 12),
-
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: const Icon(Icons.arrow_back_ios),
+                  ),
+                  const Spacer(),
                   const Text(
-                    "Categories",
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    'Shop Essentials',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
-
-                  const SizedBox(height: 6),
-
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: ["All", "Groceries", "Pharma"].map((cat) {
-                      bool isSelected = selectedCategory == cat;
-
-                      return GestureDetector(
-                        onTap: () => setState(() => selectedCategory = cat),
-                        child: Container(
-                          height: 28,
-                          width: 90,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: isSelected ? Colors.black : Colors.grey,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            cat,
-                            style: TextStyle(
-                                color: isSelected
-                                    ? Colors.white
-                                    : Colors.grey[600]),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  /// PRODUCTS
-                  Expanded(
-                    child: _ShoppingVendorIds.isEmpty
-                        ? _buildShimmerList()
-                        : StreamBuilder<QuerySnapshot>(
-                            stream: FirebaseFirestore.instance
-                                .collection('products')
-                                .where('vendorId', whereIn: _ShoppingVendorIds)
-                                .snapshots(),
-                            builder: (context, snapshot) {
-                              if (!snapshot.hasData) {
-                                return _buildShimmerList();
-                              }
-
-                              final docs = snapshot.data!.docs;
-
-                              return ListView.builder(
-                                itemCount: docs.length,
-                                itemBuilder: (context, index) {
-                                  final doc = docs[index];
-
-                                  final data =
-                                      doc.data() as Map<String, dynamic>;
-
-                                  final imageKey = GlobalKey();
-
-                                  return GestureDetector(
-                                    onTap: () => _flyToCart(imageKey, data),
-                                    child: Container(
-                                      height: 85,
-                                      margin: const EdgeInsets.symmetric(
-                                          vertical: 6),
-                                      child: Row(
-                                        children: [
-                                          Container(
-                                            key: imageKey,
-                                            width: 60,
-                                            height: 60,
-                                            child: ClipOval(
-                                              child: Image.network(
-                                                data['image'] ?? '',
-                                                fit: BoxFit.cover,
-                                                errorBuilder: (_, __, ___) {
-                                                  return Image.asset(
-                                                    data['fallbackAsset'] ??
-                                                        "assets/images/food.png",
-                                                    fit: BoxFit.cover,
-                                                  );
-                                                },
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.center,
-                                              children: [
-                                                Text(
-                                                  data['name'] ?? '',
-                                                  style: const TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.bold),
-                                                ),
-                                                Text(
-                                                  "₦${data['price']}",
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                },
-                              );
-                            },
-                          ),
-                  ),
+                  const Spacer(flex: 2),
                 ],
               ),
-            ),
-          ],
+
+              const SizedBox(height: 10),
+
+              /// SEARCH BAR
+
+              Container(
+                height: 50,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: const TextField(
+                  decoration: InputDecoration(
+                    hintText: 'Search',
+                    border: InputBorder.none,
+                    icon: Icon(Icons.search),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              const Text(
+                "Categories",
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              ),
+
+              const SizedBox(height: 6),
+
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: ["All", "Groceries", "Pharma"].map((cat) {
+                  bool isSelected = selectedCategory == cat;
+
+                  return GestureDetector(
+                    onTap: () => setState(() => selectedCategory = cat),
+                    child: Container(
+                      height: 28,
+                      width: 90,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: isSelected ? Colors.black : Colors.grey,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        cat,
+                        style: TextStyle(
+                            color:
+                                isSelected ? Colors.white : Colors.grey[600]),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+
+              const SizedBox(height: 10),
+
+              /// PRODUCTS
+              Expanded(
+                child: _ShoppingVendorIds.isEmpty
+                    ? _buildShimmerList()
+                    : StreamBuilder<QuerySnapshot>(
+                        stream: FirebaseFirestore.instance
+                            .collection('products')
+                            .where('vendorId', whereIn: _ShoppingVendorIds)
+                            .snapshots(),
+                        builder: (context, snapshot) {
+                          if (!snapshot.hasData) {
+                            return _buildShimmerList();
+                          }
+
+                          final docs = snapshot.data!.docs;
+
+                          return ListView.builder(
+                            itemCount: docs.length,
+                            itemBuilder: (context, index) {
+                              final doc = docs[index];
+
+                              final data = doc.data() as Map<String, dynamic>;
+
+                              final imageKey = GlobalKey();
+
+                              return GestureDetector(
+                                onTap: () => _flyToCart(imageKey, data),
+                                child: Container(
+                                  height: 85,
+                                  margin:
+                                      const EdgeInsets.symmetric(vertical: 6),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        key: imageKey,
+                                        width: 60,
+                                        height: 60,
+                                        child: ClipOval(
+                                          child: Image.network(
+                                            data['image'] ?? '',
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, __, ___) {
+                                              return Image.asset(
+                                                data['fallbackAsset'] ??
+                                                    "assets/images/food.png",
+                                                fit: BoxFit.cover,
+                                              );
+                                            },
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            Text(
+                                              data['name'] ?? '',
+                                              style: const TextStyle(
+                                                  fontWeight: FontWeight.bold),
+                                            ),
+                                            Text(
+                                              "₦${data['price']}",
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -13159,7 +13262,7 @@ class _FoodSectionPageState extends State<FoodSectionPage>
                                 ),
                               ),
                             ),
-                            SizedBox(height: 10),
+                            SizedBox(width: 14),
                             //const Spacer(),
                             const Text(
                               "Order Food",
