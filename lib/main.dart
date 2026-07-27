@@ -9033,19 +9033,32 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
             .where("status", isEqualTo: "online")
             .snapshots(),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+          if (snapshot.hasError) {
+            return Center(
+              child: Text(
+                "Something went wrong.",
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                ),
+              ),
+            );
+          }
+
+          if (!snapshot.hasData) {
             return ListView.builder(
               scrollDirection: Axis.horizontal,
               itemCount: 3,
               itemBuilder: (_, __) => Container(
-                width: 250,
+                width: 350,
                 margin: const EdgeInsets.only(right: 15),
                 child: _driverShimmer(),
               ),
             );
           }
 
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          final drivers = snapshot.data!.docs;
+
+          if (drivers.isEmpty) {
             return Center(
               child: Text(
                 "No shuttles available at the moment.",
@@ -9058,11 +9071,9 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
 
           return ListView.builder(
             scrollDirection: Axis.horizontal,
-            //  physics: const BouncingScrollPhysics(),
-            itemCount: snapshot.data!.docs.length,
+            itemCount: drivers.length,
             itemBuilder: (context, index) {
-              final data =
-                  snapshot.data!.docs[index].data() as Map<String, dynamic>;
+              final data = drivers[index].data() as Map<String, dynamic>;
 
               final image = data["vehicleImage"] ?? "";
               final vehicle = data["vehicleName"] ?? "";
@@ -9085,9 +9096,9 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                         );
                       },
                 child: Container(
-                  width: 250,
-                  margin: const EdgeInsets.only(right: 15),
-                  padding: const EdgeInsets.all(16),
+                  width: 350,
+                  margin: const EdgeInsets.only(bottom: 14),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(18),
@@ -9109,17 +9120,28 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                             child: image.toString().isNotEmpty
                                 ? Image.network(
                                     image,
-                                    width: 35,
-                                    height: 35,
+                                    width: 55,
+                                    height: 55,
                                     fit: BoxFit.cover,
+                                    errorBuilder:
+                                        (context, error, stackTrace) =>
+                                            Container(
+                                      width: 55,
+                                      height: 55,
+                                      color: Colors.grey[100],
+                                      child: const Icon(
+                                        Icons.directions_bus,
+                                        color: Colors.black,
+                                      ),
+                                    ),
                                   )
                                 : Container(
-                                    width: 35,
-                                    height: 35,
-                                    color: Colors.grey.shade200,
+                                    width: 55,
+                                    height: 55,
+                                    color: Colors.grey[100],
                                     child: const Icon(
                                       Icons.directions_bus,
-                                      color: Colors.grey,
+                                      color: Colors.black,
                                     ),
                                   ),
                           ),
@@ -9135,6 +9157,20 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                               ),
                             ),
                           ),
+                          Spacer(),
+                          Container(
+                              height: 50,
+                              width: 70,
+                              child: Center(
+                                  child: Text('Online',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                      ))),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                color: Colors.green,
+                              ))
                         ],
                       ),
 
@@ -9377,7 +9413,7 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
           .limit(10)
           .snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (!snapshot.hasData) {
           return const Center(
             child: Padding(
               padding: EdgeInsets.all(30),
@@ -9417,8 +9453,8 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
           children: snapshot.data!.docs.map((doc) {
             final data = doc.data() as Map<String, dynamic>;
 
-            final pickup = data["pickupLocation"] ?? "";
-            final destination = data["destinationLocation"] ?? "";
+            final pickup = data["pickup"] ?? "";
+            final destination = data["destination"] ?? "";
             final status = (data["status"] ?? "Booked").toString();
             final price = data["price"] ?? 0;
 
