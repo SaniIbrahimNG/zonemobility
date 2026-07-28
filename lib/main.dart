@@ -8940,7 +8940,7 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
     required String description,
   }) {
     return Container(
-      height: 130,
+      height: 160,
       width: 150,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -9097,8 +9097,11 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                       },
                 child: Container(
                   width: 350,
-                  margin: const EdgeInsets.only(bottom: 14),
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  margin: const EdgeInsets.only(right: 15),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 14,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(18),
@@ -9115,6 +9118,7 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                     children: [
                       /// Vehicle Row
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           ClipOval(
                             child: image.toString().isNotEmpty
@@ -9145,7 +9149,7 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                                     ),
                                   ),
                           ),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: 14),
                           Expanded(
                             child: Text(
                               vehicle,
@@ -9157,44 +9161,52 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                               ),
                             ),
                           ),
-                          Spacer(),
-                          Container(
-                              height: 50,
-                              width: 70,
-                              child: Center(
-                                  child: Text('Online',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 12,
-                                      ))),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(12),
-                                color: Colors.green,
-                              ))
+                          const SizedBox(width: 10),
+                          Row(
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: const BoxDecoration(
+                                  color: Colors.green,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 5),
+                              const Text(
+                                "Online",
+                                style: TextStyle(
+                                  color: Colors.green,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
                         ],
                       ),
 
-                      const Spacer(),
+                      const SizedBox(height: 14),
 
                       Text(
                         institution,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 13,
+                          fontSize: 12,
                           color: Colors.grey.shade700,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
 
-                      const SizedBox(height: 12),
+                      const Spacer(),
 
                       Row(
                         children: [
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 10,
-                              vertical: 5,
+                              vertical: 6,
                             ),
                             decoration: BoxDecoration(
                               color: isFull
@@ -9216,7 +9228,7 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                           Text(
                             "₦${data["price"] ?? 0}",
                             style: const TextStyle(
-                              fontSize: 14,
+                              fontSize: 15,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -9505,8 +9517,8 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                   children: [
                     /// Shuttle Icon
                     Container(
-                      width: 58,
-                      height: 58,
+                      width: 55,
+                      height: 55,
                       decoration: const BoxDecoration(
                         color: Colors.black,
                         shape: BoxShape.circle,
@@ -9540,7 +9552,7 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
-                                    fontSize: 15,
+                                    fontSize: 14,
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
@@ -9604,7 +9616,7 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                           "₦$price",
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
-                            fontSize: 18,
+                            fontSize: 15,
                             color: Colors.black,
                           ),
                         ),
