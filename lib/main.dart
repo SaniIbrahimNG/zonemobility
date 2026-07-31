@@ -8874,7 +8874,7 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                           child: _categoryCard(
                             icon: Icons.directions_bus_rounded,
                             iconColor: Colors.blue,
-                            bgColor: Colors.blue.withOpacity(0.08),
+                            bgColor: Colors.grey[50]!,
                             title: "Shuttle",
                             description: "Book shuttle bus tickets",
                           ),
@@ -8887,7 +8887,7 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                           child: _categoryCard(
                             icon: Icons.commute_rounded,
                             iconColor: Colors.teal,
-                            bgColor: Colors.teal.withOpacity(0.08),
+                            bgColor: Colors.grey[50]!,
                             title: "Commute",
                             description: "Book shuttle tickets in your city",
                           ),
@@ -8972,12 +8972,12 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
               size: 22,
             ),
           ),
-          const SizedBox(width: 15),
+          const SizedBox(width: 35),
 
           Text(
             title,
             style: const TextStyle(
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.bold,
               fontSize: 15,
             ),
           ),
@@ -8988,8 +8988,8 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
           Text(
             description,
             style: TextStyle(
-              fontSize: 12.5,
-              height: 1.4,
+              fontSize: 12,
+              // height: 1.4,
               color: Colors.grey[600],
             ),
           ),
@@ -9140,12 +9140,12 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                             child: image.toString().isNotEmpty
                                 ? Image.network(
                                     image,
-                                    width: 56,
-                                    height: 56,
+                                    width: 58,
+                                    height: 58,
                                     fit: BoxFit.cover,
                                     errorBuilder: (_, __, ___) => Container(
-                                      width: 56,
-                                      height: 56,
+                                      width: 58,
+                                      height: 58,
                                       decoration: BoxDecoration(
                                         color: Colors.grey.shade100,
                                         shape: BoxShape.circle,
@@ -9157,8 +9157,8 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                                     ),
                                   )
                                 : Container(
-                                    width: 56,
-                                    height: 56,
+                                    width: 58,
+                                    height: 58,
                                     decoration: BoxDecoration(
                                       color: Colors.grey.shade100,
                                       shape: BoxShape.circle,
@@ -9172,7 +9172,7 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                         ),
                       ),
 
-                      const SizedBox(width: 14),
+                      const SizedBox(width: 12),
 
                       /// ==========================
                       /// COLUMN 2 - DETAILS
@@ -9226,8 +9226,8 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                             const SizedBox(height: 8),
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 5,
+                                horizontal: 8,
+                                vertical: 3,
                               ),
                               decoration: BoxDecoration(
                                 color: isFull
@@ -9238,11 +9238,10 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                               child: Text(
                                 isFull ? "Full" : "$seatsLeft Seats Left",
                                 style: TextStyle(
-                                  color: isFull
-                                      ? Colors.red
-                                      : Colors.green.shade700,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
+                                  color:
+                                      isFull ? Colors.red : Color(0xff388e3c),
+                                  fontSize: 8,
+                                  //fontWeight: FontWeight.w600,
                                 ),
                               ),
                             ),
@@ -9271,6 +9270,7 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
 
     final capacity = data["vehicleCapacity"] ?? 0;
     final boarded = data["boardedPassengers"] ?? 0;
+    final driverCode = data['driverCode'] ?? '';
 
     final seats = capacity - boarded;
 
@@ -9316,7 +9316,7 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                   ),
           ),
           Padding(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.all(8.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -9509,135 +9509,170 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
             }
 
             return Center(
-              child: Container(
-                width: 350,
-                height: 100,
-                margin: const EdgeInsets.only(bottom: 14),
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                    color: Colors.grey.shade200,
+              child: GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ShuttleTicketDetailsPage(
+                        // ticketData: data,
+                        ticketDoc: doc,
+                      ),
+                    ),
+                  );
+                },
+                child: Container(
+                  width: 350,
+                  height: 85,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: Colors.grey.shade200),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(.05),
+                        blurRadius: 12,
+                        offset: const Offset(0, 5),
+                      ),
+                    ],
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(.05),
-                      blurRadius: 12,
-                      offset: const Offset(0, 5),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    /// Shuttle Icon
-                    Container(
-                      width: 55,
-                      height: 55,
-                      decoration: const BoxDecoration(
-                        color: Colors.black,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.directions_bus_rounded,
-                        color: Colors.white,
-                        size: 28,
-                      ),
-                    ),
+                  child: FutureBuilder<QuerySnapshot>(
+                    future: FirebaseFirestore.instance
+                        .collection("shuttle_drivers")
+                        .where("driverCode", isEqualTo: data["driverCode"])
+                        .limit(1)
+                        .get(),
+                    builder: (context, driverSnapshot) {
+                      String vehicleName = "Unknown Vehicle";
 
-                    const SizedBox(width: 16),
+                      if (driverSnapshot.hasData &&
+                          driverSnapshot.data!.docs.isNotEmpty) {
+                        final driverData = driverSnapshot.data!.docs.first
+                            .data() as Map<String, dynamic>;
 
-                    /// Pickup & Destination
-                    Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        vehicleName =
+                            driverData["vehicleName"] ?? "Unknown Vehicle";
+                      }
+
+                      final ticketId = data["ticketId"] ?? "N/A";
+                      final price = data["price"] ?? 0;
+
+                      final rawStatus =
+                          (data["status"] ?? "").toString().toLowerCase();
+
+                      String displayStatus;
+                      Color statusColor;
+
+                      switch (rawStatus) {
+                        case "paid":
+                          displayStatus = "UNUSED";
+                          statusColor = Colors.green;
+                          break;
+
+                        case "used":
+                          displayStatus = "USED";
+                          statusColor = Colors.grey;
+                          break;
+
+                        case "cancelled":
+                          displayStatus = "CANCELLED";
+                          statusColor = Colors.red;
+                          break;
+
+                        case "pending":
+                          displayStatus = "PENDING";
+                          statusColor = Colors.orange;
+                          break;
+
+                        case "completed":
+                          displayStatus = "COMPLETED";
+                          statusColor = Colors.green;
+                          break;
+
+                        default:
+                          displayStatus = rawStatus.toUpperCase();
+                          statusColor = Colors.black;
+                      }
+
+                      return Row(
                         children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.arrow_upward_rounded,
-                                color: Colors.green.shade700,
-                                size: 15,
-                              ),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  pickup,
+                          /// Bus Icon
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: const BoxDecoration(
+                              color: Colors.black,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.directions_bus_rounded,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                          ),
+
+                          const SizedBox(width: 14),
+
+                          /// Ticket ID & Vehicle Name
+                          Expanded(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  ticketId.toString(),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
                                     fontSize: 14,
-                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.arrow_downward_rounded,
-                                color: Colors.red.shade700,
-                                size: 15,
-                              ),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  destination,
+                                const SizedBox(height: 4),
+                                Text(
+                                  vehicleName,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.grey.shade700,
-                                    fontWeight: FontWeight.w500,
+                                    color: Colors.grey.shade600,
+                                    fontSize: 12,
                                   ),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(width: 10),
+
+                          /// Price & Status
+                          Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                "₦$price",
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15,
+                                ),
+                              ),
+                              const SizedBox(height: 5),
+                              Text(
+                                displayStatus,
+                                style: TextStyle(
+                                  color: statusColor,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
                             ],
                           ),
                         ],
-                      ),
-                    ),
-
-                    const SizedBox(width: 12),
-
-                    /// Status & Price
-                    Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: statusColor.withOpacity(.12),
-                            borderRadius: BorderRadius.circular(30),
-                          ),
-                          child: Text(
-                            status.toUpperCase(),
-                            style: TextStyle(
-                              color: statusColor,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 10,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          "₦$price",
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                            color: Colors.black,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                      );
+                    },
+                  ),
                 ),
               ),
             );
@@ -10363,6 +10398,7 @@ class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
   late String destination;
   late int price;
   late String driverId;
+  late String driverCode;
 
   @override
   void initState() {
@@ -10375,6 +10411,7 @@ class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
     destination = data['destinationLocation'] ?? '';
     price = (data['price'] ?? 0);
     driverId = data['id'] ?? '';
+    driverCode = data['driverCode'] ?? '';
   }
 
   Future<void> _payWithPaystack() async {
@@ -10484,6 +10521,7 @@ class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
         "userName": user.displayName ?? "User",
         "paymentReference": paymentReference,
         "createdAt": FieldValue.serverTimestamp(),
+        "driverCode": driverCode,
       });
     });
   }
@@ -10516,7 +10554,7 @@ class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
           ),
         ),
         title: const Text(
-          'Shuttle Payment',
+          '',
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.bold,
@@ -10525,106 +10563,179 @@ class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
         ),
       ),
       body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Colors.white, Colors.amberAccent],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.grey.withOpacity(0.3),
-                  blurRadius: 10,
-                  offset: const Offset(0, 5),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              /// Page Title
+              const Text(
+                "Confirm your Shuttle Ticket",
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
                 ),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                vertical: 24,
-                horizontal: 20,
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Center(
-                    child: Text(
-                      "Confirm your Shuttle Ticket",
-                      style:
-                          TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+
+              const SizedBox(height: 22),
+
+              /// Ticket Card
+              Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(22),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(.06),
+                      blurRadius: 18,
+                      offset: const Offset(0, 8),
                     ),
-                  ),
-                  const SizedBox(height: 20),
-                  _ticketField("Institution", institution),
-                  _ticketField("Pickup", pickup),
-                  _ticketField("Destination", destination),
-                  _ticketField(
-                    "Price",
-                    "₦$price",
-                    isBold: true,
-                  ),
-                  const SizedBox(height: 30),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 50),
-                        backgroundColor: Colors.black,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                  ],
+                ),
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    /// Institution Card
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
                       ),
-                      onPressed: loading ? null : _payWithPaystack,
-                      child: loading
-                          ? const CircularProgressIndicator(color: Colors.white)
-                          : const Text(
-                              "Pay",
-                              style: TextStyle(
-                                fontSize: 16,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Center(
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 42,
+                              height: 42,
+                              decoration: BoxDecoration(
+                                color: Colors.black,
+                                borderRadius: BorderRadius.circular(30),
+                              ),
+                              child: const Icon(
+                                Icons.school_rounded,
                                 color: Colors.white,
                               ),
                             ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Text(
+                                institution,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    /// Pickup
+                    const Text(
+                      "Pickup Location",
+                      style: TextStyle(
+                        color: Colors.grey,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Text(
+                        pickup,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    /// Destination
+                    const Text(
+                      "Destination",
+                      style: TextStyle(
+                        color: Colors.grey,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Text(
+                        destination,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 26),
+
+              /// Pay Button
+              SizedBox(
+                width: double.infinity,
+                height: 55,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    elevation: 0,
+                    backgroundColor: Colors.black,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
                     ),
                   ),
-                ],
+                  onPressed: loading ? null : _payWithPaystack,
+                  child: loading
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Text(
+                          "Pay ₦$price",
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                ),
               ),
-            ),
+            ],
           ),
         ),
       ),
-    );
-  }
-
-  Widget _ticketField(String title, String value, {bool isBold = false}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: Colors.black54,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
-            color: Colors.black87,
-          ),
-        ),
-        const SizedBox(height: 12),
-        const Divider(thickness: 1, color: Colors.black12),
-        const SizedBox(height: 12),
-      ],
     );
   }
 }
@@ -11284,112 +11395,126 @@ class _ShoppingSectionPageState extends State<ShoppingSectionPage>
                 ),
               ],
             ),
-            const SizedBox(height: 6),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: ["All", "Groceries", "Pharma"].map((cat) {
-                bool isSelected = selectedCategory == cat;
 
-                return GestureDetector(
-                  onTap: () => setState(() => selectedCategory = cat),
-                  child: Container(
-                    height: 28,
-                    width: 90,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: isSelected ? Colors.black : Colors.grey,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      cat,
-                      style: TextStyle(
-                          color: isSelected ? Colors.white : Colors.grey[600]),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-
-            const SizedBox(height: 10),
-
-            /// PRODUCTS
+            /// Everything below the header gets padded
             Expanded(
-                child: _ShoppingVendorIds.isEmpty
-                    ? _buildShimmerList()
-                    : StreamBuilder<QuerySnapshot>(
-                        stream: FirebaseFirestore.instance
-                            .collection('products')
-                            .where('vendorId', whereIn: _ShoppingVendorIds)
-                            .snapshots(),
-                        builder: (context, snapshot) {
-                          if (!snapshot.hasData) {
-                            return _buildShimmerList();
-                          }
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: ["All", "Groceries", "Pharma"].map((cat) {
+                        bool isSelected = selectedCategory == cat;
 
-                          final docs = snapshot.data!.docs;
+                        return GestureDetector(
+                          onTap: () => setState(() => selectedCategory = cat),
+                          child: Container(
+                            height: 28,
+                            width: 90,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: isSelected ? Colors.black : Colors.grey,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              cat,
+                              style: TextStyle(
+                                color: isSelected
+                                    ? Colors.white
+                                    : Colors.grey[600],
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: _ShoppingVendorIds.isEmpty
+                          ? _buildShimmerList()
+                          : StreamBuilder<QuerySnapshot>(
+                              stream: FirebaseFirestore.instance
+                                  .collection('products')
+                                  .where('vendorId',
+                                      whereIn: _ShoppingVendorIds)
+                                  .snapshots(),
+                              builder: (context, snapshot) {
+                                if (!snapshot.hasData) {
+                                  return _buildShimmerList();
+                                }
 
-                          return ListView.builder(
-                            itemCount: docs.length,
-                            itemBuilder: (context, index) {
-                              final doc = docs[index];
+                                final docs = snapshot.data!.docs;
 
-                              final data = doc.data() as Map<String, dynamic>;
+                                return ListView.builder(
+                                  itemCount: docs.length,
+                                  itemBuilder: (context, index) {
+                                    final doc = docs[index];
+                                    final data =
+                                        doc.data() as Map<String, dynamic>;
+                                    final imageKey = GlobalKey();
 
-                              final imageKey = GlobalKey();
-
-                              return GestureDetector(
-                                onTap: () => _flyToCart(imageKey, data),
-                                child: Container(
-                                  height: 85,
-                                  margin:
-                                      const EdgeInsets.symmetric(vertical: 6),
-                                  child: Row(
-                                    children: [
-                                      Container(
-                                        key: imageKey,
-                                        width: 60,
-                                        height: 60,
-                                        child: ClipOval(
-                                          child: Image.network(
-                                            data['image'] ?? '',
-                                            fit: BoxFit.cover,
-                                            errorBuilder: (_, __, ___) {
-                                              return Image.asset(
-                                                data['fallbackAsset'] ??
-                                                    "assets/images/food.png",
-                                                fit: BoxFit.cover,
-                                              );
-                                            },
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
+                                    return GestureDetector(
+                                      onTap: () => _flyToCart(imageKey, data),
+                                      child: Container(
+                                        height: 85,
+                                        margin: const EdgeInsets.symmetric(
+                                            vertical: 6),
+                                        child: Row(
                                           children: [
-                                            Text(
-                                              data['name'] ?? '',
-                                              style: const TextStyle(
-                                                  fontWeight: FontWeight.bold),
+                                            Container(
+                                              key: imageKey,
+                                              width: 60,
+                                              height: 60,
+                                              child: ClipOval(
+                                                child: Image.network(
+                                                  data['image'] ?? '',
+                                                  fit: BoxFit.cover,
+                                                  errorBuilder: (_, __, ___) {
+                                                    return Image.asset(
+                                                      data['fallbackAsset'] ??
+                                                          "assets/images/food.png",
+                                                      fit: BoxFit.cover,
+                                                    );
+                                                  },
+                                                ),
+                                              ),
                                             ),
-                                            Text(
-                                              "₦${data['price']}",
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
+                                                children: [
+                                                  Text(
+                                                    data['name'] ?? '',
+                                                    style: const TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                  Text(
+                                                    "₦${data['price']}",
+                                                  ),
+                                                ],
+                                              ),
                                             ),
                                           ],
                                         ),
                                       ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                          );
-                        },
-                      )),
+                                    );
+                                  },
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
