@@ -8724,9 +8724,9 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                                 shape: BoxShape.circle,
                               ),
                               child: const Icon(
-                                CupertinoIcons.back,
+                                Icons.arrow_back_ios,
+                                size: 16,
                                 color: Colors.white,
-                                size: 18,
                               ),
                             ),
                           ),
@@ -8859,8 +8859,8 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                     const Text(
                       "Services",
                       style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                        //fontWeight: FontWeight.bold,
                       ),
                     ),
 
@@ -8900,8 +8900,8 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                     const Text(
                       "Available Providers",
                       style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                        //fontWeight: FontWeight.bold,
                       ),
                     ),
 
@@ -8914,8 +8914,8 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                     const Text(
                       "Recents",
                       style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                        //fontWeight: FontWeight.bold,
                       ),
                     ),
 
@@ -8942,14 +8942,14 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
     return Container(
       height: 160,
       width: 150,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade200),
+        borderRadius: BorderRadius.circular(18),
+        //border: Border.all(color: Colors.grey.shade200),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withOpacity(0.06),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -8958,27 +8958,40 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          /// ICON + TITLE
           Container(
-            width: 42,
-            height: 42,
+            width: 45,
+            height: 45,
             decoration: BoxDecoration(
-              color: bgColor,
               shape: BoxShape.circle,
+              color: bgColor,
             ),
-            child: Icon(icon, color: iconColor, size: 22),
+            child: Icon(
+              icon,
+              color: iconColor,
+              size: 22,
+            ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(width: 15),
+
           Text(
             title,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 15,
+            ),
           ),
-          const SizedBox(height: 4),
+
+          //Push description lower
+          const SizedBox(width: 10),
+
           Text(
             description,
-            style:
-                TextStyle(fontSize: 10, color: Colors.grey[500], height: 1.4),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 12.5,
+              height: 1.4,
+              color: Colors.grey[600],
+            ),
           ),
         ],
       ),
@@ -9049,7 +9062,7 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
               scrollDirection: Axis.horizontal,
               itemCount: 3,
               itemBuilder: (_, __) => Container(
-                width: 350,
+                width: 300,
                 margin: const EdgeInsets.only(right: 15),
                 child: _driverShimmer(),
               ),
@@ -9096,43 +9109,47 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                         );
                       },
                 child: Container(
-                  width: 350,
-                  margin: const EdgeInsets.only(right: 15),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 18,
-                    vertical: 14,
-                  ),
+                  width: 300,
+                  height: 100,
+                  margin: const EdgeInsets.only(bottom: 14),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: Colors.grey.shade200,
+                    ),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withOpacity(.05),
-                        blurRadius: 10,
+                        blurRadius: 12,
                         offset: const Offset(0, 5),
                       ),
                     ],
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      /// Vehicle Row
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          ClipOval(
+                      /// ==========================
+                      /// COLUMN 1 - IMAGE
+                      /// ==========================
+                      SizedBox(
+                        width: 70,
+                        child: Center(
+                          child: ClipOval(
                             child: image.toString().isNotEmpty
                                 ? Image.network(
                                     image,
-                                    width: 55,
-                                    height: 55,
+                                    width: 56,
+                                    height: 56,
                                     fit: BoxFit.cover,
-                                    errorBuilder:
-                                        (context, error, stackTrace) =>
-                                            Container(
-                                      width: 55,
-                                      height: 55,
-                                      color: Colors.grey[100],
+                                    errorBuilder: (_, __, ___) => Container(
+                                      width: 56,
+                                      height: 56,
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey.shade100,
+                                        shape: BoxShape.circle,
+                                      ),
                                       child: const Icon(
                                         Icons.directions_bus,
                                         color: Colors.black,
@@ -9140,99 +9157,97 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                                     ),
                                   )
                                 : Container(
-                                    width: 55,
-                                    height: 55,
-                                    color: Colors.grey[100],
+                                    width: 56,
+                                    height: 56,
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey.shade100,
+                                      shape: BoxShape.circle,
+                                    ),
                                     child: const Icon(
                                       Icons.directions_bus,
                                       color: Colors.black,
                                     ),
                                   ),
                           ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Text(
-                              vehicle,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Row(
-                            children: [
-                              Container(
-                                width: 8,
-                                height: 8,
-                                decoration: const BoxDecoration(
-                                  color: Colors.green,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 5),
-                              const Text(
-                                "Online",
-                                style: TextStyle(
-                                  color: Colors.green,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 14),
-
-                      Text(
-                        institution,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade700,
-                          fontWeight: FontWeight.w500,
                         ),
                       ),
 
-                      const Spacer(),
+                      const SizedBox(width: 14),
 
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: isFull
-                                  ? Colors.red.shade50
-                                  : Colors.green.shade50,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              isFull ? "Full" : "$seatsLeft Seats Left",
-                              style: TextStyle(
-                                color:
-                                    isFull ? Colors.red : Colors.green.shade700,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 11,
+                      /// ==========================
+                      /// COLUMN 2 - DETAILS
+                      /// ==========================
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              vehicle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
-                          ),
-                          const Spacer(),
-                          Text(
-                            "₦${data["price"] ?? 0}",
-                            style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
+                            const SizedBox(height: 8),
+                            Text(
+                              institution,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(width: 14),
+
+                      /// ==========================
+                      /// COLUMN 3 - PRICE & SEATS
+                      /// ==========================
+                      SizedBox(
+                        width: 80,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              "₦${data["price"] ?? 0}",
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isFull
+                                    ? Colors.red.shade50
+                                    : Colors.green.shade50,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                isFull ? "Full" : "$seatsLeft Seats Left",
+                                style: TextStyle(
+                                  color: isFull
+                                      ? Colors.red
+                                      : Colors.green.shade700,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -10411,7 +10426,10 @@ class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
 
       Navigator.pushAndRemoveUntil(
         context,
-        MaterialPageRoute(builder: (_) => MyTicketsPage()),
+        MaterialPageRoute(
+            builder: (_) => ShuttleTicketDetailsPage(
+                  ticketDoc: data,
+                )),
         (route) => false,
       );
     } catch (e) {
@@ -11163,86 +11181,139 @@ class _ShoppingSectionPageState extends State<ShoppingSectionPage>
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: const Icon(Icons.arrow_back_ios),
-                  ),
-                  const Spacer(),
-                  const Text(
-                    'Shop Essentials',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                  const Spacer(flex: 2),
-                ],
-              ),
-
-              const SizedBox(height: 10),
-
-              /// SEARCH BAR
-
-              Container(
-                height: 50,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: Colors.grey[100],
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: const TextField(
-                  decoration: InputDecoration(
-                    hintText: 'Search',
-                    border: InputBorder.none,
-                    icon: Icon(Icons.search),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Stack(
+              children: [
+                Container(
+                  height: 150,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF181818),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.15),
+                        blurRadius: 20,
+                        spreadRadius: 2,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-
-              const SizedBox(height: 12),
-
-              const Text(
-                "Categories",
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-
-              const SizedBox(height: 6),
-
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: ["All", "Groceries", "Pharma"].map((cat) {
-                  bool isSelected = selectedCategory == cat;
-
-                  return GestureDetector(
-                    onTap: () => setState(() => selectedCategory = cat),
-                    child: Container(
-                      height: 28,
-                      width: 90,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: isSelected ? Colors.black : Colors.grey,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        cat,
-                        style: TextStyle(
-                            color:
-                                isSelected ? Colors.white : Colors.grey[600]),
-                      ),
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: CustomPaint(
+                      painter: HeaderDoodlePainter(),
                     ),
-                  );
-                }).toList(),
-              ),
+                  ),
+                ),
+                SafeArea(
+                  bottom: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 26),
+                    child: Column(
+                      children: [
+                        /// Back + Title
+                        Row(
+                          children: [
+                            GestureDetector(
+                              onTap: () => Navigator.pop(context),
+                              child: Container(
+                                width: 34,
+                                height: 34,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(.12),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.arrow_back_ios_new,
+                                  size: 16,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            const Text(
+                              "Shop Essentials",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const Spacer(flex: 2),
+                          ],
+                        ),
 
-              const SizedBox(height: 10),
+                        const SizedBox(height: 18),
 
-              /// PRODUCTS
-              Expanded(
+                        /// Search
+                        Card(
+                          elevation: 5,
+                          color: Colors.transparent,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
+                            child: SizedBox(
+                              height: 42,
+                              child: TextField(
+                                decoration: InputDecoration(
+                                  hintText: "Search",
+                                  filled: true,
+                                  fillColor: Colors.grey.shade100,
+                                  prefixIcon:
+                                      const Icon(Icons.search, size: 20),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: ["All", "Groceries", "Pharma"].map((cat) {
+                bool isSelected = selectedCategory == cat;
+
+                return GestureDetector(
+                  onTap: () => setState(() => selectedCategory = cat),
+                  child: Container(
+                    height: 28,
+                    width: 90,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: isSelected ? Colors.black : Colors.grey,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      cat,
+                      style: TextStyle(
+                          color: isSelected ? Colors.white : Colors.grey[600]),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+
+            const SizedBox(height: 10),
+
+            /// PRODUCTS
+            Expanded(
                 child: _ShoppingVendorIds.isEmpty
                     ? _buildShimmerList()
                     : StreamBuilder<QuerySnapshot>(
@@ -11318,10 +11389,8 @@ class _ShoppingSectionPageState extends State<ShoppingSectionPage>
                             },
                           );
                         },
-                      ),
-              ),
-            ],
-          ),
+                      )),
+          ],
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
