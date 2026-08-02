@@ -38,6 +38,7 @@ dependencies:
   intl: ^0.18.0
   flutter_typeahead: ^5.2.0
   google_places_flutter: ^2.0.6
+  paystack_flutter_sdk: ^0.0.1-alpha.2
 
 dev_dependencies:
   flutter_test:

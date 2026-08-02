@@ -79,101 +79,148 @@ class MyHomePage extends StatefulWidget {
   const MyHomePage({Key? key}) : super(key: key);
 
   @override
-  _MyHomePageState createState() => _MyHomePageState();
+  State<MyHomePage> createState() => _MyHomePageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
+class _MyHomePageState extends State<MyHomePage>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _pulseAnimation;
+
+  String _displayText = "";
+
+  @override
+  void initState() {
+    super.initState();
+
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+
+    _pulseAnimation = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 0.96, end: 1.03)
+            .chain(CurveTween(curve: Curves.easeOut)),
+        weight: 50,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.03, end: 0.98)
+            .chain(CurveTween(curve: Curves.easeInOut)),
+        weight: 25,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 0.98, end: 1.00)
+            .chain(CurveTween(curve: Curves.easeInOut)),
+        weight: 25,
+      ),
+    ]).animate(_controller);
+
+    _startAnimation();
+  }
+
+  Future<void> _startAnimation() async {
+    const word = "Zone";
+
+    for (int i = 1; i <= word.length; i++) {
+      if (!mounted) return;
+
+      setState(() {
+        _displayText = word.substring(0, i);
+      });
+
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
+
+    _controller.repeat();
+
+    await Future.delayed(const Duration(milliseconds: 1700));
+
+    if (!mounted) return;
+
+    Navigator.pushReplacement(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (_, animation, __) => const LoginPage(),
+        transitionsBuilder: (_, animation, __, child) {
+          return FadeTransition(
+            opacity: animation,
+            child: child,
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 500),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // Logo
-                const SizedBox(height: 150),
-                Text('Deck Mobility',
-                    style: GoogleFonts.caveat(
-                      color: Colors.black,
-                      fontSize: 30,
-                      fontWeight: FontWeight.bold,
-                    )),
-                const SizedBox(height: 10),
-                Text('Rides . Logistics . Transport',
-                    style: GoogleFonts.caveat(
-                      color: Colors.grey[800],
-                      fontSize: 20,
-                    )),
-                const SizedBox(height: 100),
-
-                // Login Button
-                // Spacer(),
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (context) => const LoginPage()));
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.black,
-                    minimumSize: const Size(double.infinity, 60),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  child: Text(
-                    'LOGIN',
-                    style: GoogleFonts.inter(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-
-                // Register Button
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (context) => const RegisterPage()));
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.black,
-                    minimumSize: const Size(double.infinity, 60),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  child: Text(
-                    'REGISTER',
-                    style: GoogleFonts.inter(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ],
+      backgroundColor: const Color(0xFF181818),
+      body: Stack(
+        children: [
+          /// Background doodles
+          Positioned.fill(
+            child: CustomPaint(
+              painter: HeaderDoodlePainter(),
             ),
           ),
-        ),
+
+          /// Animated Logo
+          Center(
+            child: AnimatedBuilder(
+              animation: _pulseAnimation,
+              builder: (context, child) {
+                return Transform.scale(
+                  scale: _displayText == "Zone" ? _pulseAnimation.value : 1,
+                  child: child,
+                );
+              },
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                transitionBuilder: (child, animation) {
+                  return FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0, .15),
+                        end: Offset.zero,
+                      ).animate(animation),
+                      child: child,
+                    ),
+                  );
+                },
+                child: Text(
+                  _displayText,
+                  key: ValueKey(_displayText),
+                  style: GoogleFonts.inter(
+                    fontSize: 40,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                    letterSpacing: 12,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({Key? key}) : super(key: key);
+  final String? initialEmail;
+  const LoginPage({
+    Key? key,
+    this.initialEmail,
+  }) : super(key: key);
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -191,6 +238,15 @@ class _LoginPageState extends State<LoginPage> {
     emailController.dispose();
     passwordController.dispose();
     super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+
+    if (widget.initialEmail != null) {
+      emailController.text = widget.initialEmail!;
+    }
   }
 
   Future<void> SignIn(BuildContext context) async {
@@ -262,57 +318,40 @@ class _LoginPageState extends State<LoginPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: AppBar(
-        //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
-        backgroundColor: Colors.white,
-        elevation: 0,
-
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 10),
-          child: GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              width: 25,
-              height: 25,
-              decoration: BoxDecoration(
-                color: Colors.grey[100], // ✅ grey 50 look
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.arrow_back_ios,
-                size: 14,
-                color: Colors.black,
-              ),
-            ),
-          ),
-        ),
-
-        title: const Padding(
-          padding: EdgeInsets.only(left: 8), // ✅ spacing from icon
-          child: Text(
-            'Login',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: Colors.black,
-            ),
-          ),
-        ),
-      ),
-      body: SafeArea(
+      appBar: null,
+      body: Center(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Form(
             key: _formKey,
             child: ListView(
               children: [
-                const SizedBox(height: 20),
+                const SizedBox(height: 200),
                 TextFormField(
                   controller: emailController,
                   decoration: InputDecoration(
                     labelText: 'Email or phone',
+                    filled: true,
+                    fillColor: Colors.grey.shade100,
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8.0),
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    errorBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    focusedErrorBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
                     ),
                   ),
                   keyboardType: TextInputType.text,
@@ -320,24 +359,44 @@ class _LoginPageState extends State<LoginPage> {
                     if (value == null || value.isEmpty) {
                       return 'Please enter your email or phone number';
                     }
-                    // Validate as email or phone format
+
                     if (!RegExp(r'^[^@]+@[^@]+\.[^@]+$').hasMatch(value) &&
                         !RegExp(r'^\d{10}$').hasMatch(value)) {
                       return 'Enter a valid email or phone number';
                     }
+
                     return null;
                   },
                 ),
                 const SizedBox(height: 10),
                 TextFormField(
                   controller: passwordController,
+                  obscureText: true,
                   decoration: InputDecoration(
                     labelText: 'Password',
+                    filled: true,
+                    fillColor: Colors.grey.shade100,
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8.0),
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    errorBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    focusedErrorBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
                     ),
                   ),
-                  obscureText: true,
                   validator: (value) {
                     if (value == null || value.isEmpty) {
                       return 'Please enter your password';
@@ -362,7 +421,7 @@ class _LoginPageState extends State<LoginPage> {
                           )),
                     ),
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(30),
                       color: Colors.black,
                     ),
                   ),
@@ -370,12 +429,18 @@ class _LoginPageState extends State<LoginPage> {
                 const SizedBox(height: 10),
                 TextButton(
                   onPressed: () {
-                    // Navigate to RegisterPage
-                    Navigator.pushNamed(context, '/register');
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const RegisterPage(),
+                      ),
+                    );
                   },
                   child: const Text(
-                    'Don\'t have an account? Register here',
-                    style: TextStyle(color: Colors.black),
+                    "Don't have an account? Register here",
+                    style: TextStyle(
+                      color: Colors.black,
+                    ),
                   ),
                 ),
               ],
@@ -8434,7 +8499,25 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                       }
 
                       if (snapshot.hasError) {
-                        return Center(child: Text("Error: ${snapshot.error}"));
+                        debugPrint("========== FIRESTORE ERROR ==========");
+                        debugPrint(snapshot.error.toString());
+
+                        if (snapshot.error is FirebaseException) {
+                          final e = snapshot.error as FirebaseException;
+                          debugPrint("Code: ${e.code}");
+                          debugPrint("Message: ${e.message}");
+                        }
+
+                        return SingleChildScrollView(
+                          padding: const EdgeInsets.all(20),
+                          child: SelectableText(
+                            snapshot.error.toString(),
+                            style: const TextStyle(
+                              color: Colors.red,
+                              fontSize: 12,
+                            ),
+                          ),
+                        );
                       }
 
                       if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
@@ -8596,15 +8679,41 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                       width: 48,
                       height: 48,
                       fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        debugPrint("IMAGE ERROR: $error");
+                        debugPrint("URL: $vehicleImage");
+
+                        return Container(
+                          width: 48,
+                          height: 48,
+                          color: Colors.grey[200],
+                          child: const Icon(Icons.directions_bus),
+                        );
+                      },
+                      loadingBuilder: (context, child, progress) {
+                        if (progress == null) return child;
+
+                        return Container(
+                          width: 48,
+                          height: 48,
+                          color: Colors.green[50],
+                          child: const Center(
+                            child: SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                        );
+                      },
                     )
                   : Container(
                       width: 48,
                       height: 48,
-                      color: Colors.grey[200],
-                      child: const Icon(Icons.directions_bus),
+                      color: Colors.green[50],
+                      //child: const Icon(Icons.directions_bus),
                     ),
             ),
-
             const SizedBox(width: 10),
 
             /// INFO
@@ -8972,13 +9081,13 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
               size: 22,
             ),
           ),
-          const SizedBox(width: 35),
+          const SizedBox(height: 20),
 
           Text(
             title,
             style: const TextStyle(
               fontWeight: FontWeight.bold,
-              fontSize: 15,
+              fontSize: 14,
             ),
           ),
 
@@ -9028,7 +9137,7 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
         child: Row(
           children: [
-            _shimmerBox(height: 50, width: 50),
+            _shimmerBox(height: 150, width: 50),
             const SizedBox(width: 12),
             Expanded(child: _shimmerBox(height: 14)),
           ],
@@ -9086,7 +9195,11 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
             scrollDirection: Axis.horizontal,
             itemCount: drivers.length,
             itemBuilder: (context, index) {
-              final data = drivers[index].data() as Map<String, dynamic>;
+              final doc = drivers[index];
+
+              final data = doc.data() as Map<String, dynamic>;
+
+              data["id"] = doc.id;
 
               final image = data["vehicleImage"] ?? "";
               final vehicle = data["vehicleName"] ?? "";
@@ -9140,12 +9253,12 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                             child: image.toString().isNotEmpty
                                 ? Image.network(
                                     image,
-                                    width: 58,
-                                    height: 58,
+                                    width: 60,
+                                    height: 60,
                                     fit: BoxFit.cover,
                                     errorBuilder: (_, __, ___) => Container(
-                                      width: 58,
-                                      height: 58,
+                                      width: 60,
+                                      height: 60,
                                       decoration: BoxDecoration(
                                         color: Colors.grey.shade100,
                                         shape: BoxShape.circle,
@@ -9157,8 +9270,8 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                                     ),
                                   )
                                 : Container(
-                                    width: 58,
-                                    height: 58,
+                                    width: 60,
+                                    height: 60,
                                     decoration: BoxDecoration(
                                       color: Colors.grey.shade100,
                                       shape: BoxShape.circle,
@@ -9184,18 +9297,18 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                           children: [
                             Text(
                               vehicle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                              // maxLines: 1,
+                              // overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 fontSize: 15,
-                                fontWeight: FontWeight.w700,
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 10),
                             Text(
                               institution,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
+                              //maxLines: 2,
+                              // overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.grey.shade600,
@@ -9219,11 +9332,11 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                             Text(
                               "₦${data["price"] ?? 0}",
                               style: const TextStyle(
-                                fontSize: 16,
+                                fontSize: 15,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 10),
                             Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 8,
@@ -9979,7 +10092,7 @@ class _MyTicketsPageState extends State<MyTicketsPage> {
 }
 
 class ShuttleTicketDetailsPage extends StatefulWidget {
-  final QueryDocumentSnapshot ticketDoc;
+  final DocumentSnapshot ticketDoc;
 
   const ShuttleTicketDetailsPage({Key? key, required this.ticketDoc})
       : super(key: key);
@@ -10031,16 +10144,19 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
     }
   }
 
+  String _formatDate(DateTime? date) {
+    if (date == null) return "--";
+
+    return "${date.day.toString().padLeft(2, '0')}/"
+        "${date.month.toString().padLeft(2, '0')}/"
+        "${date.year}, "
+        "${date.hour.toString().padLeft(2, '0')}:"
+        "${date.minute.toString().padLeft(2, '0')}";
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = widget.ticketDoc.data() as Map<String, dynamic>;
-
-    final institution = data["institution"];
-    final pickup = data["pickup"];
-    final destination = data["destination"];
-    final price = data["price"];
-    final ticketId = data["ticketId"];
-    final status = data["status"];
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -10082,175 +10198,306 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
           ),
         ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            /// 🎫 TICKET CARD WITH CUTOUT
-            Stack(
+      body: StreamBuilder<DocumentSnapshot>(
+        stream: widget.ticketDoc.reference.snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          }
+
+          final data = snapshot.data!.data() as Map<String, dynamic>;
+
+          final institution = data["institution"] ?? "";
+          final pickup = data["pickup"] ?? "";
+          final destination = data["destination"] ?? "";
+          final price = data["price"] ?? 0;
+          final ticketId = data["ticketId"] ?? "";
+          final status = data["status"] ?? "";
+
+          final Timestamp? createdAt = data["createdAt"] as Timestamp?;
+          final DateTime? bookedDate = createdAt?.toDate();
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [
-                        Colors.white,
-                        Colors.amberAccent,
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.grey.withOpacity(0.3),
-                        blurRadius: 15,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Center(
-                        child: Text(
-                          "$institution Shuttle",
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
+                /// 🎫 TICKET CARD
+                Stack(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [
+                            Colors.white,
+                            Colors.amberAccent,
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.grey.withOpacity(0.3),
+                            blurRadius: 15,
+                            offset: const Offset(0, 6),
                           ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Center(
+                            child: Column(
+                              children: [
+                                Text(
+                                  "$institution Shuttle",
+                                  style: const TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+
+                                const SizedBox(height: 24),
+
+                                /// FROM
+                                Row(
+                                  children: [
+                                    Text(
+                                      "From",
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Text(
+                                      pickup,
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+
+                                const SizedBox(height: 14),
+
+                                /// TO
+                                Row(
+                                  children: [
+                                    Text(
+                                      "To",
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Text(
+                                      destination,
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+
+                                const SizedBox(height: 14),
+
+                                /// DATE
+                                Row(
+                                  children: [
+                                    Text(
+                                      "Date",
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Text(
+                                      _formatDate(bookedDate),
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+
+                                const SizedBox(height: 14),
+
+                                /// STATUS
+                                Row(
+                                  children: [
+                                    Text(
+                                      "Status",
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Text(
+                                      status.toString().toUpperCase(),
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+
+                                const SizedBox(height: 26),
+
+                                Center(
+                                  child: Text(
+                                    "₦$price",
+                                    style: const TextStyle(
+                                      fontSize: 28,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+
+                                const SizedBox(height: 20),
+
+                                Center(
+                                  child: Text(
+                                    "Ticket ID: $ticketId",
+                                    style: TextStyle(
+                                      color: Colors.grey[700],
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    /// LEFT CUT
+                    Positioned(
+                      left: -14,
+                      top: 90,
+                      child: Container(
+                        height: 28,
+                        width: 28,
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
                         ),
                       ),
-                      const SizedBox(height: 20),
-                      const Text("From"),
-                      const SizedBox(height: 6),
-                      _infoBox(pickup),
-                      const SizedBox(height: 12),
-                      const Text("To"),
-                      const SizedBox(height: 6),
-                      _infoBox(destination),
-                      const SizedBox(height: 12),
-                      _infoBox("₦$price", highlight: true),
-                      const SizedBox(height: 12),
-                      _infoBox("Ticket ID: $ticketId", highlight: true),
-                    ],
-                  ),
+                    ),
+
+                    /// RIGHT CUT
+                    Positioned(
+                      right: -14,
+                      top: 90,
+                      child: Container(
+                        height: 28,
+                        width: 28,
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
 
-                /// LEFT CUT
-                Positioned(
-                  left: -14,
-                  top: 90,
-                  child: Container(
-                    height: 28,
-                    width: 28,
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
+                const SizedBox(height: 20),
+
+                /// DRIVER CARD
+                if (driverData != null)
+                  Card(
+                    color: Colors.white,
+                    elevation: 4,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            "Driver & Bus Details",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 25,
+                                backgroundImage:
+                                    NetworkImage(driverData!['driverImage']),
+                              ),
+                              const SizedBox(width: 12),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    driverData!['name'],
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  Text(driverData!['vehicleName']),
+                                ],
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            "Boarded: ${driverData!['boardedPassengers']} / ${driverData!['vehicleCapacity']}",
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            "Amount Collected: ₦${driverData!['amountCollected']}",
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
 
-                /// RIGHT CUT
-                Positioned(
-                  right: -14,
-                  top: 90,
-                  child: Container(
-                    height: 28,
-                    width: 28,
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
+                const SizedBox(height: 30),
+
+                /// BOARD BUTTON
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 15),
                     ),
+                    onPressed:
+                        status == "used" || boarding ? null : _handleBoarding,
+                    child: boarding
+                        ? const CircularProgressIndicator(
+                            color: Colors.white,
+                          )
+                        : Text(
+                            status == "used" ? "Ticket Used" : "Board",
+                            style: const TextStyle(
+                              fontSize: 16,
+                              color: Colors.white,
+                            ),
+                          ),
                   ),
                 ),
               ],
             ),
-
-            const SizedBox(height: 20),
-
-            /// DRIVER CARD (unchanged logic, improved UI)
-
-            if (driverData != null)
-              Card(
-                color: Colors.white,
-                elevation: 4,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16)),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        "Driver & Bus Details",
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 25,
-                            backgroundImage:
-                                NetworkImage(driverData!['driverImage']),
-                          ),
-                          const SizedBox(width: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                driverData!['name'],
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold),
-                              ),
-                              Text(driverData!['vehicleName']),
-                            ],
-                          )
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        "Boarded: ${driverData!['boardedPassengers']} / ${driverData!['vehicleCapacity']}",
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        "Amount Collected: ₦${driverData!['amountCollected']}",
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-            const SizedBox(height: 30),
-
-            /// BOARD BUTTON
-
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(vertical: 15),
-                ),
-                onPressed:
-                    status == "used" || boarding ? null : _handleBoarding,
-                child: boarding
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text(
-                        "Board",
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.white,
-                        ),
-                      ),
-              ),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -10283,11 +10530,13 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
   Future<void> _handleBoarding() async {
     final controller = TextEditingController();
 
-    final result = await showDialog<String>(
+    final enteredCode = await showDialog<String>(
       context: context,
       builder: (_) => Dialog(
         backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
         child: Padding(
           padding: const EdgeInsets.all(20),
           child: Column(
@@ -10295,13 +10544,12 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
             children: [
               const Text(
                 "Enter Shuttle Code",
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
               ),
-
               const SizedBox(height: 20),
-
-              /// CODE FIELD
-
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 decoration: BoxDecoration(
@@ -10309,7 +10557,7 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.grey.withOpacity(0.2),
+                      color: Colors.grey.withOpacity(.2),
                       blurRadius: 8,
                     )
                   ],
@@ -10322,11 +10570,7 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 15),
-
-              /// SCAN QR BUTTON
-
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(14),
@@ -10341,11 +10585,7 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 20),
-
-              /// CONFIRM BUTTON
-
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -10360,21 +10600,58 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
                     style: TextStyle(color: Colors.white),
                   ),
                 ),
-              )
+              ),
             ],
           ),
         ),
       ),
     );
 
-    if (result == null || result.isEmpty) return;
+    if (enteredCode == null || enteredCode.isEmpty) return;
 
-    /// KEEP YOUR EXISTING BOARDING LOGIC
+    final ticketData = widget.ticketDoc.data() as Map<String, dynamic>;
+    final correctCode = ticketData["driverCode"] ?? "";
 
-    setState(() => boarding = false);
+    if (enteredCode != correctCode) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Incorrect shuttle code"),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Boarding logic continues")));
+    setState(() => boarding = true);
+
+    try {
+      await widget.ticketDoc.reference.update({
+        "status": "used",
+        "boardedAt": FieldValue.serverTimestamp(),
+      });
+
+      if (!mounted) return;
+
+      setState(() => boarding = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Verification Successful"),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      // Navigator.pop(context);
+    } catch (e) {
+      setState(() => boarding = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Verification failed: $e"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 }
 
@@ -10453,7 +10730,7 @@ class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
         mode: LaunchMode.externalApplication,
       );
 
-      await _completeBooking(reference);
+      final ticketDoc = await _completeBooking(reference);
 
       if (!mounted) return;
 
@@ -10461,13 +10738,13 @@ class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
         const SnackBar(content: Text("Payment successful! Ticket booked.")),
       );
 
-      Navigator.pushAndRemoveUntil(
+      Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-            builder: (_) => ShuttleTicketDetailsPage(
-                  ticketDoc: data,
-                )),
-        (route) => false,
+          builder: (_) => ShuttleTicketDetailsPage(
+            ticketDoc: ticketDoc,
+          ),
+        ),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -10478,10 +10755,13 @@ class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
     }
   }
 
-  Future<void> _completeBooking(String paymentReference) async {
+  Future<DocumentSnapshot> _completeBooking(String paymentReference) async {
     final user = FirebaseAuth.instance.currentUser!;
     final driverRef =
         FirebaseFirestore.instance.collection("shuttle_drivers").doc(driverId);
+
+    final ticketRef =
+        FirebaseFirestore.instance.collection("shuttle_tickets").doc();
 
     await FirebaseFirestore.instance.runTransaction((transaction) async {
       final snapshot = await transaction.get(driverRef);
@@ -10506,9 +10786,6 @@ class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
 
       String ticketId = "ST${Random().nextInt(90000) + 10000}";
 
-      final ticketRef =
-          FirebaseFirestore.instance.collection("shuttle_tickets").doc();
-
       transaction.set(ticketRef, {
         "ticketId": ticketId,
         "driverId": driverId,
@@ -10524,6 +10801,8 @@ class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
         "driverCode": driverCode,
       });
     });
+    final ticketDoc = await ticketRef.get();
+    return ticketDoc;
   }
 
   @override
@@ -10570,9 +10849,9 @@ class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
             children: [
               /// Page Title
               const Text(
-                "Confirm your Shuttle Ticket",
+                "Confirm shuttle booking.",
                 style: TextStyle(
-                  fontSize: 22,
+                  fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -10604,7 +10883,7 @@ class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
                         vertical: 14,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: Colors.amber[50],
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: Center(
@@ -10628,7 +10907,7 @@ class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
                                 institution,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
-                                  fontSize: 15,
+                                  fontSize: 14,
                                 ),
                               ),
                             ),
@@ -14750,7 +15029,7 @@ class _RegisterPageState extends State<RegisterPage>
       Navigator.pop(context); // close loader
 
       /// 🔥 SUCCESS DIALOG
-      await showGeneralDialog(
+      showGeneralDialog(
         context: context,
         barrierDismissible: false,
         barrierLabel: "",
@@ -14758,41 +15037,49 @@ class _RegisterPageState extends State<RegisterPage>
         pageBuilder: (_, __, ___) => const SizedBox.shrink(),
         transitionBuilder: (context, animation, secAnimation, child) {
           return ScaleTransition(
-            scale:
-                CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
+            scale: CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutBack,
+            ),
             child: AlertDialog(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
               ),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.check_circle, color: Colors.green, size: 60),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Registered Successfully',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                children: const [
+                  Icon(
+                    Icons.check_circle,
+                    color: Colors.green,
+                    size: 60,
                   ),
-                  const SizedBox(height: 20),
-                  ElevatedButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(builder: (_) => const LoginPage()),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.black,
-                      foregroundColor: Colors.white,
+                  SizedBox(height: 16),
+                  Text(
+                    "Registered Successfully",
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
                     ),
-                    child: const Text('Login'),
-                  )
+                  ),
+                  SizedBox(height: 8),
                 ],
               ),
             ),
           );
         },
+      );
+
+      await Future.delayed(const Duration(seconds: 2));
+
+      Navigator.pop(context);
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => LoginPage(
+            initialEmail: emailController.text.trim(),
+          ),
+        ),
       );
     } catch (e) {
       Navigator.pop(context);
@@ -14846,10 +15133,24 @@ class _RegisterPageState extends State<RegisterPage>
               children: [
                 const SizedBox(height: 20),
 
-                buildTextField(firstNameController, 'First Name'),
-                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: buildTextField(
+                        firstNameController,
+                        'First Name',
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: buildTextField(
+                        lastNameController,
+                        'Last Name',
+                      ),
+                    ),
+                  ],
+                ),
 
-                buildTextField(lastNameController, 'Last Name'),
                 const SizedBox(height: 10),
 
                 buildTextField(emailController, 'Email',
@@ -14876,7 +15177,7 @@ class _RegisterPageState extends State<RegisterPage>
                     height: 50,
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(30),
                       color: Colors.black,
                     ),
                     child: const Text(
@@ -14907,8 +15208,27 @@ class _RegisterPageState extends State<RegisterPage>
       keyboardType: keyboardType,
       decoration: InputDecoration(
         labelText: label,
+        filled: true,
+        fillColor: Colors.grey.shade100,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
         ),
       ),
       validator: (value) {
