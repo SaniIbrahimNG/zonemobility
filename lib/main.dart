@@ -8969,7 +8969,7 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                       "Services",
                       style: TextStyle(
                         fontSize: 12,
-                        //fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
 
@@ -9010,7 +9010,7 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                       "Available Providers",
                       style: TextStyle(
                         fontSize: 12,
-                        //fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
 
@@ -9024,7 +9024,7 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
                       "Recents",
                       style: TextStyle(
                         fontSize: 12,
-                        //fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
 
@@ -9069,8 +9069,8 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
         children: [
           /// ICON + TITLE
           Container(
-            width: 45,
-            height: 45,
+            width: 50,
+            height: 50,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: bgColor,
@@ -9137,9 +9137,9 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
         child: Row(
           children: [
-            _shimmerBox(height: 150, width: 50),
+            _shimmerBox(height: 100, width: 70),
             const SizedBox(width: 12),
-            Expanded(child: _shimmerBox(height: 14)),
+            Expanded(child: _shimmerBox(height: 50)),
           ],
         ),
       ),
@@ -10230,14 +10230,7 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [
-                            Colors.white,
-                            Colors.amberAccent,
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
+                        color: Colors.grey[100],
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
                           BoxShadow(
@@ -10255,13 +10248,30 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
                               children: [
                                 Text(
                                   "$institution Shuttle",
-                                  style: const TextStyle(
-                                    fontSize: 20,
+                                  style: GoogleFonts.lobsterTwo(
+                                    fontSize: 18,
                                     fontWeight: FontWeight.bold,
+                                    color: const Color(0xFF1C1C1C),
                                   ),
                                 ),
 
-                                const SizedBox(height: 24),
+                                const SizedBox(height: 10),
+                                Center(
+                                  child: Container(
+                                    width: 200,
+                                    height: 1,
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(10),
+                                      gradient: const LinearGradient(
+                                        colors: [
+                                          Colors.black,
+                                          Color(0xfff8efd5),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(height: 15),
 
                                 /// FROM
                                 Row(
@@ -10277,9 +10287,9 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
                                     Text(
                                       pickup,
                                       style: const TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                      ),
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                          color: Color(0xFF1C1C1C)),
                                     ),
                                   ],
                                 ),
@@ -10300,9 +10310,9 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
                                     Text(
                                       destination,
                                       style: const TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.bold,
-                                      ),
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                          color: Color(0xff1c1c1c)),
                                     ),
                                   ],
                                 ),
@@ -10323,8 +10333,8 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
                                     Text(
                                       _formatDate(bookedDate),
                                       style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                      ),
+                                          fontWeight: FontWeight.bold,
+                                          color: Color(0xFF1C1C1C)),
                                     ),
                                   ],
                                 ),
@@ -10345,6 +10355,28 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
                                     Text(
                                       status.toString().toUpperCase(),
                                       style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: Color(0xFF1C1C1C)),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 14),
+
+                                /// STATUS
+                                Row(
+                                  children: [
+                                    Text(
+                                      "Ticket Id",
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Text(
+                                      "Ticket ID: $ticketId",
+                                      style: TextStyle(
+                                        color: Color(0xFF1C1C1C),
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
@@ -10358,19 +10390,8 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
                                     "₦$price",
                                     style: const TextStyle(
                                       fontSize: 28,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-
-                                const SizedBox(height: 20),
-
-                                Center(
-                                  child: Text(
-                                    "Ticket ID: $ticketId",
-                                    style: TextStyle(
-                                      color: Colors.grey[700],
-                                      fontWeight: FontWeight.w600,
+                                      fontWeight: FontWeight.w900,
+                                      color: Colors.black,
                                     ),
                                   ),
                                 ),
@@ -10426,14 +10447,7 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            "Driver & Bus Details",
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
+                          // SizedBox(height: 10),
                           Row(
                             children: [
                               CircleAvatar(
@@ -10446,24 +10460,26 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    driverData!['name'],
+                                    driverData!['vehicleName'],
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
+                                      fontSize: 14,
                                     ),
                                   ),
-                                  Text(driverData!['vehicleName']),
+                                  Text(driverData!['name']),
                                 ],
                               ),
                             ],
                           ),
                           const SizedBox(height: 10),
-                          Text(
-                            "Boarded: ${driverData!['boardedPassengers']} / ${driverData!['vehicleCapacity']}",
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            "Amount Collected: ₦${driverData!['amountCollected']}",
-                          ),
+                          Center(
+                              child: Text(
+                                  "Boarded: ${driverData!['boardedPassengers']} / ${driverData!['vehicleCapacity']}",
+                                  style: TextStyle(
+                                    color: Colors.green,
+                                    fontWeight: FontWeight.bold,
+                                  ))),
+                          // const SizedBox(height: 6),
                         ],
                       ),
                     ),
@@ -10634,11 +10650,41 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
 
       setState(() => boarding = false);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Verification Successful"),
-          backgroundColor: Colors.green,
-        ),
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) {
+          Future.delayed(const Duration(seconds: 2), () {
+            if (context.mounted) {
+              Navigator.pop(context);
+            }
+          });
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Icon(
+                  Icons.check_circle,
+                  color: Colors.green,
+                  size: 70,
+                ),
+                SizedBox(height: 16),
+                Text(
+                  "Bus Boarded Successfully",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       );
 
       // Navigator.pop(context);
@@ -10848,11 +10894,15 @@ class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               /// Page Title
-              const Text(
-                "Confirm shuttle booking.",
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+              Align(
+                alignment: Alignment.center,
+                child: const Text(
+                  "Confirm shuttle booking",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
 
@@ -10883,10 +10933,11 @@ class _ShuttlePaymentPageState extends State<ShuttlePaymentPage> {
                         vertical: 14,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.amber[50],
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(14),
                       ),
-                      child: Center(
+                      child: Align(
+                        alignment: Alignment.center,
                         child: Row(
                           children: [
                             Container(
