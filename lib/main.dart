@@ -326,6 +326,14 @@ class _LoginPageState extends State<LoginPage> {
             key: _formKey,
             child: ListView(
               children: [
+                Align(
+                    alignment: Alignment.center,
+                    child: Text('Welcome Back',
+                        style: TextStyle(
+                          color: Colors.black,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ))),
                 const SizedBox(height: 200),
                 TextFormField(
                   controller: emailController,
@@ -404,7 +412,15 @@ class _LoginPageState extends State<LoginPage> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 15),
+                Row(children: [
+                  Spacer(),
+                  Text('Forgot Password',
+                      style: TextStyle(
+                        color: Colors.green,
+                        fontSize: 10,
+                      ))
+                ]),
                 GestureDetector(
                   onTap: () async {
                     await SignIn(context);
@@ -437,9 +453,10 @@ class _LoginPageState extends State<LoginPage> {
                     );
                   },
                   child: const Text(
-                    "Don't have an account? Register here",
+                    "Register here",
                     style: TextStyle(
-                      color: Colors.black,
+                      color: Colors.green,
+                      fontSize: 10,
                     ),
                   ),
                 ),
@@ -10159,7 +10176,7 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
     final data = widget.ticketDoc.data() as Map<String, dynamic>;
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Colors.grey[100],
       appBar: AppBar(
         //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
@@ -10230,7 +10247,7 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                        color: Colors.grey[100],
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
                           BoxShadow(
@@ -10258,7 +10275,7 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
                                 const SizedBox(height: 10),
                                 Center(
                                   child: Container(
-                                    width: 200,
+                                    width: 300,
                                     height: 1,
                                     decoration: BoxDecoration(
                                       borderRadius: BorderRadius.circular(10),
@@ -15169,7 +15186,7 @@ class _RegisterPageState extends State<RegisterPage>
           ),
         ),
         title: const Text(
-          'Sign Up',
+          '',
           style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
         ),
       ),
@@ -15182,6 +15199,15 @@ class _RegisterPageState extends State<RegisterPage>
             key: _formKey,
             child: ListView(
               children: [
+                SizedBox(height: 10),
+                Column(children: [
+                  Text('Enter your details below to signup.',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ))
+                ]),
                 const SizedBox(height: 20),
 
                 Row(
