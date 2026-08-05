@@ -203,7 +203,7 @@ class _MyHomePageState extends State<MyHomePage>
                     fontSize: 40,
                     fontWeight: FontWeight.w900,
                     color: Colors.white,
-                    letterSpacing: 12,
+                    //letterSpacing: 12,
                   ),
                 ),
               ),
@@ -327,14 +327,21 @@ class _LoginPageState extends State<LoginPage> {
             child: ListView(
               children: [
                 Align(
-                    alignment: Alignment.center,
-                    child: Text('Welcome Back',
+                    alignment: Alignment.centerStart,
+                    child: Text('Welcome Back ',
                         style: TextStyle(
                           color: Colors.black,
                           fontWeight: FontWeight.bold,
-                          fontSize: 16,
+                          fontSize: 18,
                         ))),
-                const SizedBox(height: 200),
+                const SizedBox(height: 20),
+                Container(
+                    height: 150,
+                    width: 150,
+                    decoration: BoxDecoration(
+                      color: Colors.purple[100],
+                      borderRadius: BorderRadius.circular(30),
+                    )),
                 TextFormField(
                   controller: emailController,
                   decoration: InputDecoration(
@@ -412,15 +419,16 @@ class _LoginPageState extends State<LoginPage> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 15),
+                const SizedBox(height: 10),
                 Row(children: [
                   Spacer(),
                   Text('Forgot Password',
                       style: TextStyle(
                         color: Colors.green,
-                        fontSize: 10,
+                        fontSize: 12,
                       ))
                 ]),
+                SizedBox(height: 10),
                 GestureDetector(
                   onTap: () async {
                     await SignIn(context);
@@ -443,23 +451,32 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                TextButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const RegisterPage(),
-                      ),
-                    );
-                  },
-                  child: const Text(
-                    "Register here",
+                Row(children: [
+                  Text(
+                    'Not a user ?',
                     style: TextStyle(
                       color: Colors.green,
-                      fontSize: 10,
+                      fontSize: 12,
                     ),
                   ),
-                ),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const RegisterPage(),
+                        ),
+                      );
+                    },
+                    child: const Text(
+                      "Register here",
+                      style: TextStyle(
+                        color: Colors.green,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ]),
               ],
             ),
           ),
