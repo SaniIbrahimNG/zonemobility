@@ -37,6 +37,10 @@ import 'package:intl/intl.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image/image.dart' as img;
+import 'package:image_gallery_saver/image_gallery_saver.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'dart:ui' as ui;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -327,21 +331,32 @@ class _LoginPageState extends State<LoginPage> {
             child: ListView(
               children: [
                 Align(
-                    alignment: Alignment.centerStart,
-                    child: Text('Welcome Back ',
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Text('Welcome Back  ',
                         style: TextStyle(
                           color: Colors.black,
                           fontWeight: FontWeight.bold,
-                          fontSize: 18,
+                          fontSize: 20,
                         ))),
-                const SizedBox(height: 20),
-                Container(
-                    height: 150,
-                    width: 150,
-                    decoration: BoxDecoration(
-                      color: Colors.purple[100],
-                      borderRadius: BorderRadius.circular(30),
+                const SizedBox(height: 15),
+                Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Container(
+                      height: 100,
+                      width: 100,
+                      decoration: BoxDecoration(
+                        color: Colors.purple[50],
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.person,
+                          size: 45,
+                          color: Colors.white,
+                        ),
+                      ),
                     )),
+                SizedBox(height: 15),
                 TextFormField(
                   controller: emailController,
                   decoration: InputDecoration(
@@ -452,10 +467,12 @@ class _LoginPageState extends State<LoginPage> {
                 ),
                 const SizedBox(height: 10),
                 Row(children: [
+                  Spacer(),
+                  // SizedBox(height: 70),
                   Text(
                     'Not a user ?',
                     style: TextStyle(
-                      color: Colors.green,
+                      color: Colors.black,
                       fontSize: 12,
                     ),
                   ),
@@ -6395,130 +6412,144 @@ class _TransportPageState extends State<TransportPage> {
                           final departure = data['departure'] as Timestamp?;
                           final createdAt = data['createdAt'] as Timestamp?;
 
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(14),
-                              // border: Border.all(color: Colors.grey.shade200),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.05),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 3),
-                                )
-                              ],
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                /// TOP ROW (route + status)
-                                Row(
-                                  children: [
-                                    Container(
-                                      width: 40,
-                                      height: 40,
-                                      decoration: BoxDecoration(
-                                        color: Colors.black,
-                                        borderRadius: BorderRadius.circular(30),
-                                      ),
-                                      child: const Icon(
-                                        Icons.directions_bus,
-                                        color: Colors.white,
-                                        size: 18,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            "$from → $to",
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 13,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            provider,
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.grey[600],
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 8, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: status == "valid"
-                                            ? Colors.green.withOpacity(0.1)
-                                            : Colors.orange.withOpacity(0.1),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Text(
-                                        status.toUpperCase(),
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.bold,
-                                          color: status == "valid"
-                                              ? Colors.green
-                                              : Colors.orange,
+                          return GestureDetector(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => TransportTicketPage(
+                                    ticketData: data,
+                                  ),
+                                ),
+                              );
+                            },
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(14),
+                                // border: Border.all(color: Colors.grey.shade200),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.05),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 3),
+                                  )
+                                ],
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  /// TOP ROW (route + status)
+                                  Row(
+                                    children: [
+                                      Container(
+                                        width: 40,
+                                        height: 40,
+                                        decoration: BoxDecoration(
+                                          color: Colors.black,
+                                          borderRadius:
+                                              BorderRadius.circular(30),
+                                        ),
+                                        child: const Icon(
+                                          Icons.directions_bus,
+                                          color: Colors.white,
+                                          size: 18,
                                         ),
                                       ),
-                                    ),
-                                  ],
-                                ),
-
-                                const SizedBox(height: 10),
-
-                                /// SECOND ROW (details)
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      "₦$price",
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              "$from → $to",
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              provider,
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey[600],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
-                                    ),
-                                    Text(
-                                      "ID: $ticketId",
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.grey[500],
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: status == "valid"
+                                              ? Colors.green.withOpacity(0.1)
+                                              : Colors.orange.withOpacity(0.1),
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                        ),
+                                        child: Text(
+                                          status.toUpperCase(),
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                            color: status == "valid"
+                                                ? Colors.green
+                                                : Colors.orange,
+                                          ),
+                                        ),
                                       ),
-                                    ),
-                                  ],
-                                ),
+                                    ],
+                                  ),
 
-                                const SizedBox(height: 6),
+                                  const SizedBox(height: 10),
 
-                                /// FOOTER (dates)
-                                Row(
-                                  children: [
-                                    Icon(Icons.schedule,
-                                        size: 14, color: Colors.grey[600]),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      departure != null
-                                          ? "Dep: ${DateTime.fromMillisecondsSinceEpoch(departure.millisecondsSinceEpoch).toString().split('.')[0]}"
-                                          : "No departure",
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.grey[600],
+                                  /// SECOND ROW (details)
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        "₦$price",
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
-                                    ),
-                                  ],
-                                ),
-                              ],
+                                      Text(
+                                        "ID: $ticketId",
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey[500],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+
+                                  const SizedBox(height: 6),
+
+                                  /// FOOTER (dates)
+                                  Row(
+                                    children: [
+                                      Icon(Icons.schedule,
+                                          size: 14, color: Colors.grey[600]),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        departure != null
+                                            ? "Dep: ${DateTime.fromMillisecondsSinceEpoch(departure.millisecondsSinceEpoch).toString().split('.')[0]}"
+                                            : "No departure",
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey[600],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
                             ),
                           );
                         }).toList(),
@@ -6557,41 +6588,36 @@ class _TransportPageState extends State<TransportPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           /// ICON + TITLE
-          Row(
-            children: [
-              /// 🌈 Gradient Circular Icon
-              Container(
-                width: 45,
-                height: 45,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.grey[50],
-                ),
-                child: Center(
-                  child: SizedBox(
-                    width: 25,
-                    height: 25,
-                    child: icon,
-                  ),
-                ),
+          Container(
+            width: 45,
+            height: 45,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.grey[50],
+            ),
+            child: Center(
+              child: SizedBox(
+                width: 25,
+                height: 25,
+                child: icon,
               ),
+            ),
+          ),
 
-              const SizedBox(width: 12),
+          const SizedBox(width: 12),
 
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 15,
-                  ),
-                ),
+          Expanded(
+            child: Text(
+              title,
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
               ),
-            ],
+            ),
           ),
 
           /// ⬇️ spacing pushes description lower
-          const SizedBox(height: 20),
+          const SizedBox(height: 8),
 
           /// DESCRIPTION
           Text(
@@ -6787,14 +6813,14 @@ class _TransportPageState extends State<TransportPage> {
                               style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: Colors.green,
-                                fontSize: 14,
+                                fontSize: 15,
                               ),
                             ),
                             Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
                                 color: Colors.black,
-                                borderRadius: BorderRadius.circular(8),
+                                borderRadius: BorderRadius.circular(30),
                               ),
                               child: const Icon(
                                 Icons.arrow_forward,
@@ -6873,7 +6899,10 @@ class _TransportPageState extends State<TransportPage> {
                   label: "From :",
                   value: fromState,
                   onTap: () async {
-                    final result = await _openStatePicker(states);
+                    final result = await _openStatePicker(
+                      states,
+                      selectedState: fromState,
+                    );
                     if (result != null) {
                       setState(() {
                         fromState = result;
@@ -6893,10 +6922,13 @@ class _TransportPageState extends State<TransportPage> {
                     final filtered =
                         states.where((s) => s != fromState).toList();
 
-                    final result = await _openStatePicker(filtered);
+                    final result = await _openStatePicker(
+                      filtered,
+                      selectedState: toState,
+                    );
+
                     if (result != null) {
-                      setState:
-                      (() {
+                      setState(() {
                         toState = result;
                       });
                     }
@@ -6952,7 +6984,7 @@ class _TransportPageState extends State<TransportPage> {
             Text(
               label,
               style: const TextStyle(
-                fontSize: 12,
+                fontSize: 13,
                 fontWeight: FontWeight.w600,
                 color: Colors.grey,
               ),
@@ -6960,15 +6992,18 @@ class _TransportPageState extends State<TransportPage> {
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                value ?? "",
+                value ?? "Select State",
                 style: TextStyle(
-                  fontSize: 14,
+                  fontSize: 15,
                   fontWeight: FontWeight.w500,
                   color: value == null ? Colors.grey : Colors.black,
                 ),
               ),
             ),
-            const Icon(Icons.keyboard_arrow_down),
+            const Icon(
+              Icons.keyboard_arrow_down_rounded,
+              color: Colors.black,
+            ),
           ],
         ),
       ),
@@ -6983,7 +7018,9 @@ class _TransportPageState extends State<TransportPage> {
       context: context,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(20),
+        ),
       ),
       builder: (_) {
         return ListView.builder(
@@ -6991,33 +7028,26 @@ class _TransportPageState extends State<TransportPage> {
           itemCount: list.length,
           itemBuilder: (context, index) {
             final state = list[index];
-
             final bool isSelected = state == selectedState;
 
             return Material(
               color: Colors.transparent,
               child: InkWell(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(14),
                 onTap: () => Navigator.pop(context, state),
                 child: Container(
                   margin: const EdgeInsets.only(bottom: 10),
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 14,
+                    horizontal: 18,
+                    vertical: 16,
                   ),
                   decoration: BoxDecoration(
-                    color: isSelected
-                        ? Colors.black.withOpacity(0.05)
-                        : Colors.white,
-
-                    borderRadius: BorderRadius.circular(12),
-
-                    /// subtle border (stronger if selected)
+                    color: isSelected ? Colors.grey.shade100 : Colors.white,
+                    borderRadius: BorderRadius.circular(14),
                     border: Border.all(
-                      color: isSelected ? Colors.black : Colors.grey.shade200,
+                      color: isSelected ? Colors.black : Colors.grey.shade300,
+                      width: isSelected ? 1.4 : 1,
                     ),
-
-                    /// soft shadow
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withOpacity(0.04),
@@ -7028,37 +7058,42 @@ class _TransportPageState extends State<TransportPage> {
                   ),
                   child: Row(
                     children: [
-                      const Icon(
-                        Icons.location_on,
-                        size: 18,
-                        color: Colors.black,
-                      ),
-                      const SizedBox(width: 10),
-
-                      /// state name
                       Expanded(
                         child: Text(
                           state,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight:
+                                isSelected ? FontWeight.w600 : FontWeight.w500,
                           ),
                         ),
                       ),
-
-                      /// selected indicator
-                      if (isSelected)
-                        const Icon(
-                          Icons.check_circle,
-                          size: 18,
-                          color: Colors.black,
-                        )
-                      else
-                        const Icon(
-                          Icons.arrow_forward_ios,
-                          size: 14,
-                          color: Colors.grey,
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: 22,
+                        height: 22,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: isSelected
+                                ? Colors.black
+                                : Colors.grey.shade400,
+                            width: 2,
+                          ),
                         ),
+                        child: isSelected
+                            ? Center(
+                                child: Container(
+                                  width: 10,
+                                  height: 10,
+                                  decoration: const BoxDecoration(
+                                    color: Colors.black,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                              )
+                            : null,
+                      ),
                     ],
                   ),
                 ),
@@ -7439,27 +7474,6 @@ class _TicketBookingPageState extends State<TicketBookingPage> {
   double get totalPrice =>
       ticketCount * double.parse(widget.routeData['price'].toString());
 
-  Future<void> _selectDepartureDateTime() async {
-    final date = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-    );
-    if (date == null) return;
-
-    final time = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.now(),
-    );
-    if (time == null) return;
-
-    setState(() {
-      departureDateTime =
-          DateTime(date.year, date.month, date.day, time.hour, time.minute);
-    });
-  }
-
   Future<void> _payWithPaystack() async {
     if (departureDateTime == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -7581,7 +7595,7 @@ class _TicketBookingPageState extends State<TicketBookingPage> {
         ),
         title: const Text(
           "Book Ticket",
-          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
         ),
       ),
 
@@ -7656,48 +7670,271 @@ class _TicketBookingPageState extends State<TicketBookingPage> {
 
   Widget _routeCard(dynamic route) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: 18,
+        vertical: 18,
+      ),
       decoration: BoxDecoration(
-        color: Colors.grey[50],
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade200),
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.grey.shade300,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(route['from'],
-              style:
-                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-          const SizedBox(height: 6),
-          const Icon(Icons.swap_vert, size: 18),
-          const SizedBox(height: 6),
-          Text(route['to'],
-              style:
-                  const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+          /// FROM
+          Row(
+            children: [
+              const Text(
+                "From",
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.grey,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                route['from'],
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 5),
+
+          /// Route indicator
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Column(
+                children: [
+                  Icon(
+                    Icons.trip_origin,
+                    size: 16,
+                    color: Colors.grey.shade700,
+                  ),
+                  Container(
+                    width: 2,
+                    height: 22,
+                    color: Colors.grey.shade300,
+                  ),
+                  const Icon(
+                    Icons.location_on,
+                    size: 18,
+                    color: Colors.black,
+                  ),
+                ],
+              ),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Row(
+                  children: [
+                    const Text(
+                      "To",
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      route['to'],
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _selectDepartureDateTime() async {
+    final Map<String, List<String>> timeGroups = {
+      "Morning": [
+        "7:00 AM",
+        "8:00 AM",
+        "9:00 AM",
+        "10:00 AM",
+        "11:00 AM",
+      ],
+      "Afternoon": [
+        "12:00 PM",
+        "1:00 PM",
+        "2:00 PM",
+        "3:00 PM",
+        "4:00 PM",
+      ],
+      "Evening": [
+        "5:00 PM",
+        "6:00 PM",
+        "7:00 PM",
+        "8:00 PM",
+        "9:00 PM",
+      ],
+    };
+
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(22),
+        ),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: ListView(
+              shrinkWrap: true,
+              children: timeGroups.entries.map((group) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      group.key,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: group.value.map((time) {
+                        final selectedTime = departureDateTime != null &&
+                            DateFormat("h:mm a").format(departureDateTime!) ==
+                                time;
+
+                        return GestureDetector(
+                          onTap: () => Navigator.pop(context, time),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 18,
+                              vertical: 12,
+                            ),
+                            decoration: BoxDecoration(
+                              color: selectedTime ? Colors.black : Colors.white,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: Colors.black,
+                              ),
+                            ),
+                            child: Text(
+                              time,
+                              style: TextStyle(
+                                color:
+                                    selectedTime ? Colors.white : Colors.black,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 28),
+                  ],
+                );
+              }).toList(),
+            ),
+          ),
+        );
+      },
+    );
+
+    if (selected != null) {
+      final parsed = DateFormat("h:mm a").parse(selected);
+
+      setState(() {
+        departureDateTime = DateTime(
+          DateTime.now().year,
+          DateTime.now().month,
+          DateTime.now().day,
+          parsed.hour,
+          parsed.minute,
+        );
+      });
+    }
   }
 
   Widget _departureCard() {
     return GestureDetector(
       onTap: _selectDepartureDateTime,
       child: Container(
-        padding: const EdgeInsets.all(14),
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 16,
+        ),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.grey.shade200),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: Colors.grey.shade300,
+          ),
         ),
         child: Row(
           children: [
-            const Icon(Icons.calendar_month),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                departureDateTime == null
-                    ? "Select Departure Time"
-                    : departureDateTime.toString(),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(.05),
+                borderRadius: BorderRadius.circular(10),
               ),
+              child: const Icon(
+                Icons.schedule,
+                color: Colors.black,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    "Departure Time",
+                    style: TextStyle(
+                      color: Colors.grey,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    departureDateTime == null
+                        ? "Select preferred departure"
+                        : DateFormat("EEE, d MMM • h:mm a")
+                            .format(departureDateTime!),
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.keyboard_arrow_down_rounded,
+              color: Colors.black,
             ),
           ],
         ),
@@ -7750,7 +7987,7 @@ class _TicketBookingPageState extends State<TicketBookingPage> {
         child: loading
             ? const CircularProgressIndicator(color: Colors.white)
             : Text(
-                "Book Now • ₦${totalPrice.toStringAsFixed(0)}",
+                " ₦${totalPrice.toStringAsFixed(0)}",
                 style: const TextStyle(
                     fontWeight: FontWeight.bold, color: Colors.white),
               ),
@@ -7796,6 +8033,96 @@ class _TransportTicketPageState extends State<TransportTicketPage> {
       );
     } finally {
       setState(() => loadingCancel = false);
+    }
+  }
+
+  Widget _ticketDetailRow(
+    String title,
+    String value, {
+    Color valueColor = Colors.white,
+  }) {
+    return Row(
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const Spacer(),
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: valueColor,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _downloadAndShareTicket() async {
+    try {
+      final boundary = _ticketKey.currentContext!.findRenderObject()
+          as RenderRepaintBoundary;
+
+      final image = await boundary.toImage(pixelRatio: 3);
+
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+
+      if (byteData == null) return;
+
+      final Uint8List pngBytes = byteData.buffer.asUint8List();
+
+      // Get the ticket ID from the document
+      final String ticketId = widget.ticketData["ticketId"] ?? "ticket";
+
+      /// Save to gallery
+      await ImageGallerySaver.saveImage(
+        pngBytes,
+        quality: 100,
+        name: "ticket_$ticketId",
+      );
+
+      /// Save temporary file
+      final directory = await getTemporaryDirectory();
+
+      final file = File(
+        "${directory.path}/$ticketId.png",
+      );
+
+      await file.writeAsBytes(pngBytes);
+
+      /// Share
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        text: "Zone Transport Ticket",
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            "Ticket downloaded successfully.",
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Error: $e"),
+        ),
+      );
     }
   }
 
@@ -7904,126 +8231,60 @@ class _TransportTicketPageState extends State<TransportTicketPage> {
 
                     const SizedBox(height: 20),
 
-                    /// ================= TICKET ID =================
-                    const Text("TICKET ID",
-                        style: TextStyle(color: Colors.white70, fontSize: 11)),
-
-                    const SizedBox(height: 6),
-
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        ticket["ticketId"],
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    /// ================= STATUS =================
-                    Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          const Text("STATUS",
-                              style: TextStyle(
-                                  color: Colors.white70, fontSize: 11)),
-                          const SizedBox(height: 6),
-                          Container(
-                            width: 200,
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: ticket["status"] == "cancelled"
-                                  ? Colors.red.withOpacity(0.2)
-                                  : Colors.green.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              ticket["status"],
-                              style: const TextStyle(color: Colors.white),
-                            ),
-                          ),
-                        ]),
-
-                    const SizedBox(height: 20),
-
-                    /// ================= ROUTE =================
+                    /// ================= DETAILS =================
                     Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          ticket["from"],
-                          style: const TextStyle(
-                            color: Color(0xffefe5e5),
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
+                        _ticketDetailRow(
+                          "Ticket ID",
+                          ticket["ticketId"],
                         ),
-                        // const SizedBox(height: 6),
-                        const Icon(Icons.swap_vert,
-                            color: Color(0xffe8e6ea), size: 18),
-                        //const SizedBox(height: 6),
-                        Text(
+                        const SizedBox(height: 14),
+                        _ticketDetailRow(
+                          "Status",
+                          ticket["status"].toString().toUpperCase(),
+                          valueColor: ticket["status"] == "cancelled"
+                              ? Colors.redAccent
+                              : Colors.greenAccent,
+                        ),
+                        const SizedBox(height: 14),
+                        _ticketDetailRow(
+                          "From",
+                          ticket["from"],
+                        ),
+                        const SizedBox(height: 14),
+                        _ticketDetailRow(
+                          "To",
                           ticket["to"],
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        _ticketDetailRow(
+                          "Date",
+                          ticket["createdAt"]
+                              .toDate()
+                              .toString()
+                              .split(".")
+                              .first,
                         ),
                       ],
                     ),
 
-                    const SizedBox(height: 20),
-
-                    /// ================= BOOKED ON =================
-                    const Text("BOOKED ON",
-                        style: TextStyle(color: Colors.white70, fontSize: 11)),
-
-                    const SizedBox(height: 6),
-
-                    Text(
-                      ticket["createdAt"].toDate().toString().split(".").first,
-                      style: const TextStyle(color: Colors.white),
-                    ),
-
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 28),
 
                     /// ================= PRICE =================
                     Center(
                       child: Text(
                         "₦${ticket["price"]}",
                         style: const TextStyle(
-                          fontSize: 22,
+                          fontSize: 24,
                           fontWeight: FontWeight.bold,
                           color: Colors.greenAccent,
                         ),
                       ),
                     ),
 
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 10),
 
                     /// ================= BOARD BUTTON =================
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: Colors.black,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                        ),
-                        onPressed: () {},
-                        child: const Text("Board Ticket",
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                            )),
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -8059,7 +8320,7 @@ class _TransportTicketPageState extends State<TransportTicketPage> {
                       backgroundColor: Colors.black,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
-                    onPressed: () {},
+                    onPressed: _downloadAndShareTicket,
                     child: const Text("Download",
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
@@ -10264,13 +10525,20 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                        color: Colors.white,
                         borderRadius: BorderRadius.circular(20),
+                        color: const Color(0xFF181818),
+                        gradient: const LinearGradient(
+                          colors: [
+                            Color(0xFF181818),
+                            Colors.amber,
+                          ],
+                        ),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.grey.withOpacity(0.3),
-                            blurRadius: 15,
-                            offset: const Offset(0, 6),
+                            color: Colors.black.withOpacity(0.15),
+                            blurRadius: 20,
+                            spreadRadius: 2,
+                            offset: const Offset(0, 8),
                           ),
                         ],
                       ),
@@ -10285,7 +10553,7 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
                                   style: GoogleFonts.lobsterTwo(
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,
-                                    color: const Color(0xFF1C1C1C),
+                                    color: Colors.white,
                                   ),
                                 ),
 
@@ -10314,7 +10582,7 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
                                       "From",
                                       style: TextStyle(
                                         fontSize: 12,
-                                        color: Colors.grey[600],
+                                        color: Colors.grey[400],
                                       ),
                                     ),
                                     const Spacer(),
@@ -10323,7 +10591,7 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
                                       style: const TextStyle(
                                           fontSize: 14,
                                           fontWeight: FontWeight.bold,
-                                          color: Color(0xFF1C1C1C)),
+                                          color: Colors.white),
                                     ),
                                   ],
                                 ),
@@ -10337,7 +10605,7 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
                                       "To",
                                       style: TextStyle(
                                         fontSize: 12,
-                                        color: Colors.grey,
+                                        color: Colors.grey[400],
                                       ),
                                     ),
                                     const Spacer(),
@@ -10346,7 +10614,7 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
                                       style: const TextStyle(
                                           fontSize: 14,
                                           fontWeight: FontWeight.bold,
-                                          color: Color(0xff1c1c1c)),
+                                          color: Colors.white),
                                     ),
                                   ],
                                 ),
@@ -10360,7 +10628,7 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
                                       "Date",
                                       style: TextStyle(
                                         fontSize: 12,
-                                        color: Colors.grey,
+                                        color: Colors.grey[400],
                                       ),
                                     ),
                                     const Spacer(),
@@ -10368,7 +10636,7 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
                                       _formatDate(bookedDate),
                                       style: const TextStyle(
                                           fontWeight: FontWeight.bold,
-                                          color: Color(0xFF1C1C1C)),
+                                          color: Colors.white),
                                     ),
                                   ],
                                 ),
@@ -10382,7 +10650,7 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
                                       "Status",
                                       style: TextStyle(
                                         fontSize: 12,
-                                        color: Colors.grey,
+                                        color: Colors.grey[400],
                                       ),
                                     ),
                                     const Spacer(),
@@ -10390,7 +10658,7 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
                                       status.toString().toUpperCase(),
                                       style: const TextStyle(
                                           fontWeight: FontWeight.bold,
-                                          color: Color(0xFF1C1C1C)),
+                                          color: Colors.white),
                                     ),
                                   ],
                                 ),
@@ -10403,15 +10671,15 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
                                       "Ticket Id",
                                       style: TextStyle(
                                         fontSize: 12,
-                                        color: Colors.grey,
+                                        color: Colors.grey[400],
                                       ),
                                     ),
                                     const Spacer(),
                                     Text(
-                                      "Ticket ID: $ticketId",
+                                      " $ticketId",
                                       style: TextStyle(
-                                        color: Color(0xFF1C1C1C),
-                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                        // fontWeight: FontWeight.bold,
                                       ),
                                     ),
                                   ],
@@ -10425,7 +10693,7 @@ class _ShuttleTicketDetailsPageState extends State<ShuttleTicketDetailsPage> {
                                     style: const TextStyle(
                                       fontSize: 28,
                                       fontWeight: FontWeight.w900,
-                                      color: Colors.black,
+                                      color: Colors.white,
                                     ),
                                   ),
                                 ),
