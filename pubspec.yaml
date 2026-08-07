@@ -39,9 +39,14 @@ dependencies:
   flutter_typeahead: ^5.2.0
   google_places_flutter: ^2.0.6
   paystack_flutter_sdk: ^0.0.1-alpha.2
-  image_gallery_saver: ^2.0.3
+  gal: ^2.3.1
   share_plus: ^11.0.0
   path_provider: ^2.1.5
+  pdf: ^3.11.3
+  printing: ^5.14.2
+  
+ 
+  cross_file: ^0.3.4+2
 
 dev_dependencies:
   flutter_test:
@@ -121,6 +126,44 @@ flutter:
     - assets/images/support.png
     - assets/images/home.png
     - assets/images/clipboard.png
+    - assets/images/vendor8.jpg
+    - assets/images/vendor7.jpg
+    - assets/images/vendor6.jpg
+    - assets/images/vendor5.jpg
+    - assets/images/vendor4.jpg
+    - assets/images/vendor3.jpg
+    - assets/images/vendor2.jpg
+    - assets/images/vendor1.jpg
+    - assets/images/sh1.jpg
+    - assets/images/sh2.jpg
+    - assets/images/sh3.jpg
+    - assets/images/pz1.jpg
+    - assets/images/pz2.jpg
+    - assets/images/rice1.jpg
+    - assets/images/rice2.jpg
+    - assets/images/rice3.jpg
+    - assets/images/rice4.jpg
+    - assets/images/poundo.jpg
+    - assets/images/sp1.jpg
+    - assets/images/sp2.jpg
+    - assets/images/sp4.jpg
+    - assets/images/sc.jpg
+    - assets/images/sc1.jpg
+    - assets/images/sc13.jpg
+    - assets/images/sc2.jpg
+    - assets/images/coke1.jpg
+    - assets/images/zobo.jpg
+    - assets/images/tigernut.jpg
+    - assets/images/gr1.jpg
+    - assets/images/gr2.jpg
+    - assets/images/p1.png
+    - assets/images/oil.jpg
+    - assets/images/oil1.jpg
+    - assets/images/bread.jpg
+    - assets/images/bread2.jpg
+    - assets/images/tss1.jpg
+    - assets/images/on.jpg
+    - assets/images/tm.jpg
     - assets/data/nigerian-states.json
 
 
