@@ -520,35 +520,171 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  // ============================================================
+  // GOOGLE API KEY
+  // ============================================================
+
+  static const String _googlePlacesApiKey =
+      "AIzaSyAxmD8Gvtn1KGomBFy3pWXRFgvw0c4a-48";
+
+  // ============================================================
+  // DEFAULT LOCATIONS
+  // ============================================================
+
+  // Nigeria center
+  static const LatLng _nigeriaCenter = LatLng(
+    9.0820,
+    8.6753,
+  );
+
+  // Bauchi
+  static const LatLng _bauchiCenter = LatLng(
+    10.3158,
+    9.8442,
+  );
+
+  // ATBU Gubi Campus
+  static const LatLng _atbuGubi = LatLng(
+    10.4716,
+    9.83011,
+  );
+
+  // ============================================================
+  // STATE
+  // ============================================================
+
   LatLng? userLocation;
 
   GoogleMapController? _mapController;
+
   Set<Marker> _markers = {};
 
   String pickupAddress = '';
 
+  bool _mapReady = false;
+  bool _locationLoaded = false;
+
   final TextEditingController _pickupController = TextEditingController();
+
   final FocusNode _pickupFocusNode = FocusNode();
 
   final TextEditingController _destinationController = TextEditingController();
+
   final FocusNode _destinationFocusNode = FocusNode();
 
-  @override
-  void dispose() {
-    _pickupController.dispose();
-    _pickupFocusNode.dispose();
-    _destinationController.dispose();
-    _destinationFocusNode.dispose();
-    super.dispose();
-  }
+  // ============================================================
+  // AUTOCOMPLETE STATE
+  // ============================================================
+
+  List<Map<String, dynamic>> _pickupSuggestions = [];
+  List<Map<String, dynamic>> _destinationSuggestions = [];
+
+  bool _loadingPickupSuggestions = false;
+  bool _loadingDestinationSuggestions = false;
+
+  Timer? _pickupDebounce;
+  Timer? _destinationDebounce;
+
+  String? _activeAutocompleteField;
+
+  // ============================================================
+  // INIT
+  // ============================================================
 
   @override
   void initState() {
     super.initState();
+
+    // Start GPS immediately.
+    //
+    // IMPORTANT:
+    // The map itself does NOT wait for this.
     _fetchUserLocation();
+
+    // Listen for autocomplete text changes.
+    _pickupController.addListener(_onPickupChanged);
+    _destinationController.addListener(_onDestinationChanged);
   }
 
-  // 📍 Get user location
+  // ============================================================
+  // DISPOSE
+  // ============================================================
+
+  @override
+  void dispose() {
+    _pickupDebounce?.cancel();
+    _destinationDebounce?.cancel();
+
+    _pickupController.removeListener(_onPickupChanged);
+    _destinationController.removeListener(_onDestinationChanged);
+
+    _pickupController.dispose();
+    _pickupFocusNode.dispose();
+
+    _destinationController.dispose();
+    _destinationFocusNode.dispose();
+
+    _mapController?.dispose();
+
+    super.dispose();
+  }
+
+  // ============================================================
+  // MAP CREATED
+  // ============================================================
+
+  void _onMapCreated(GoogleMapController controller) {
+    _mapController = controller;
+    _mapReady = true;
+
+    // Immediately show the default location.
+    //
+    // We deliberately do NOT wait for GPS.
+    _moveToDefaultLocation();
+  }
+
+  // ============================================================
+  // INITIAL MAP LOCATION
+  // ============================================================
+
+  Future<void> _moveToDefaultLocation() async {
+    if (_mapController == null) return;
+
+    try {
+      // First show Nigeria.
+      await _mapController!.animateCamera(
+        CameraUpdate.newCameraPosition(
+          const CameraPosition(
+            target: _nigeriaCenter,
+            zoom: 5.5,
+          ),
+        ),
+      );
+
+      // Then narrow down to Bauchi / ATBU Gubi.
+      await Future.delayed(
+        const Duration(milliseconds: 500),
+      );
+
+      if (!mounted || _mapController == null) return;
+
+      await _mapController!.animateCamera(
+        CameraUpdate.newCameraPosition(
+          const CameraPosition(
+            target: _atbuGubi,
+            zoom: 14.5,
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint("Default map movement error: $e");
+    }
+  }
+
+  // ============================================================
+  // GET USER LOCATION
+  // ============================================================
+
   Future<void> _fetchUserLocation() async {
     try {
       LocationPermission permission = await Geolocator.checkPermission();
@@ -557,57 +693,114 @@ class _HomePageState extends State<HomePage> {
         permission = await Geolocator.requestPermission();
       }
 
-      if (permission == LocationPermission.deniedForever) {
-        print("Location permanently denied");
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        debugPrint("Location permission unavailable.");
+
+        // Keep the map at ATBU Gubi.
         return;
       }
 
-      Position position = await Geolocator.getCurrentPosition(
+      final Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
 
+      if (!mounted) return;
+
+      final LatLng location = LatLng(
+        position.latitude,
+        position.longitude,
+      );
+
       setState(() {
-        userLocation = LatLng(position.latitude, position.longitude);
+        userLocation = location;
+        _locationLoaded = true;
       });
 
-      // 🔥 Autofill pickup
+      // Set user marker.
+      _setMarkers();
+
+      // Get address for pickup.
       await _getAddressFromLatLng(
         position.latitude,
         position.longitude,
       );
 
-      _setMarkers();
-    } catch (e) {
-      print("Error fetching location: $e");
-    }
-  }
+      // Once GPS is available, move map automatically.
+      if (_mapReady && _mapController != null) {
+        await Future.delayed(
+          const Duration(milliseconds: 200),
+        );
 
-  // 📍 Convert coordinates → address
-  Future<void> _getAddressFromLatLng(double lat, double lng) async {
-    try {
-      List<Placemark> placemarks = await placemarkFromCoordinates(lat, lng);
+        if (!mounted || _mapController == null) return;
 
-      if (placemarks.isNotEmpty) {
-        final place = placemarks.first;
-
-        String address =
-            "${place.street}, ${place.locality}, ${place.administrativeArea}";
-
-        setState(() {
-          pickupAddress = address;
-
-          // ✅ only autofill if user hasn't typed
-          if (_pickupController.text.isEmpty) {
-            _pickupController.text = address;
-          }
-        });
+        await _mapController!.animateCamera(
+          CameraUpdate.newCameraPosition(
+            CameraPosition(
+              target: location,
+              zoom: 16,
+            ),
+          ),
+        );
       }
     } catch (e) {
-      print("Error getting address: $e");
+      debugPrint("Error fetching location: $e");
     }
   }
 
-  // 📍 Set only user marker
+  // ============================================================
+  // GET ADDRESS FROM COORDINATES
+  // ============================================================
+
+  Future<void> _getAddressFromLatLng(
+    double lat,
+    double lng,
+  ) async {
+    try {
+      final List<Placemark> placemarks = await placemarkFromCoordinates(
+        lat,
+        lng,
+      );
+
+      if (placemarks.isEmpty) return;
+
+      final Placemark place = placemarks.first;
+
+      final List<String> parts = [];
+
+      if ((place.street ?? '').trim().isNotEmpty) {
+        parts.add(place.street!.trim());
+      }
+
+      if ((place.locality ?? '').trim().isNotEmpty) {
+        parts.add(place.locality!.trim());
+      }
+
+      if ((place.administrativeArea ?? '').trim().isNotEmpty) {
+        parts.add(place.administrativeArea!.trim());
+      }
+
+      final String address = parts.join(', ');
+
+      if (!mounted) return;
+
+      setState(() {
+        pickupAddress = address;
+
+        // Only autofill if the user has not typed anything.
+        if (_pickupController.text.trim().isEmpty) {
+          _pickupController.text = address;
+        }
+      });
+    } catch (e) {
+      debugPrint("Error getting address: $e");
+    }
+  }
+
+  // ============================================================
+  // MARKER
+  // ============================================================
+
   void _setMarkers() {
     if (userLocation == null) return;
 
@@ -616,6 +809,9 @@ class _HomePageState extends State<HomePage> {
         Marker(
           markerId: const MarkerId('user'),
           position: userLocation!,
+          infoWindow: const InfoWindow(
+            title: "Your location",
+          ),
           icon: BitmapDescriptor.defaultMarkerWithHue(
             BitmapDescriptor.hueBlue,
           ),
@@ -624,22 +820,486 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  // 🚗 Ride flow
-  void _handleRideSelection(String rideType) async {
+  // ============================================================
+  // PICKUP AUTOCOMPLETE
+  // ============================================================
+
+  void _onPickupChanged() {
+    final String query = _pickupController.text.trim();
+
+    if (query.isEmpty) {
+      setState(() {
+        _pickupSuggestions = [];
+      });
+      return;
+    }
+
+    _pickupDebounce?.cancel();
+
+    _pickupDebounce = Timer(
+      const Duration(milliseconds: 350),
+      () {
+        _fetchPlaceSuggestions(
+          query,
+          isPickup: true,
+        );
+      },
+    );
+  }
+
+  // ============================================================
+  // DESTINATION AUTOCOMPLETE
+  // ============================================================
+
+  void _onDestinationChanged() {
+    final String query = _destinationController.text.trim();
+
+    if (query.isEmpty) {
+      setState(() {
+        _destinationSuggestions = [];
+      });
+      return;
+    }
+
+    _destinationDebounce?.cancel();
+
+    _destinationDebounce = Timer(
+      const Duration(milliseconds: 350),
+      () {
+        _fetchPlaceSuggestions(
+          query,
+          isPickup: false,
+        );
+      },
+    );
+  }
+
+  // ============================================================
+  // GOOGLE PLACES AUTOCOMPLETE
+  // ============================================================
+
+  Future<void> _fetchPlaceSuggestions(
+    String query, {
+    required bool isPickup,
+  }) async {
+    if (query.trim().isEmpty) return;
+
+    if (_googlePlacesApiKey == "YOUR_GOOGLE_MAPS_API_KEY") {
+      debugPrint(
+        "Google Places API key has not been configured.",
+      );
+      return;
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      if (isPickup) {
+        _loadingPickupSuggestions = true;
+      } else {
+        _loadingDestinationSuggestions = true;
+      }
+    });
+
+    try {
+      final Map<String, dynamic> requestBody = {
+        "input": query,
+
+        // Restrict results to Nigeria.
+        "includedRegionCodes": ["ng"],
+
+        // Prefer locations around the user.
+        if (userLocation != null)
+          "locationBias": {
+            "circle": {
+              "center": {
+                "latitude": userLocation!.latitude,
+                "longitude": userLocation!.longitude,
+              },
+              "radius": 25000.0,
+            },
+          }
+        else
+          "locationBias": {
+            "circle": {
+              "center": {
+                "latitude": _bauchiCenter.latitude,
+                "longitude": _bauchiCenter.longitude,
+              },
+              "radius": 50000.0,
+            },
+          },
+      };
+
+      final response = await http.post(
+        Uri.parse(
+          "https://places.googleapis.com/v1/places:autocomplete",
+        ),
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": _googlePlacesApiKey,
+          "X-Goog-FieldMask": "suggestions.placePrediction.placeId,"
+              "suggestions.placePrediction.text,"
+              "suggestions.placePrediction.structuredFormat",
+        },
+        body: jsonEncode(requestBody),
+      );
+
+      if (response.statusCode != 200) {
+        debugPrint(
+          "Places autocomplete error: "
+          "${response.statusCode} ${response.body}",
+        );
+        return;
+      }
+
+      final Map<String, dynamic> data = jsonDecode(response.body);
+
+      final List suggestions = data["suggestions"] ?? [];
+
+      final List<Map<String, dynamic>> results = [];
+
+      for (final item in suggestions) {
+        final prediction = item["placePrediction"];
+
+        if (prediction == null) continue;
+
+        final String placeId = prediction["placeId"]?.toString() ?? "";
+
+        final String description =
+            prediction["text"]?["text"]?.toString() ?? "";
+
+        final String mainText =
+            prediction["structuredFormat"]?["mainText"]?["text"]?.toString() ??
+                description;
+
+        final String secondaryText = prediction["structuredFormat"]
+                    ?["secondaryText"]?["text"]
+                ?.toString() ??
+            "";
+
+        if (description.isEmpty) continue;
+
+        results.add({
+          "placeId": placeId,
+          "description": description,
+          "mainText": mainText,
+          "secondaryText": secondaryText,
+        });
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        if (isPickup) {
+          _pickupSuggestions = results;
+        } else {
+          _destinationSuggestions = results;
+        }
+      });
+    } catch (e) {
+      debugPrint(
+        "Autocomplete request failed: $e",
+      );
+    } finally {
+      if (!mounted) return;
+
+      setState(() {
+        if (isPickup) {
+          _loadingPickupSuggestions = false;
+        } else {
+          _loadingDestinationSuggestions = false;
+        }
+      });
+    }
+  }
+
+  // ============================================================
+  // GET PLACE DETAILS
+  // ============================================================
+
+  Future<LatLng?> _getPlaceLocation(
+    String placeId,
+  ) async {
+    if (placeId.isEmpty) return null;
+
+    try {
+      final response = await http.get(
+        Uri.parse(
+          "https://places.googleapis.com/v1/places/$placeId",
+        ),
+        headers: {
+          "X-Goog-Api-Key": _googlePlacesApiKey,
+          "X-Goog-FieldMask": "location,formattedAddress,displayName",
+        },
+      );
+
+      if (response.statusCode != 200) {
+        debugPrint(
+          "Place details error: ${response.statusCode}",
+        );
+        return null;
+      }
+
+      final Map<String, dynamic> data = jsonDecode(response.body);
+
+      final location = data["location"];
+
+      if (location == null) return null;
+
+      final double? lat = (location["latitude"] as num?)?.toDouble();
+
+      final double? lng = (location["longitude"] as num?)?.toDouble();
+
+      if (lat == null || lng == null) return null;
+
+      return LatLng(lat, lng);
+    } catch (e) {
+      debugPrint(
+        "Place details failed: $e",
+      );
+      return null;
+    }
+  }
+
+  // ============================================================
+  // SELECT AUTOCOMPLETE RESULT
+  // ============================================================
+
+  Future<void> _selectSuggestion(
+    Map<String, dynamic> suggestion, {
+    required bool isPickup,
+  }) async {
+    final String description = suggestion["description"]?.toString() ?? "";
+
+    final String placeId = suggestion["placeId"]?.toString() ?? "";
+
+    if (description.isEmpty) return;
+
+    FocusScope.of(context).unfocus();
+
+    setState(() {
+      if (isPickup) {
+        _pickupController.text = description;
+        _pickupSuggestions = [];
+      } else {
+        _destinationController.text = description;
+        _destinationSuggestions = [];
+      }
+    });
+
+    // Get the exact coordinates of the selected place.
+    final LatLng? location = await _getPlaceLocation(placeId);
+
+    if (location == null) return;
+
+    // Add selected place to the map.
+    final Set<Marker> updatedMarkers = {
+      ..._markers,
+      Marker(
+        markerId: MarkerId(
+          isPickup ? "selected_pickup" : "selected_destination",
+        ),
+        position: location,
+        infoWindow: InfoWindow(
+          title: isPickup ? "Pickup location" : "Destination",
+          snippet: description,
+        ),
+      ),
+    };
+
+    if (!mounted) return;
+
+    setState(() {
+      _markers = updatedMarkers;
+    });
+
+    // Move map to selected place.
+    if (_mapController != null) {
+      await _mapController!.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(
+            target: location,
+            zoom: 16,
+          ),
+        ),
+      );
+    }
+  }
+
+  // ============================================================
+  // AUTOCOMPLETE FIELD
+  // ============================================================
+
+  Widget _buildLocationField({
+    required TextEditingController controller,
+    required FocusNode focusNode,
+    required String hintText,
+    required IconData icon,
+    required Color iconColor,
+    required bool isPickup,
+  }) {
+    final List<Map<String, dynamic>> suggestions =
+        isPickup ? _pickupSuggestions : _destinationSuggestions;
+
+    final bool loading =
+        isPickup ? _loadingPickupSuggestions : _loadingDestinationSuggestions;
+
+    return Column(
+      children: [
+        TextField(
+          controller: controller,
+          focusNode: focusNode,
+          onTap: () {
+            setState(() {
+              _activeAutocompleteField = isPickup ? "pickup" : "destination";
+            });
+
+            if (controller.text.trim().isNotEmpty) {
+              _fetchPlaceSuggestions(
+                controller.text.trim(),
+                isPickup: isPickup,
+              );
+            }
+          },
+          decoration: InputDecoration(
+            hintText: hintText,
+            filled: true,
+            fillColor: Colors.grey[100],
+            prefixIcon: Icon(
+              icon,
+              color: iconColor,
+            ),
+            suffixIcon: loading
+                ? const Padding(
+                    padding: EdgeInsets.all(14),
+                    child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                      ),
+                    ),
+                  )
+                : null,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+
+        // ======================================================
+        // AUTOCOMPLETE RESULTS
+        // ======================================================
+
+        if (_activeAutocompleteField == (isPickup ? "pickup" : "destination") &&
+            suggestions.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(top: 4),
+            constraints: const BoxConstraints(
+              maxHeight: 190,
+            ),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.08),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: ListView.separated(
+              shrinkWrap: true,
+              padding: const EdgeInsets.symmetric(
+                vertical: 6,
+              ),
+              itemCount: suggestions.length,
+              separatorBuilder: (_, __) => const Divider(
+                height: 1,
+                indent: 52,
+                endIndent: 12,
+              ),
+              itemBuilder: (context, index) {
+                final suggestion = suggestions[index];
+
+                return ListTile(
+                  dense: true,
+                  leading: Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.location_on_outlined,
+                      size: 18,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  title: Text(
+                    suggestion["mainText"] ?? suggestion["description"] ?? "",
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  subtitle:
+                      suggestion["secondaryText"]?.toString().isNotEmpty == true
+                          ? Text(
+                              suggestion["secondaryText"],
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey[600],
+                              ),
+                            )
+                          : null,
+                  onTap: () {
+                    _selectSuggestion(
+                      suggestion,
+                      isPickup: isPickup,
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
+
+  // ============================================================
+  // RIDE FLOW
+  // ============================================================
+
+  Future<void> _handleRideSelection(
+    String rideType,
+  ) async {
     if (userLocation == null) {
       showDialog(
         context: context,
-        builder: (_) => AlertDialog(
-          title: const Text("Location Error"),
-          content: const Text("Location not available."),
+        builder: (_) => const AlertDialog(
+          title: Text("Location Error"),
+          content: Text(
+            "Your location is still being detected. "
+            "Please wait a moment and try again.",
+          ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("OK"),
+              onPressed: null,
+              child: Text("OK"),
             ),
           ],
         ),
       );
+
       return;
     }
 
@@ -657,6 +1317,8 @@ class _HomePageState extends State<HomePage> {
 
     final rideId = requestDoc.id;
 
+    if (!mounted) return;
+
     Navigator.of(context).push(
       MaterialPageRoute(
         fullscreenDialog: true,
@@ -671,19 +1333,33 @@ class _HomePageState extends State<HomePage> {
             await FirebaseFirestore.instance
                 .collection('ride_requests')
                 .doc(requestDoc.id)
-                .update({'Status': 'cancelled'});
+                .update({
+              'Status': 'cancelled',
+            });
+
+            if (!mounted) return;
 
             showDialog(
               context: context,
               builder: (_) => AlertDialog(
-                title: const Text("Ride Cancelled",
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                content: const Text("You have cancelled the ride."),
+                title: const Text(
+                  "Ride Cancelled",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                content: const Text(
+                  "You have cancelled the ride.",
+                ),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text("OK",
-                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    child: const Text(
+                      "OK",
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -694,6 +1370,10 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // ============================================================
+  // BUILD
+  // ============================================================
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -701,32 +1381,86 @@ class _HomePageState extends State<HomePage> {
       body: SafeArea(
         child: Column(
           children: [
-            /// ===========================
-            /// 🗺 TOP SECTION (2/3 SCREEN)
-            /// ===========================
+            // ==================================================
+            // MAP
+            // ==================================================
+
             Expanded(
               flex: 2,
               child: Stack(
                 children: [
-                  if (userLocation != null)
-                    GoogleMap(
-                      initialCameraPosition: CameraPosition(
-                        target: userLocation!,
-                        zoom: 15,
+                  // The map is ALWAYS displayed immediately.
+                  //
+                  // It does not depend on userLocation.
+                  GoogleMap(
+                    initialCameraPosition: const CameraPosition(
+                      target: _nigeriaCenter,
+                      zoom: 5.5,
+                    ),
+                    myLocationEnabled: _locationLoaded,
+                    myLocationButtonEnabled: _locationLoaded,
+                    zoomControlsEnabled: false,
+                    compassEnabled: true,
+                    mapToolbarEnabled: false,
+                    markers: _markers,
+                    onMapCreated: _onMapCreated,
+                  ),
+
+                  // =================================================
+                  // LOCATION LOADING INDICATOR
+                  // =================================================
+                  //
+                  // No circular progress indicator over the map.
+                  // Instead, a small non-blocking status is shown.
+                  //
+
+                  if (!_locationLoaded)
+                    Positioned(
+                      top: 16,
+                      right: 16,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.10),
+                              blurRadius: 8,
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                              ),
+                            ),
+                            const SizedBox(width: 7),
+                            Text(
+                              "Finding you...",
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey[700],
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      myLocationEnabled: true,
-                      myLocationButtonEnabled: true,
-                      markers: _markers,
-                      onMapCreated: (controller) {
-                        _mapController = controller;
-                      },
-                    )
-                  else
-                    const Center(
-                      child: CircularProgressIndicator(),
                     ),
 
-                  /// 🔙 Back Button
+                  // =================================================
+                  // BACK BUTTON
+                  // =================================================
+
                   Positioned(
                     top: 16,
                     left: 16,
@@ -757,9 +1491,10 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
 
-            /// ===========================
-            /// 🚖 BOTTOM SECTION (1/3 SCREEN)
-            /// ===========================
+            // ==================================================
+            // BOTTOM BOOKING SECTION
+            // ==================================================
+
             Expanded(
               flex: 1,
               child: Container(
@@ -780,49 +1515,40 @@ class _HomePageState extends State<HomePage> {
                 ),
                 child: Column(
                   children: [
-                    /// Pickup
-                    TextField(
+                    // =================================================
+                    // PICKUP
+                    // =================================================
+
+                    _buildLocationField(
                       controller: _pickupController,
                       focusNode: _pickupFocusNode,
-                      decoration: InputDecoration(
-                        hintText: 'Pickup location',
-                        filled: true,
-                        fillColor: Colors.grey[100],
-                        prefixIcon: Icon(
-                          Icons.radio_button_checked,
-                          color: Colors.grey[800],
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: BorderSide.none,
-                        ),
-                      ),
+                      hintText: 'Pickup location',
+                      icon: Icons.radio_button_checked,
+                      iconColor: Colors.grey[800]!,
+                      isPickup: true,
                     ),
 
                     const SizedBox(height: 14),
 
-                    /// Destination
-                    TextField(
+                    // =================================================
+                    // DESTINATION
+                    // =================================================
+
+                    _buildLocationField(
                       controller: _destinationController,
                       focusNode: _destinationFocusNode,
-                      decoration: InputDecoration(
-                        hintText: 'Where to?',
-                        filled: true,
-                        fillColor: Colors.grey[100],
-                        prefixIcon: Icon(
-                          Icons.location_on,
-                          color: Colors.green,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: BorderSide.none,
-                        ),
-                      ),
+                      hintText: 'Where to?',
+                      icon: Icons.location_on,
+                      iconColor: Colors.green,
+                      isPickup: false,
                     ),
 
                     const Spacer(),
 
-                    /// Book Button
+                    // =================================================
+                    // BOOK BUTTON
+                    // =================================================
+
                     SizedBox(
                       width: double.infinity,
                       height: 52,
@@ -831,13 +1557,16 @@ class _HomePageState extends State<HomePage> {
                           if (_destinationController.text.trim().isEmpty) {
                             _destinationFocusNode.requestFocus();
 
-                            ScaffoldMessenger.of(context).showSnackBar(
+                            ScaffoldMessenger.of(
+                              context,
+                            ).showSnackBar(
                               const SnackBar(
                                 content: Text(
                                   "Please Enter Your Destination!",
                                 ),
                               ),
                             );
+
                             return;
                           }
 
@@ -845,14 +1574,17 @@ class _HomePageState extends State<HomePage> {
                             context: context,
                             isScrollControlled: true,
                             backgroundColor: Colors.transparent,
-                            builder: (context) =>
-                                RidePage(onSelect: _handleRideSelection),
+                            builder: (context) => RidePage(
+                              onSelect: _handleRideSelection,
+                            ),
                           );
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.black,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(18),
+                            borderRadius: BorderRadius.circular(
+                              18,
+                            ),
                           ),
                         ),
                         child: const Text(
@@ -8000,6 +8732,112 @@ class _TicketBookingPageState extends State<TicketBookingPage> {
   }
 }
 
+class TicketClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    const double cornerRadius = 20;
+    const double cutoutRadius = 12;
+
+    // Put the cutouts around the middle of the ticket.
+    final double cutoutY = size.height * 0.55;
+
+    final Path path = Path();
+
+    // ================= TOP =================
+    path.moveTo(cornerRadius, 0);
+
+    path.lineTo(size.width - cornerRadius, 0);
+
+    // Top-right rounded corner
+    path.quadraticBezierTo(
+      size.width,
+      0,
+      size.width,
+      cornerRadius,
+    );
+
+    // ================= RIGHT SIDE =================
+
+    path.lineTo(
+      size.width,
+      cutoutY - cutoutRadius,
+    );
+
+    // Right semicircle cutout
+    path.arcToPoint(
+      Offset(
+        size.width,
+        cutoutY + cutoutRadius,
+      ),
+      radius: const Radius.circular(cutoutRadius),
+      clockwise: false,
+    );
+
+    // Continue down
+    path.lineTo(
+      size.width,
+      size.height - cornerRadius,
+    );
+
+    // Bottom-right rounded corner
+    path.quadraticBezierTo(
+      size.width,
+      size.height,
+      size.width - cornerRadius,
+      size.height,
+    );
+
+    // ================= BOTTOM =================
+
+    path.lineTo(cornerRadius, size.height);
+
+    // Bottom-left rounded corner
+    path.quadraticBezierTo(
+      0,
+      size.height,
+      0,
+      size.height - cornerRadius,
+    );
+
+    // ================= LEFT SIDE =================
+
+    path.lineTo(
+      0,
+      cutoutY + cutoutRadius,
+    );
+
+    // Left semicircle cutout
+    path.arcToPoint(
+      Offset(
+        0,
+        cutoutY - cutoutRadius,
+      ),
+      radius: const Radius.circular(cutoutRadius),
+      clockwise: false,
+    );
+
+    // Continue up
+    path.lineTo(0, cornerRadius);
+
+    // Top-left rounded corner
+    path.quadraticBezierTo(
+      0,
+      0,
+      cornerRadius,
+      0,
+    );
+
+    path.close();
+
+    return path;
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) {
+    return false;
+  }
+}
+
 class TransportTicketPage extends StatefulWidget {
   final dynamic ticketData;
 
@@ -8235,124 +9073,149 @@ class _TransportTicketPageState extends State<TransportTicketPage> {
         child: Column(
           children: [
             /// ===================== TICKET CARD =====================
+
             RepaintBoundary(
               key: _ticketKey,
               child: Container(
+                width: double.infinity,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [
-                      Color(0xff0f172a), // dark navy
-                      Color(0xff1e293b), // softer navy
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
                   borderRadius: BorderRadius.circular(20),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.15),
+                      color: Colors.black.withOpacity(0.18),
                       blurRadius: 12,
                       offset: const Offset(0, 6),
-                    )
+                    ),
                   ],
                 ),
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    /// ================= PROVIDER =================
-                    Row(
+                child: ClipPath(
+                  clipper: TicketClipper(),
+                  clipBehavior: Clip.antiAlias,
+                  child: Container(
+                    width: double.infinity,
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Color(0xff0f172a),
+                          Color(0xff1e293b),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                    ),
+                    padding: const EdgeInsets.fromLTRB(
+                      18,
+                      18,
+                      18,
+                      18,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        CircleAvatar(
-                          radius: 24,
-                          backgroundImage:
-                              NetworkImage(ticket["providerImage"] ?? ""),
-                        ),
-                        const SizedBox(width: 10),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        /// ================= PROVIDER =================
+                        Row(
                           children: [
-                            Text(
-                              ticket["providerName"],
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
+                            CircleAvatar(
+                              radius: 24,
+                              backgroundImage: NetworkImage(
+                                ticket["providerImage"] ?? "",
                               ),
                             ),
-                            Text(
-                              ticket["providerLocation"],
-                              style: const TextStyle(
-                                  color: Colors.white70, fontSize: 12),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    ticket["providerName"] ?? "",
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    ticket["providerLocation"] ?? "",
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         ),
+
+                        const SizedBox(height: 20),
+
+                        /// ================= DETAILS =================
+                        Column(
+                          children: [
+                            _ticketDetailRow(
+                              "Ticket ID",
+                              ticket["ticketId"] ?? "",
+                            ),
+                            const SizedBox(height: 14),
+                            _ticketDetailRow(
+                              "Status",
+                              ticket["status"].toString().toUpperCase(),
+                              valueColor: ticket["status"] == "cancelled"
+                                  ? Colors.redAccent
+                                  : Colors.greenAccent,
+                            ),
+                            const SizedBox(height: 14),
+                            _ticketDetailRow(
+                              "From",
+                              ticket["from"] ?? "",
+                            ),
+                            const SizedBox(height: 14),
+                            _ticketDetailRow(
+                              "To",
+                              ticket["to"] ?? "",
+                            ),
+                            const SizedBox(height: 14),
+                            _ticketDetailRow(
+                              "Date",
+                              ticket["createdAt"] != null
+                                  ? ticket["createdAt"]
+                                      .toDate()
+                                      .toString()
+                                      .split(".")
+                                      .first
+                                  : "",
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 28),
+
+                        /// ================= PRICE =================
+                        Center(
+                          child: Text(
+                            "₦${ticket["price"] ?? 0}",
+                            style: const TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.greenAccent,
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(height: 10),
                       ],
                     ),
-
-                    const SizedBox(height: 20),
-
-                    /// ================= DETAILS =================
-                    Column(
-                      children: [
-                        _ticketDetailRow(
-                          "Ticket ID",
-                          ticket["ticketId"],
-                        ),
-                        const SizedBox(height: 14),
-                        _ticketDetailRow(
-                          "Status",
-                          ticket["status"].toString().toUpperCase(),
-                          valueColor: ticket["status"] == "cancelled"
-                              ? Colors.redAccent
-                              : Colors.greenAccent,
-                        ),
-                        const SizedBox(height: 14),
-                        _ticketDetailRow(
-                          "From",
-                          ticket["from"],
-                        ),
-                        const SizedBox(height: 14),
-                        _ticketDetailRow(
-                          "To",
-                          ticket["to"],
-                        ),
-                        const SizedBox(height: 14),
-                        _ticketDetailRow(
-                          "Date",
-                          ticket["createdAt"]
-                              .toDate()
-                              .toString()
-                              .split(".")
-                              .first,
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 28),
-
-                    /// ================= PRICE =================
-                    Center(
-                      child: Text(
-                        "₦${ticket["price"]}",
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.greenAccent,
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 10),
-
-                    /// ================= BOARD BUTTON =================
-                  ],
+                  ),
                 ),
               ),
             ),
 
-            const SizedBox(height: 20),
+            const SizedBox(width: 10),
 
-            /// ================= ACTION BUTTONS =================
             Row(
               children: [
                 /// CANCEL
@@ -8363,11 +9226,13 @@ class _TransportTicketPageState extends State<TransportTicketPage> {
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                     onPressed: loadingCancel ? null : _cancelTicket,
-                    child: const Text("Cancel Ticket",
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        )),
+                    child: const Text(
+                      "Cancel Ticket",
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
                   ),
                 ),
 
@@ -8381,15 +9246,19 @@ class _TransportTicketPageState extends State<TransportTicketPage> {
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                     onPressed: _downloadTicketPdf,
-                    child: const Text("Download",
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        )),
+                    child: const Text(
+                      "Download",
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
                   ),
                 ),
               ],
-            )
+            ),
+
+            const SizedBox(height: 20),
           ],
         ),
       ),
@@ -14225,6 +15094,18 @@ class _ShoppingSectionPageState extends State<ShoppingSectionPage>
 
                     const SizedBox(height: 10),
 
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        "Featured products",
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 10),
+
                     // ==========================================
                     // PRODUCTS
                     // ==========================================
@@ -18344,234 +19225,324 @@ class _FoodSectionPageState extends State<FoodSectionPage>
                 children: [
                   Row(
                     children: [
-                      Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: Text('Explore Vendors',
-                            style: TextStyle(
-                              color: Colors.black,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            )),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          "Explore Vendors",
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       ),
                     ],
                   ),
                   SizedBox(height: 5),
 
                   /// VENDORS (horizontally scrollable)
+
                   SizedBox(
-                    height: 120, // 🔥 increased from 100 → 120
+                    height: 112,
                     child: _foodVendors.isEmpty
                         ? ListView.builder(
                             scrollDirection: Axis.horizontal,
-                            itemCount: 4,
-                            itemBuilder: (_, __) => _skeletonTile())
+                            itemCount: 3,
+                            itemBuilder: (_, __) => Container(
+                              width: 285,
+                              height: 112,
+                              margin: const EdgeInsets.only(right: 10),
+                              decoration: BoxDecoration(
+                                color: Colors.grey[100],
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                          )
                         : ListView.builder(
                             scrollDirection: Axis.horizontal,
                             padding: EdgeInsets.zero,
                             itemCount: _foodVendors.length,
-                            itemBuilder: (_, i) {
-                              final vendor = _foodVendors[i];
+                            itemBuilder: (context, index) {
+                              final vendor = _foodVendors[index];
 
-                              bool selected = vendor['id'] == selectedVendorId;
+                              // ================= VENDOR ID =================
+                              final vendorId =
+                                  (vendor['id'] ?? vendor['vendorId'] ?? '')
+                                      .toString();
 
-                              final bool isOpen = (i % 2 == 0);
+                              // ================= VENDOR NAME =================
+                              final vendorName = (vendor['name'] ??
+                                      vendor['businessName'] ??
+                                      vendor['vendorName'] ??
+                                      'Food Vendor')
+                                  .toString();
+
+                              // ================= LOCATION =================
+                              final vendorLocation = (vendor['location'] ??
+                                      vendor['address'] ??
+                                      vendor['city'] ??
+                                      '')
+                                  .toString();
+
+                              // ================= VENDOR IMAGE =================
+                              final vendorImage = (vendor['image'] ?? '')
+                                  .toString()
+                                  .trim()
+                                  .replaceAll('"', '');
+
+                              // ================= RATING =================
+                              final rating = (vendor['rating'] ??
+                                      vendor['averageRating'] ??
+                                      '4.5')
+                                  .toString();
+
+                              // ================= DELIVERY TIME =================
+                              final deliveryTime = (vendor['deliveryTime'] ??
+                                      vendor['estimatedDeliveryTime'] ??
+                                      '30-45 min')
+                                  .toString();
+
+                              // ================= STATUS =================
+                              final rawStatus =
+                                  vendor['status'] ?? vendor['isOpen'] ?? true;
+
+                              final bool isOpen = rawStatus is bool
+                                  ? rawStatus
+                                  : rawStatus.toString().toLowerCase() ==
+                                          'open' ||
+                                      rawStatus.toString().toLowerCase() ==
+                                          'true';
+
+                              // ================= FALLBACK IMAGES =================
+                              final fallbackImages = [
+                                'assets/images/vendor1.jpg',
+                                'assets/images/vendor2.jpg',
+                                'assets/images/vendor3.jpg',
+                                'assets/images/vendor4.jpg',
+                                'assets/images/vendor5.jpg',
+                                'assets/images/vendor6.jpg',
+                                'assets/images/vendor7.jpg',
+                                'assets/images/vendor8.jpg',
+                              ];
+
+                              // Keep the same fallback image for the same vendor
+                              final vendorKey =
+                                  vendorId.isNotEmpty ? vendorId : vendorName;
+
+                              final fallbackIndex =
+                                  vendorKey.codeUnits.fold<int>(
+                                        0,
+                                        (sum, code) => sum + code,
+                                      ) %
+                                      fallbackImages.length;
+
+                              final fallbackImage =
+                                  fallbackImages[fallbackIndex];
 
                               return GestureDetector(
                                 onTap: () => openVendorModal(vendor),
-                                child: Stack(
-                                  children: [
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(12),
-                                      child: Container(
-                                        width: 350,
-                                        height:
-                                            120, // 🔥 FORCE HEIGHT HERE (important)
-                                        margin:
-                                            const EdgeInsets.only(right: 10),
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 12),
+                                child: Container(
+                                  width: 285,
+                                  height: 112,
+                                  margin: const EdgeInsets.only(right: 10),
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color: Colors.grey.shade200,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.06),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 3),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      // ================= VENDOR IMAGE =================
+                                      Container(
+                                        width: 78,
+                                        height: 78,
                                         decoration: BoxDecoration(
-                                          color: selected
-                                              ? Colors.purple.withOpacity(0.2)
-                                              : Colors.grey[100],
-                                          borderRadius:
-                                              BorderRadius.circular(12),
+                                          shape: BoxShape.circle,
+                                          color: Colors.grey.shade200,
                                         ),
-                                        child: Stack(
+                                        child: ClipOval(
+                                          child: vendorImage.isEmpty
+                                              ? Image.asset(
+                                                  fallbackImage,
+                                                  fit: BoxFit.cover,
+                                                )
+                                              : Image.network(
+                                                  vendorImage,
+                                                  fit: BoxFit.cover,
+                                                  errorBuilder: (_, __, ___) {
+                                                    return Image.asset(
+                                                      fallbackImage,
+                                                      fit: BoxFit.cover,
+                                                    );
+                                                  },
+                                                ),
+                                        ),
+                                      ),
+
+                                      const SizedBox(width: 12),
+
+                                      // ================= VENDOR DETAILS =================
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
                                           children: [
-                                            // 🔥 MAIN CONTENT CENTERED
-                                            Align(
-                                              alignment: Alignment.center,
-                                              child: Row(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.center,
+                                            // Vendor name
+                                            Text(
+                                              vendorName,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.black,
+                                              ),
+                                            ),
+
+                                            const SizedBox(height: 5),
+
+                                            // Location
+                                            if (vendorLocation.isNotEmpty)
+                                              Row(
                                                 children: [
-                                                  Container(
-                                                    width: 75,
-                                                    height: 75,
-                                                    decoration: BoxDecoration(
-                                                      shape: BoxShape.circle,
-                                                      color: Colors.grey[300],
-                                                    ),
-                                                    child: ClipOval(
-                                                      child: (() {
-                                                        final raw =
-                                                            vendor['image'];
-
-                                                        final imageUrl =
-                                                            (raw ?? '')
-                                                                .toString()
-                                                                .trim()
-                                                                .replaceAll(
-                                                                    '"', '');
-
-                                                        // Available local vendor fallback images
-                                                        final fallbackImages = [
-                                                          'assets/images/vendor1.jpg',
-                                                          'assets/images/vendor2.jpg',
-                                                          'assets/images/vendor3.jpg',
-                                                          'assets/images/vendor4.jpg',
-                                                          'assets/images/vendor5.jpg',
-                                                          'assets/images/vendor6.jpg',
-                                                          'assets/images/vendor7.jpg',
-                                                          'assets/images/vendor8.jpg',
-                                                        ];
-
-                                                        // Use the vendor ID/name to consistently select
-                                                        // the same fallback image for this vendor.
-                                                        final vendorKey = (vendor[
-                                                                    'id'] ??
-                                                                vendor[
-                                                                    'vendorId'] ??
-                                                                vendor[
-                                                                    'name'] ??
-                                                                vendor[
-                                                                    'businessName'] ??
-                                                                'vendor')
-                                                            .toString();
-
-                                                        final fallbackIndex =
-                                                            vendorKey.codeUnits.fold<
-                                                                        int>(
-                                                                    0,
-                                                                    (sum, code) =>
-                                                                        sum +
-                                                                        code) %
-                                                                fallbackImages
-                                                                    .length;
-
-                                                        final fallbackImage =
-                                                            fallbackImages[
-                                                                fallbackIndex];
-
-                                                        // No network image → use local fallback
-                                                        if (imageUrl.isEmpty) {
-                                                          return Image.asset(
-                                                            fallbackImage,
-                                                            fit: BoxFit.cover,
-                                                          );
-                                                        }
-
-                                                        // Network image exists → try loading it
-                                                        return Image.network(
-                                                          imageUrl,
-                                                          fit: BoxFit.cover,
-                                                          errorBuilder:
-                                                              (context, error,
-                                                                  stackTrace) {
-                                                            // Network image failed → use local fallback
-                                                            return Image.asset(
-                                                              fallbackImage,
-                                                              fit: BoxFit.cover,
-                                                            );
-                                                          },
-                                                        );
-                                                      })(),
-                                                    ),
+                                                  const Icon(
+                                                    Icons.location_on_outlined,
+                                                    size: 13,
+                                                    color: Colors.grey,
                                                   ),
-                                                  const SizedBox(width: 12),
+                                                  const SizedBox(width: 3),
                                                   Expanded(
                                                     child: Text(
-                                                      vendor['name'],
-                                                      style: const TextStyle(
-                                                        fontSize: 16,
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                      ),
+                                                      vendorLocation,
+                                                      maxLines: 1,
                                                       overflow:
                                                           TextOverflow.ellipsis,
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        color: Colors
+                                                            .grey.shade600,
+                                                      ),
                                                     ),
                                                   ),
                                                 ],
                                               ),
-                                            ),
 
-                                            // 🔥 STATUS BADGE (TOP RIGHT, PROPERLY ALIGNED)
-                                            Positioned(
-                                              top: 8,
-                                              right: 8,
-                                              child: Container(
-                                                padding: const EdgeInsets
-                                                        .symmetric(
-                                                    horizontal: 8,
-                                                    vertical:
-                                                        3), // 🔥 tighter padding
-                                                decoration: BoxDecoration(
-                                                  color: isOpen
-                                                      ? Colors.green
-                                                      : Colors.red,
-                                                  borderRadius:
-                                                      BorderRadius.circular(8),
-                                                  boxShadow: [
-                                                    BoxShadow(
-                                                      color: Colors.black
-                                                          .withOpacity(0.12),
-                                                      blurRadius: 4,
-                                                      offset:
-                                                          const Offset(0, 2),
-                                                    ),
-                                                  ],
+                                            const SizedBox(height: 6),
+
+                                            // Rating + Delivery time
+                                            Row(
+                                              children: [
+                                                const Icon(
+                                                  Icons.star_rounded,
+                                                  size: 15,
+                                                  color: Colors.amber,
                                                 ),
-                                                child: Row(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
-                                                  children: [
-                                                    Container(
-                                                      width: 5,
-                                                      height: 5,
-                                                      decoration:
-                                                          const BoxDecoration(
-                                                        color: Colors.white,
-                                                        shape: BoxShape.circle,
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 4),
-                                                    Text(
-                                                      isOpen
-                                                          ? "Open"
-                                                          : "Closed",
-                                                      style: const TextStyle(
-                                                        color: Colors.white,
-                                                        fontSize:
-                                                            9, // 🔥 smaller for balance
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                      ),
-                                                    ),
-                                                  ],
+                                                const SizedBox(width: 3),
+                                                Text(
+                                                  rating,
+                                                  style: const TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
                                                 ),
-                                              ),
+                                                const SizedBox(width: 8),
+                                                const Icon(
+                                                  Icons.access_time_rounded,
+                                                  size: 13,
+                                                  color: Colors.grey,
+                                                ),
+                                                const SizedBox(width: 3),
+                                                Expanded(
+                                                  child: Text(
+                                                    deliveryTime,
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      fontSize: 10,
+                                                      color:
+                                                          Colors.grey.shade600,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
                                             ),
                                           ],
                                         ),
                                       ),
-                                    ),
-                                  ],
+
+                                      const SizedBox(width: 4),
+
+                                      // ================= STATUS =================
+                                      Align(
+                                        alignment: Alignment.topRight,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 7,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: isOpen
+                                                ? Colors.green.shade600
+                                                : Colors.red.shade600,
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Container(
+                                                width: 5,
+                                                height: 5,
+                                                decoration: const BoxDecoration(
+                                                  color: Colors.white,
+                                                  shape: BoxShape.circle,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                isOpen ? "Open" : "Closed",
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 8,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               );
-                            }),
+                            },
+                          ),
                   ),
-                  const SizedBox(height: 8),
+
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      "Featured products",
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 10),
 
                   StreamBuilder<QuerySnapshot>(
                     stream: FirebaseFirestore.instance
@@ -24083,12 +25054,16 @@ class OrderPlacedPage extends StatelessWidget {
                           /// 🔥 DYNAMIC STATUS TEXT
                           Text(
                             status == "pending"
-                                ? "Delivery agent is on his way to pickup this order."
-                                : status == "pickedup"
-                                    ? "Package picked up, on its way to $receiverName."
-                                    : "Package delivered successfully.",
+                                ? "Order placed, assigning agent to pickup package."
+                                : status == "accepted"
+                                    ? "Agent assigned, package will be picked up shortly."
+                                    : status == "pickedup"
+                                        ? "Package picked up, on its way to $receiverName."
+                                        : "Package delivered successfully.",
                             style: const TextStyle(
-                                fontSize: 14, fontWeight: FontWeight.w500),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
 
                           const SizedBox(height: 12),
