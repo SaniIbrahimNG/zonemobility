@@ -563,6 +563,10 @@ class _HomePageState extends State<HomePage> {
 
   bool _mapReady = false;
   bool _locationLoaded = false;
+  LatLng? _pickupLocation;
+  LatLng? _destinationLocation;
+
+  Set<Polyline> _polylines = {};
 
   final TextEditingController _pickupController = TextEditingController();
 
@@ -637,9 +641,8 @@ class _HomePageState extends State<HomePage> {
     _mapController = controller;
     _mapReady = true;
 
-    // Immediately show the default location.
-    //
-    // We deliberately do NOT wait for GPS.
+    controller.setMapStyle(_darkMapStyle);
+
     _moveToDefaultLocation();
   }
 
@@ -684,6 +687,131 @@ class _HomePageState extends State<HomePage> {
   // ============================================================
   // GET USER LOCATION
   // ============================================================
+  //
+  static const String _darkMapStyle = '''
+[
+  {
+    "elementType": "geometry",
+    "stylers": [
+      {
+        "color": "#212121"
+      }
+    ]
+  },
+  {
+    "elementType": "labels.icon",
+    "stylers": [
+      {
+        "visibility": "off"
+      }
+    ]
+  },
+  {
+    "elementType": "labels.text.fill",
+    "stylers": [
+      {
+        "color": "#757575"
+      }
+    ]
+  },
+  {
+    "elementType": "labels.text.stroke",
+    "stylers": [
+      {
+        "color": "#212121"
+      }
+    ]
+  },
+  {
+    "featureType": "administrative",
+    "elementType": "geometry",
+    "stylers": [
+      {
+        "color": "#757575"
+      }
+    ]
+  },
+  {
+    "featureType": "administrative.country",
+    "elementType": "geometry.stroke",
+    "stylers": [
+      {
+        "color": "#424242"
+      }
+    ]
+  },
+  {
+    "featureType": "road",
+    "elementType": "geometry.fill",
+    "stylers": [
+      {
+        "color": "#2c2c2c"
+      }
+    ]
+  },
+  {
+    "featureType": "road",
+    "elementType": "geometry.stroke",
+    "stylers": [
+      {
+        "color": "#1a1a1a"
+      }
+    ]
+  },
+  {
+    "featureType": "road",
+    "elementType": "labels.text.fill",
+    "stylers": [
+      {
+        "color": "#8a8a8a"
+      }
+    ]
+  },
+  {
+    "featureType": "water",
+    "elementType": "geometry",
+    "stylers": [
+      {
+        "color": "#000000"
+      }
+    ]
+  },
+  {
+    "featureType": "water",
+    "elementType": "labels.text.fill",
+    "stylers": [
+      {
+        "color": "#3d3d3d"
+      }
+    ]
+  }
+]
+''';
+
+  void _updateRideRoute() {
+    if (_pickupLocation == null || _destinationLocation == null) {
+      setState(() {
+        _polylines = {};
+      });
+      return;
+    }
+
+    setState(() {
+      _polylines = {
+        Polyline(
+          polylineId: const PolylineId('ride_route'),
+          points: [
+            _pickupLocation!,
+            _destinationLocation!,
+          ],
+          color: Colors.deepPurple,
+          width: 5,
+          startCap: Cap.roundCap,
+          endCap: Cap.roundCap,
+        ),
+      };
+    });
+  }
 
   Future<void> _fetchUserLocation() async {
     try {
@@ -1074,7 +1202,7 @@ class _HomePageState extends State<HomePage> {
 
     final String placeId = suggestion["placeId"]?.toString() ?? "";
 
-    if (description.isEmpty) return;
+    if (description.isEmpty || placeId.isEmpty) return;
 
     FocusScope.of(context).unfocus();
 
@@ -1088,33 +1216,38 @@ class _HomePageState extends State<HomePage> {
       }
     });
 
-    // Get the exact coordinates of the selected place.
     final LatLng? location = await _getPlaceLocation(placeId);
 
-    if (location == null) return;
-
-    // Add selected place to the map.
-    final Set<Marker> updatedMarkers = {
-      ..._markers,
-      Marker(
-        markerId: MarkerId(
-          isPickup ? "selected_pickup" : "selected_destination",
-        ),
-        position: location,
-        infoWindow: InfoWindow(
-          title: isPickup ? "Pickup location" : "Destination",
-          snippet: description,
-        ),
-      ),
-    };
-
-    if (!mounted) return;
+    if (location == null || !mounted) return;
 
     setState(() {
+      if (isPickup) {
+        _pickupLocation = location;
+      } else {
+        _destinationLocation = location;
+      }
+
+      final Set<Marker> updatedMarkers = {
+        ..._markers,
+        Marker(
+          markerId: MarkerId(
+            isPickup ? "selected_pickup" : "selected_destination",
+          ),
+          position: location,
+          infoWindow: InfoWindow(
+            title: isPickup ? "Pickup location" : "Destination",
+            snippet: description,
+          ),
+        ),
+      };
+
       _markers = updatedMarkers;
     });
 
-    // Move map to selected place.
+    // Draw/update the line.
+    _updateRideRoute();
+
+    // Move to the selected location.
     if (_mapController != null) {
       await _mapController!.animateCamera(
         CameraUpdate.newCameraPosition(
@@ -1124,6 +1257,49 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
       );
+    }
+
+    // If both locations now exist, show both on screen.
+    if (_pickupLocation != null &&
+        _destinationLocation != null &&
+        _mapController != null) {
+      await Future.delayed(
+        const Duration(milliseconds: 200),
+      );
+
+      try {
+        final double minLat = min(
+          _pickupLocation!.latitude,
+          _destinationLocation!.latitude,
+        );
+
+        final double maxLat = max(
+          _pickupLocation!.latitude,
+          _destinationLocation!.latitude,
+        );
+
+        final double minLng = min(
+          _pickupLocation!.longitude,
+          _destinationLocation!.longitude,
+        );
+
+        final double maxLng = max(
+          _pickupLocation!.longitude,
+          _destinationLocation!.longitude,
+        );
+
+        await _mapController!.animateCamera(
+          CameraUpdate.newLatLngBounds(
+            LatLngBounds(
+              southwest: LatLng(minLat, minLng),
+              northeast: LatLng(maxLat, maxLng),
+            ),
+            80,
+          ),
+        );
+      } catch (e) {
+        debugPrint("Route camera error: $e");
+      }
     }
   }
 
@@ -1403,6 +1579,7 @@ class _HomePageState extends State<HomePage> {
                     compassEnabled: true,
                     mapToolbarEnabled: false,
                     markers: _markers,
+                    polylines: _polylines,
                     onMapCreated: _onMapCreated,
                   ),
 
