@@ -9348,7 +9348,8 @@ class _TransportTicketPageState extends State<TransportTicketPage> {
                         const SizedBox(height: 20),
 
                         /// ================= DETAILS =================
-                        Column(
+                        Center(
+                            child: Column(
                           children: [
                             _ticketDetailRow(
                               "Ticket ID",
@@ -9384,7 +9385,7 @@ class _TransportTicketPageState extends State<TransportTicketPage> {
                                   : "",
                             ),
                           ],
-                        ),
+                        )),
 
                         const SizedBox(height: 28),
 
@@ -9408,7 +9409,7 @@ class _TransportTicketPageState extends State<TransportTicketPage> {
               ),
             ),
 
-            const SizedBox(width: 10),
+            const SizedBox(height: 15),
 
             Row(
               children: [
@@ -9430,7 +9431,7 @@ class _TransportTicketPageState extends State<TransportTicketPage> {
                   ),
                 ),
 
-                const SizedBox(width: 10),
+                const SizedBox(height: 10),
 
                 /// DOWNLOAD
                 Expanded(
@@ -24501,58 +24502,474 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
     );
   }
 
-  // ================= CITY DROPDOWN =================
-  Widget _cityDropdown() {
+  // ================= MODAL SELECTORS =================
+
+  Future<void> _showCategorySheet() async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(24),
+        ),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Handle
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 22),
+
+                const Text(
+                  "Select package category",
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
+                ),
+
+                const SizedBox(height: 6),
+
+                Text(
+                  "Choose the category that best describes your package.",
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+
+                const SizedBox(height: 18),
+
+                ..._categories.map((category) {
+                  final isSelected = _selectedCategory == category;
+
+                  IconData icon;
+
+                  switch (category) {
+                    case "Document":
+                      icon = Icons.description_outlined;
+                      break;
+                    case "Electronics":
+                      icon = Icons.devices_outlined;
+                      break;
+                    case "Clothing":
+                      icon = Icons.checkroom_outlined;
+                      break;
+                    case "Food":
+                      icon = Icons.restaurant_outlined;
+                      break;
+                    default:
+                      icon = Icons.inventory_2_outlined;
+                  }
+
+                  return _buildSelectorItem(
+                    title: category,
+                    icon: icon,
+                    selected: isSelected,
+                    onTap: () {
+                      Navigator.pop(context, category);
+                    },
+                  );
+                }).toList(),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (selected != null) {
+      setState(() {
+        _selectedCategory = selected;
+      });
+    }
+  }
+
+  Future<void> _showFromCitySheet() async {
     final cities = _getCities();
 
-    return DropdownButtonFormField<String>(
-      value: _selectedFromCity,
-      decoration: _inputDecoration("From"),
-      items: cities
-          .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-          .toList(),
-      onChanged: (val) {
-        setState(() {
-          _selectedFromCity = val;
-          _selectedToCity = null;
-          _calculatedPrice = null;
-        });
-        _nextStep();
+    if (cities.isEmpty) {
+      return;
+    }
+
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(24),
+        ),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 22),
+                const Text(
+                  "Pickup city",
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  "Where should we collect the package from?",
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: cities.length,
+                    itemBuilder: (context, index) {
+                      final city = cities[index];
+                      final isSelected = _selectedFromCity == city;
+
+                      return _buildSelectorItem(
+                        title: city,
+                        icon: Icons.location_on_outlined,
+                        selected: isSelected,
+                        onTap: () {
+                          Navigator.pop(context, city);
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
       },
+    );
+
+    if (selected != null) {
+      setState(() {
+        _selectedFromCity = selected;
+        _selectedToCity = null;
+        _calculatedPrice = null;
+      });
+    }
+  }
+
+  Future<void> _showDestinationSheet() async {
+    if (_selectedFromCity == null) {
+      return;
+    }
+
+    final destinations = _getDestinations(_selectedFromCity!);
+
+    if (destinations.isEmpty) {
+      return;
+    }
+
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(24),
+        ),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 22),
+                const Text(
+                  "Destination",
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  "Where should we deliver the package?",
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: destinations.length,
+                    itemBuilder: (context, index) {
+                      final destination = destinations[index];
+
+                      final name = destination['name']?.toString() ?? "";
+
+                      final price = destination['price'];
+
+                      final isSelected = _selectedToCity == name;
+
+                      return _buildSelectorItem(
+                        title: name,
+                        subtitle: price != null
+                            ? "₦${NumberFormat("#,###").format((price as num).toInt())}"
+                            : null,
+                        icon: Icons.flag_outlined,
+                        selected: isSelected,
+                        onTap: () {
+                          Navigator.pop(context, name);
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (selected != null) {
+      setState(() {
+        _selectedToCity = selected;
+        _calculatePrice();
+      });
+    }
+  }
+
+  Widget _buildSelectorItem({
+    required String title,
+    String? subtitle,
+    required IconData icon,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 13,
+        ),
+        decoration: BoxDecoration(
+          color:
+              selected ? Colors.black.withOpacity(0.05) : Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected ? Colors.black : Colors.grey.shade200,
+            width: selected ? 1.2 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: selected ? Colors.black : Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.grey.shade200,
+                ),
+              ),
+              child: Icon(
+                icon,
+                size: 20,
+                color: selected ? Colors.white : Colors.black87,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black,
+                    ),
+                  ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: selected ? Colors.black : Colors.transparent,
+                border: Border.all(
+                  color: selected ? Colors.black : Colors.grey.shade400,
+                  width: 1.5,
+                ),
+              ),
+              child: selected
+                  ? const Icon(
+                      Icons.check,
+                      size: 14,
+                      color: Colors.white,
+                    )
+                  : null,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSelectorField({
+    required String label,
+    required String? value,
+    required VoidCallback onTap,
+    required IconData icon,
+    String? hint,
+  }) {
+    final hasValue = value != null && value!.isNotEmpty;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 15,
+        ),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 20,
+              color: Colors.black87,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey.shade600,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    hasValue ? value! : (hint ?? "Select"),
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: hasValue ? FontWeight.w600 : FontWeight.w400,
+                      color: hasValue ? Colors.black : Colors.grey.shade500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.keyboard_arrow_down_rounded,
+              color: Colors.grey.shade700,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ================= CITY DROPDOWN =================
+  Widget _cityDropdown() {
+    return _buildSelectorField(
+      label: "From",
+      value: _selectedFromCity,
+      hint: "Select pickup city",
+      icon: Icons.location_on_outlined,
+      onTap: _showFromCitySheet,
     );
   }
 
   Widget _destinationDropdown() {
-    if (_selectedFromCity == null) {
-      return const Text("Select pickup city first");
-    }
-
-    final dests = _getDestinations(_selectedFromCity!);
-
-    return DropdownButtonFormField<String>(
+    return _buildSelectorField(
+      label: "To",
       value: _selectedToCity,
-      decoration: _inputDecoration("To"),
-      items: dests.map<DropdownMenuItem<String>>((d) {
-        final name = d['name'];
-
-        if (name == null) {
-          return const DropdownMenuItem<String>(
-            value: "",
-            child: Text("Invalid destination"),
-          );
+      hint: _selectedFromCity == null
+          ? "Select pickup city first"
+          : "Select destination",
+      icon: Icons.flag_outlined,
+      onTap: () {
+        if (_selectedFromCity == null) {
+          return;
         }
 
-        return DropdownMenuItem<String>(
-          value: name.toString(),
-          child: Text(name.toString()),
-        );
-      }).toList(),
-      onChanged: (val) {
-        setState(() {
-          _selectedToCity = val;
-          _calculatePrice();
-        });
-        _nextStep();
+        _showDestinationSheet();
       },
     );
   }
@@ -24825,22 +25242,12 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
           "Package Name",
         ),
         const SizedBox(height: 20),
-        DropdownButtonFormField<String>(
+        _buildSelectorField(
+          label: "Category",
           value: _selectedCategory,
-          decoration: _inputDecoration("Category"),
-          items: _categories
-              .map(
-                (e) => DropdownMenuItem(
-                  value: e,
-                  child: Text(e),
-                ),
-              )
-              .toList(),
-          onChanged: (val) {
-            setState(() {
-              _selectedCategory = val;
-            });
-          },
+          hint: "Select package category",
+          icon: Icons.category_outlined,
+          onTap: _showCategorySheet,
         ),
         const SizedBox(height: 22),
         const Align(
