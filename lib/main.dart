@@ -744,7 +744,7 @@ class _HomePageState extends State<HomePage> {
     _mapController = controller;
     _mapReady = true;
 
-    controller.setMapStyle(_darkMapStyle);
+    //controller.setMapStyle(_darkMapStyle);
 
     _moveToDefaultLocation();
   }
@@ -1650,7 +1650,7 @@ class _HomePageState extends State<HomePage> {
                               width: 7,
                             ),
                             Text(
-                              "Finding you...",
+                              "",
                               style: TextStyle(
                                 fontSize: 11,
                                 color: Colors.grey[700],
