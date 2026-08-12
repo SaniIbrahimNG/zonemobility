@@ -559,23 +559,10 @@ class _HomePageState extends State<HomePage> {
   // ============================================================
 
   LatLng? userLocation;
-  LatLng? _pickupLocation;
-  LatLng? _destinationLocation;
 
   GoogleMapController? _mapController;
 
   Set<Marker> _markers = {};
-  Set<Polyline> _polylines = {};
-
-  // ============================================================
-  // SELECTED PICKUP / DESTINATION LOCATIONS
-  // ============================================================
-
-  LatLng? _selectedPickupLocation;
-  LatLng? _selectedDestinationLocation;
-
-  // Dotted line between pickup and destination.
-  // Set<Polyline> _polylines = {};
 
   String pickupAddress = '';
 
@@ -604,57 +591,6 @@ class _HomePageState extends State<HomePage> {
   Timer? _destinationDebounce;
 
   String? _activeAutocompleteField;
-
-  List<LatLng> _decodePolyline(String encoded) {
-    final List<LatLng> points = [];
-
-    int index = 0;
-    int latitude = 0;
-    int longitude = 0;
-
-    while (index < encoded.length) {
-      int shift = 0;
-      int result = 0;
-
-      while (true) {
-        final int byte = encoded.codeUnitAt(index++) - 63;
-        result |= (byte & 0x1f) << shift;
-        shift += 5;
-
-        if (byte < 0x20) break;
-      }
-
-      final int deltaLatitude =
-          (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
-
-      latitude += deltaLatitude;
-
-      shift = 0;
-      result = 0;
-
-      while (true) {
-        final int byte = encoded.codeUnitAt(index++) - 63;
-        result |= (byte & 0x1f) << shift;
-        shift += 5;
-
-        if (byte < 0x20) break;
-      }
-
-      final int deltaLongitude =
-          (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
-
-      longitude += deltaLongitude;
-
-      points.add(
-        LatLng(
-          latitude / 1e5,
-          longitude / 1e5,
-        ),
-      );
-    }
-
-    return points;
-  }
 
   // ============================================================
   // INIT
@@ -750,143 +686,6 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> _drawRoute({
-    required LatLng origin,
-    required LatLng destination,
-  }) async {
-    try {
-      final response = await http.post(
-        Uri.parse(
-          'https://routes.googleapis.com/directions/v2:computeRoutes',
-        ),
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Goog-Api-Key': _googlePlacesApiKey,
-          'X-Goog-FieldMask': 'routes.polyline.encodedPolyline,'
-              'routes.distanceMeters,'
-              'routes.duration',
-        },
-        body: jsonEncode({
-          'origin': {
-            'location': {
-              'latLng': {
-                'latitude': origin.latitude,
-                'longitude': origin.longitude,
-              },
-            },
-          },
-          'destination': {
-            'location': {
-              'latLng': {
-                'latitude': destination.latitude,
-                'longitude': destination.longitude,
-              },
-            },
-          },
-          'travelMode': 'DRIVE',
-          'routingPreference': 'TRAFFIC_AWARE',
-          'polylineQuality': 'HIGH_QUALITY',
-          'polylineEncoding': 'ENCODED_POLYLINE',
-          'computeAlternativeRoutes': false,
-          'routeModifiers': {
-            'avoidTolls': false,
-            'avoidHighways': false,
-            'avoidFerries': false,
-          },
-          'languageCode': 'en-US',
-          'units': 'METRIC',
-        }),
-      );
-
-      debugPrint(
-        'ROUTES STATUS: ${response.statusCode}',
-      );
-
-      debugPrint(
-        'ROUTES RESPONSE: ${response.body}',
-      );
-
-      if (response.statusCode != 200) {
-        debugPrint(
-          'Route request failed: ${response.body}',
-        );
-        return;
-      }
-
-      final Map<String, dynamic> data = jsonDecode(response.body);
-
-      final List routes = data['routes'] ?? [];
-
-      if (routes.isEmpty) {
-        debugPrint('No route found.');
-        return;
-      }
-
-      final String encodedPolyline =
-          routes[0]['polyline']?['encodedPolyline']?.toString() ?? '';
-
-      if (encodedPolyline.isEmpty) {
-        debugPrint('Route returned without polyline.');
-        return;
-      }
-
-      final List<LatLng> routePoints = _decodePolyline(encodedPolyline);
-
-      if (routePoints.isEmpty) {
-        debugPrint('Decoded route contains no points.');
-        return;
-      }
-
-      if (!mounted) return;
-
-      setState(() {
-        _polylines = {
-          Polyline(
-            polylineId: const PolylineId('ride_route'),
-            points: routePoints,
-            width: 5,
-            color: Colors.black,
-            geodesic: false,
-            startCap: Cap.roundCap,
-            endCap: Cap.roundCap,
-            jointType: JointType.round,
-          ),
-        };
-      });
-
-      // Fit the entire route inside the map.
-      if (_mapController != null) {
-        double minLat = routePoints.first.latitude;
-        double maxLat = routePoints.first.latitude;
-        double minLng = routePoints.first.longitude;
-        double maxLng = routePoints.first.longitude;
-
-        for (final point in routePoints) {
-          minLat = math.min(minLat, point.latitude);
-          maxLat = math.max(maxLat, point.latitude);
-          minLng = math.min(minLng, point.longitude);
-          maxLng = math.max(maxLng, point.longitude);
-        }
-
-        final bounds = LatLngBounds(
-          southwest: LatLng(minLat, minLng),
-          northeast: LatLng(maxLat, maxLng),
-        );
-
-        await _mapController!.animateCamera(
-          CameraUpdate.newLatLngBounds(
-            bounds,
-            80,
-          ),
-        );
-      }
-    } catch (e) {
-      debugPrint(
-        'Error drawing route: $e',
-      );
-    }
-  }
-
   // ============================================================
   // GET USER LOCATION
   // ============================================================
@@ -921,9 +720,6 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         userLocation = location;
         _locationLoaded = true;
-
-        // GPS location becomes the initial pickup location.
-        _selectedPickupLocation = location;
       });
 
       // Set user marker.
@@ -934,9 +730,6 @@ class _HomePageState extends State<HomePage> {
         position.latitude,
         position.longitude,
       );
-
-      // Draw line if destination already exists.
-      _updateRouteLine();
 
       // Once GPS is available, move map automatically.
       if (_mapReady && _mapController != null) {
@@ -1010,15 +803,14 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ============================================================
-  // MARKERS
+  // MARKER
   // ============================================================
 
   void _setMarkers() {
-    final Set<Marker> markers = {};
+    if (userLocation == null) return;
 
-    // User/current location marker.
-    if (userLocation != null) {
-      markers.add(
+    setState(() {
+      _markers = {
         Marker(
           markerId: const MarkerId('user'),
           position: userLocation!,
@@ -1029,92 +821,6 @@ class _HomePageState extends State<HomePage> {
             BitmapDescriptor.hueBlue,
           ),
         ),
-      );
-    }
-
-    // Selected pickup marker.
-    if (_selectedPickupLocation != null) {
-      markers.add(
-        Marker(
-          markerId: const MarkerId('selected_pickup'),
-          position: _selectedPickupLocation!,
-          infoWindow: const InfoWindow(
-            title: "Pickup location",
-          ),
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-            BitmapDescriptor.hueAzure,
-          ),
-        ),
-      );
-    }
-
-    // Selected destination marker.
-    if (_selectedDestinationLocation != null) {
-      markers.add(
-        Marker(
-          markerId: const MarkerId('selected_destination'),
-          position: _selectedDestinationLocation!,
-          infoWindow: const InfoWindow(
-            title: "Destination",
-          ),
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-            BitmapDescriptor.hueGreen,
-          ),
-        ),
-      );
-    }
-
-    if (!mounted) return;
-
-    setState(() {
-      _markers = markers;
-    });
-  }
-
-  // ============================================================
-  // DOTTED LINE BETWEEN PICKUP AND DESTINATION
-  // ============================================================
-
-  void _updateRouteLine() {
-    if (_selectedPickupLocation == null ||
-        _selectedDestinationLocation == null) {
-      if (!mounted) return;
-
-      setState(() {
-        _polylines = {};
-      });
-
-      return;
-    }
-
-    final Polyline dottedRoute = Polyline(
-      polylineId: const PolylineId('pickup_to_destination'),
-      points: [
-        _selectedPickupLocation!,
-        _selectedDestinationLocation!,
-      ],
-
-      // Dotted / dashed appearance.
-      patterns: [
-        PatternItem.dash(12),
-        PatternItem.gap(8),
-      ],
-
-      width: 4,
-      color: Colors.black87,
-
-      // Makes the line follow the earth's curvature.
-      geodesic: true,
-
-      // Keep it below markers.
-      zIndex: 2,
-    );
-
-    if (!mounted) return;
-
-    setState(() {
-      _polylines = {
-        dottedRoute,
       };
     });
   }
@@ -1130,11 +836,6 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _pickupSuggestions = [];
       });
-
-      // If pickup text was cleared, remove pickup selection.
-      _selectedPickupLocation = null;
-      _updateRouteLine();
-
       return;
     }
 
@@ -1162,11 +863,6 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _destinationSuggestions = [];
       });
-
-      // Remove destination and dotted line.
-      _selectedDestinationLocation = null;
-      _updateRouteLine();
-
       return;
     }
 
@@ -1397,12 +1093,12 @@ class _HomePageState extends State<HomePage> {
       }
     });
 
-    // Get exact coordinates of selected place.
+    // Get the exact coordinates of the selected place.
     final LatLng? location = await _getPlaceLocation(placeId);
 
     if (location == null) return;
 
-    // Add selected place marker.
+    // Add selected place to the map.
     final Set<Marker> updatedMarkers = {
       ..._markers,
       Marker(
@@ -1423,56 +1119,17 @@ class _HomePageState extends State<HomePage> {
       _markers = updatedMarkers;
     });
 
-    // ----------------------------------------------------------
-    // PICKUP SELECTED
-    // ----------------------------------------------------------
-
-    if (isPickup) {
-      // If pickup was manually selected, remember it as
-      // the user's pickup location.
-      userLocation = location;
-
-      // If a destination has already been selected,
-      // redraw the route using this pickup.
-      if (_destinationController.text.trim().isNotEmpty) {
-        final destinationText = _destinationController.text.trim();
-
-        // Find destination coordinates from existing marker.
-        final destinationMarker = _markers.firstWhere(
-          (marker) => marker.markerId.value == "selected_destination",
-          orElse: () => Marker(
-            markerId: const MarkerId("none"),
-            position: location,
+    // Move map to selected place.
+    if (_mapController != null) {
+      await _mapController!.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(
+            target: location,
+            zoom: 16,
           ),
-        );
-
-        if (destinationMarker.markerId.value != "none") {
-          await _drawRoute(
-            origin: location,
-            destination: destinationMarker.position,
-          );
-        }
-      }
-
-      return;
-    }
-
-    // ----------------------------------------------------------
-    // DESTINATION SELECTED
-    // ----------------------------------------------------------
-
-    if (userLocation == null) {
-      debugPrint(
-        "Cannot draw route because pickup location is unavailable.",
+        ),
       );
-      return;
     }
-
-    // Draw actual road-following route.
-    await _drawRoute(
-      origin: userLocation!,
-      destination: location,
-    );
   }
 
   // ============================================================
@@ -1737,7 +1394,9 @@ class _HomePageState extends State<HomePage> {
               flex: 2,
               child: Stack(
                 children: [
-                  // Map is ALWAYS displayed immediately.
+                  // The map is ALWAYS displayed immediately.
+                  //
+                  // It does not depend on userLocation.
                   GoogleMap(
                     initialCameraPosition: const CameraPosition(
                       target: _nigeriaCenter,
@@ -1749,13 +1408,16 @@ class _HomePageState extends State<HomePage> {
                     compassEnabled: true,
                     mapToolbarEnabled: false,
                     markers: _markers,
-                    polylines: _polylines,
                     onMapCreated: _onMapCreated,
                   ),
 
                   // =================================================
                   // LOCATION LOADING INDICATOR
                   // =================================================
+                  //
+                  // No circular progress indicator over the map.
+                  // Instead, a small non-blocking status is shown.
+                  //
 
                   if (!_locationLoaded)
                     Positioned(
@@ -1786,9 +1448,7 @@ class _HomePageState extends State<HomePage> {
                                 strokeWidth: 2,
                               ),
                             ),
-                            const SizedBox(
-                              width: 7,
-                            ),
+                            const SizedBox(width: 7),
                             Text(
                               "Finding you...",
                               style: TextStyle(
@@ -1873,9 +1533,7 @@ class _HomePageState extends State<HomePage> {
                       isPickup: true,
                     ),
 
-                    const SizedBox(
-                      height: 14,
-                    ),
+                    const SizedBox(height: 14),
 
                     // =================================================
                     // DESTINATION
@@ -9489,7 +9147,8 @@ class _TransportTicketPageState extends State<TransportTicketPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         /// ================= PROVIDER =================
-                        Row(
+                        Center(
+                            child: Row(
                           children: [
                             CircleAvatar(
                               radius: 24,
@@ -9525,7 +9184,7 @@ class _TransportTicketPageState extends State<TransportTicketPage> {
                               ),
                             ),
                           ],
-                        ),
+                        )),
 
                         const SizedBox(height: 20),
 
@@ -9615,7 +9274,7 @@ class _TransportTicketPageState extends State<TransportTicketPage> {
                     ),
                   ),
 
-                  const SizedBox(height: 10),
+                  const SizedBox(width: 10),
 
                   /// DOWNLOAD
                   Expanded(
