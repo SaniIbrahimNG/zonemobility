@@ -44,6 +44,7 @@ import 'dart:ui' as ui;
 import 'package:pdf/widgets.dart' as pw;
 import 'package:pdf/pdf.dart';
 import 'package:printing/printing.dart';
+import 'dart:math' as math;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -528,148 +529,53 @@ class _HomePageState extends State<HomePage> {
   // GOOGLE API KEY
   // ============================================================
 
-  static const String _googlePlacesApiKey = "AIzaSyAxD8Gvtn1KGomBFgvw0c4a-48";
+  static const String _googlePlacesApiKey =
+      "AIzaSyAxmD8Gvtn1KGomBFy3pWXRFgvw0c4a-48";
 
   // ============================================================
   // DEFAULT LOCATIONS
   // ============================================================
 
+  // Nigeria center
   static const LatLng _nigeriaCenter = LatLng(
     9.0820,
     8.6753,
   );
 
+  // Bauchi
   static const LatLng _bauchiCenter = LatLng(
     10.3158,
     9.8442,
   );
 
+  // ATBU Gubi Campus
   static const LatLng _atbuGubi = LatLng(
     10.4716,
     9.83011,
   );
 
   // ============================================================
-  // DARK MAP STYLE
-  // ============================================================
-
-  static const String _darkMapStyle = '''
-[
-  {
-    "elementType": "geometry",
-    "stylers": [
-      {
-        "color": "#212121"
-      }
-    ]
-  },
-  {
-    "elementType": "labels.icon",
-    "stylers": [
-      {
-        "visibility": "off"
-      }
-    ]
-  },
-  {
-    "elementType": "labels.text.fill",
-    "stylers": [
-      {
-        "color": "#757575"
-      }
-    ]
-  },
-  {
-    "elementType": "labels.text.stroke",
-    "stylers": [
-      {
-        "color": "#212121"
-      }
-    ]
-  },
-  {
-    "featureType": "administrative",
-    "elementType": "geometry",
-    "stylers": [
-      {
-        "color": "#757575"
-      }
-    ]
-  },
-  {
-    "featureType": "administrative.country",
-    "elementType": "geometry.stroke",
-    "stylers": [
-      {
-        "color": "#424242"
-      }
-    ]
-  },
-  {
-    "featureType": "road",
-    "elementType": "geometry.fill",
-    "stylers": [
-      {
-        "color": "#2c2c2c"
-      }
-    ]
-  },
-  {
-    "featureType": "road",
-    "elementType": "geometry.stroke",
-    "stylers": [
-      {
-        "color": "#1a1a1a"
-      }
-    ]
-  },
-  {
-    "featureType": "road",
-    "elementType": "labels.text.fill",
-    "stylers": [
-      {
-        "color": "#8a8a8a"
-      }
-    ]
-  },
-  {
-    "featureType": "water",
-    "elementType": "geometry",
-    "stylers": [
-      {
-        "color": "#000000"
-      }
-    ]
-  },
-  {
-    "featureType": "water",
-    "elementType": "labels.text.fill",
-    "stylers": [
-      {
-        "color": "#3d3d3d"
-      }
-    ]
-  }
-]
-''';
-
-  // ============================================================
   // STATE
   // ============================================================
 
   LatLng? userLocation;
-
-  // Actual selected pickup coordinate.
   LatLng? _pickupLocation;
-
-  // Actual selected destination coordinate.
   LatLng? _destinationLocation;
 
   GoogleMapController? _mapController;
 
   Set<Marker> _markers = {};
-
   Set<Polyline> _polylines = {};
+
+  // ============================================================
+  // SELECTED PICKUP / DESTINATION LOCATIONS
+  // ============================================================
+
+  LatLng? _selectedPickupLocation;
+  LatLng? _selectedDestinationLocation;
+
+  // Dotted line between pickup and destination.
+  // Set<Polyline> _polylines = {};
 
   String pickupAddress = '';
 
@@ -699,6 +605,57 @@ class _HomePageState extends State<HomePage> {
 
   String? _activeAutocompleteField;
 
+  List<LatLng> _decodePolyline(String encoded) {
+    final List<LatLng> points = [];
+
+    int index = 0;
+    int latitude = 0;
+    int longitude = 0;
+
+    while (index < encoded.length) {
+      int shift = 0;
+      int result = 0;
+
+      while (true) {
+        final int byte = encoded.codeUnitAt(index++) - 63;
+        result |= (byte & 0x1f) << shift;
+        shift += 5;
+
+        if (byte < 0x20) break;
+      }
+
+      final int deltaLatitude =
+          (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
+
+      latitude += deltaLatitude;
+
+      shift = 0;
+      result = 0;
+
+      while (true) {
+        final int byte = encoded.codeUnitAt(index++) - 63;
+        result |= (byte & 0x1f) << shift;
+        shift += 5;
+
+        if (byte < 0x20) break;
+      }
+
+      final int deltaLongitude =
+          (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
+
+      longitude += deltaLongitude;
+
+      points.add(
+        LatLng(
+          latitude / 1e5,
+          longitude / 1e5,
+        ),
+      );
+    }
+
+    return points;
+  }
+
   // ============================================================
   // INIT
   // ============================================================
@@ -707,8 +664,13 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
 
+    // Start GPS immediately.
+    //
+    // IMPORTANT:
+    // The map itself does NOT wait for this.
     _fetchUserLocation();
 
+    // Listen for autocomplete text changes.
     _pickupController.addListener(_onPickupChanged);
     _destinationController.addListener(_onDestinationChanged);
   }
@@ -744,8 +706,9 @@ class _HomePageState extends State<HomePage> {
     _mapController = controller;
     _mapReady = true;
 
-    //controller.setMapStyle(_darkMapStyle);
-
+    // Immediately show the default location.
+    //
+    // We deliberately do NOT wait for GPS.
     _moveToDefaultLocation();
   }
 
@@ -757,7 +720,7 @@ class _HomePageState extends State<HomePage> {
     if (_mapController == null) return;
 
     try {
-      // Start with Nigeria.
+      // First show Nigeria.
       await _mapController!.animateCamera(
         CameraUpdate.newCameraPosition(
           const CameraPosition(
@@ -767,13 +730,13 @@ class _HomePageState extends State<HomePage> {
         ),
       );
 
+      // Then narrow down to Bauchi / ATBU Gubi.
       await Future.delayed(
         const Duration(milliseconds: 500),
       );
 
       if (!mounted || _mapController == null) return;
 
-      // Narrow down to Gubi while GPS is loading.
       await _mapController!.animateCamera(
         CameraUpdate.newCameraPosition(
           const CameraPosition(
@@ -783,8 +746,143 @@ class _HomePageState extends State<HomePage> {
         ),
       );
     } catch (e) {
+      debugPrint("Default map movement error: $e");
+    }
+  }
+
+  Future<void> _drawRoute({
+    required LatLng origin,
+    required LatLng destination,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse(
+          'https://routes.googleapis.com/directions/v2:computeRoutes',
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': _googlePlacesApiKey,
+          'X-Goog-FieldMask': 'routes.polyline.encodedPolyline,'
+              'routes.distanceMeters,'
+              'routes.duration',
+        },
+        body: jsonEncode({
+          'origin': {
+            'location': {
+              'latLng': {
+                'latitude': origin.latitude,
+                'longitude': origin.longitude,
+              },
+            },
+          },
+          'destination': {
+            'location': {
+              'latLng': {
+                'latitude': destination.latitude,
+                'longitude': destination.longitude,
+              },
+            },
+          },
+          'travelMode': 'DRIVE',
+          'routingPreference': 'TRAFFIC_AWARE',
+          'polylineQuality': 'HIGH_QUALITY',
+          'polylineEncoding': 'ENCODED_POLYLINE',
+          'computeAlternativeRoutes': false,
+          'routeModifiers': {
+            'avoidTolls': false,
+            'avoidHighways': false,
+            'avoidFerries': false,
+          },
+          'languageCode': 'en-US',
+          'units': 'METRIC',
+        }),
+      );
+
       debugPrint(
-        "Default map movement error: $e",
+        'ROUTES STATUS: ${response.statusCode}',
+      );
+
+      debugPrint(
+        'ROUTES RESPONSE: ${response.body}',
+      );
+
+      if (response.statusCode != 200) {
+        debugPrint(
+          'Route request failed: ${response.body}',
+        );
+        return;
+      }
+
+      final Map<String, dynamic> data = jsonDecode(response.body);
+
+      final List routes = data['routes'] ?? [];
+
+      if (routes.isEmpty) {
+        debugPrint('No route found.');
+        return;
+      }
+
+      final String encodedPolyline =
+          routes[0]['polyline']?['encodedPolyline']?.toString() ?? '';
+
+      if (encodedPolyline.isEmpty) {
+        debugPrint('Route returned without polyline.');
+        return;
+      }
+
+      final List<LatLng> routePoints = _decodePolyline(encodedPolyline);
+
+      if (routePoints.isEmpty) {
+        debugPrint('Decoded route contains no points.');
+        return;
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _polylines = {
+          Polyline(
+            polylineId: const PolylineId('ride_route'),
+            points: routePoints,
+            width: 5,
+            color: Colors.black,
+            geodesic: false,
+            startCap: Cap.roundCap,
+            endCap: Cap.roundCap,
+            jointType: JointType.round,
+          ),
+        };
+      });
+
+      // Fit the entire route inside the map.
+      if (_mapController != null) {
+        double minLat = routePoints.first.latitude;
+        double maxLat = routePoints.first.latitude;
+        double minLng = routePoints.first.longitude;
+        double maxLng = routePoints.first.longitude;
+
+        for (final point in routePoints) {
+          minLat = math.min(minLat, point.latitude);
+          maxLat = math.max(maxLat, point.latitude);
+          minLng = math.min(minLng, point.longitude);
+          maxLng = math.max(maxLng, point.longitude);
+        }
+
+        final bounds = LatLngBounds(
+          southwest: LatLng(minLat, minLng),
+          northeast: LatLng(maxLat, maxLng),
+        );
+
+        await _mapController!.animateCamera(
+          CameraUpdate.newLatLngBounds(
+            bounds,
+            80,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint(
+        'Error drawing route: $e',
       );
     }
   }
@@ -803,10 +901,9 @@ class _HomePageState extends State<HomePage> {
 
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
-        debugPrint(
-          "Location permission unavailable.",
-        );
+        debugPrint("Location permission unavailable.");
 
+        // Keep the map at ATBU Gubi.
         return;
       }
 
@@ -825,17 +922,23 @@ class _HomePageState extends State<HomePage> {
         userLocation = location;
         _locationLoaded = true;
 
-        // User's current location is initially pickup.
-        _pickupLocation = location;
+        // GPS location becomes the initial pickup location.
+        _selectedPickupLocation = location;
       });
 
+      // Set user marker.
       _setMarkers();
 
+      // Get address for pickup.
       await _getAddressFromLatLng(
         position.latitude,
         position.longitude,
       );
 
+      // Draw line if destination already exists.
+      _updateRouteLine();
+
+      // Once GPS is available, move map automatically.
       if (_mapReady && _mapController != null) {
         await Future.delayed(
           const Duration(milliseconds: 200),
@@ -853,14 +956,12 @@ class _HomePageState extends State<HomePage> {
         );
       }
     } catch (e) {
-      debugPrint(
-        "Error fetching location: $e",
-      );
+      debugPrint("Error fetching location: $e");
     }
   }
 
   // ============================================================
-  // GET ADDRESS
+  // GET ADDRESS FROM COORDINATES
   // ============================================================
 
   Future<void> _getAddressFromLatLng(
@@ -888,9 +989,7 @@ class _HomePageState extends State<HomePage> {
       }
 
       if ((place.administrativeArea ?? '').trim().isNotEmpty) {
-        parts.add(
-          place.administrativeArea!.trim(),
-        );
+        parts.add(place.administrativeArea!.trim());
       }
 
       final String address = parts.join(', ');
@@ -900,14 +999,13 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         pickupAddress = address;
 
+        // Only autofill if the user has not typed anything.
         if (_pickupController.text.trim().isEmpty) {
           _pickupController.text = address;
         }
       });
     } catch (e) {
-      debugPrint(
-        "Error getting address: $e",
-      );
+      debugPrint("Error getting address: $e");
     }
   }
 
@@ -918,6 +1016,7 @@ class _HomePageState extends State<HomePage> {
   void _setMarkers() {
     final Set<Marker> markers = {};
 
+    // User/current location marker.
     if (userLocation != null) {
       markers.add(
         Marker(
@@ -933,31 +1032,33 @@ class _HomePageState extends State<HomePage> {
       );
     }
 
-    if (_pickupLocation != null) {
+    // Selected pickup marker.
+    if (_selectedPickupLocation != null) {
       markers.add(
         Marker(
-          markerId: const MarkerId(
-            'selected_pickup',
-          ),
-          position: _pickupLocation!,
-          infoWindow: InfoWindow(
+          markerId: const MarkerId('selected_pickup'),
+          position: _selectedPickupLocation!,
+          infoWindow: const InfoWindow(
             title: "Pickup location",
-            snippet: _pickupController.text,
+          ),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueAzure,
           ),
         ),
       );
     }
 
-    if (_destinationLocation != null) {
+    // Selected destination marker.
+    if (_selectedDestinationLocation != null) {
       markers.add(
         Marker(
-          markerId: const MarkerId(
-            'selected_destination',
-          ),
-          position: _destinationLocation!,
-          infoWindow: InfoWindow(
+          markerId: const MarkerId('selected_destination'),
+          position: _selectedDestinationLocation!,
+          infoWindow: const InfoWindow(
             title: "Destination",
-            snippet: _destinationController.text,
+          ),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueGreen,
           ),
         ),
       );
@@ -971,11 +1072,14 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ============================================================
-  // DRAW RIDE LINE
+  // DOTTED LINE BETWEEN PICKUP AND DESTINATION
   // ============================================================
 
-  void _updateRideRoute() {
-    if (_pickupLocation == null || _destinationLocation == null) {
+  void _updateRouteLine() {
+    if (_selectedPickupLocation == null ||
+        _selectedDestinationLocation == null) {
+      if (!mounted) return;
+
       setState(() {
         _polylines = {};
       });
@@ -983,91 +1087,36 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
+    final Polyline dottedRoute = Polyline(
+      polylineId: const PolylineId('pickup_to_destination'),
+      points: [
+        _selectedPickupLocation!,
+        _selectedDestinationLocation!,
+      ],
+
+      // Dotted / dashed appearance.
+      patterns: [
+        PatternItem.dash(12),
+        PatternItem.gap(8),
+      ],
+
+      width: 4,
+      color: Colors.black87,
+
+      // Makes the line follow the earth's curvature.
+      geodesic: true,
+
+      // Keep it below markers.
+      zIndex: 2,
+    );
+
+    if (!mounted) return;
+
     setState(() {
       _polylines = {
-        Polyline(
-          polylineId: const PolylineId('ride_route'),
-          points: [
-            _pickupLocation!,
-            _destinationLocation!,
-          ],
-          color: Colors.deepPurple,
-          width: 5,
-          startCap: Cap.roundCap,
-          endCap: Cap.roundCap,
-        ),
+        dottedRoute,
       };
     });
-  }
-
-  // ============================================================
-  // FIT BOTH LOCATIONS ON MAP
-  // ============================================================
-
-  Future<void> _fitRideLocations() async {
-    if (_mapController == null ||
-        _pickupLocation == null ||
-        _destinationLocation == null) {
-      return;
-    }
-
-    try {
-      final double minLat = min(
-        _pickupLocation!.latitude,
-        _destinationLocation!.latitude,
-      );
-
-      final double maxLat = max(
-        _pickupLocation!.latitude,
-        _destinationLocation!.latitude,
-      );
-
-      final double minLng = min(
-        _pickupLocation!.longitude,
-        _destinationLocation!.longitude,
-      );
-
-      final double maxLng = max(
-        _pickupLocation!.longitude,
-        _destinationLocation!.longitude,
-      );
-
-      // Avoid LatLngBounds failure when both points
-      // are extremely close together.
-      if ((maxLat - minLat).abs() < 0.0001 &&
-          (maxLng - minLng).abs() < 0.0001) {
-        await _mapController!.animateCamera(
-          CameraUpdate.newCameraPosition(
-            CameraPosition(
-              target: _pickupLocation!,
-              zoom: 16,
-            ),
-          ),
-        );
-
-        return;
-      }
-
-      await _mapController!.animateCamera(
-        CameraUpdate.newLatLngBounds(
-          LatLngBounds(
-            southwest: LatLng(
-              minLat,
-              minLng,
-            ),
-            northeast: LatLng(
-              maxLat,
-              maxLng,
-            ),
-          ),
-          80,
-        ),
-      );
-    } catch (e) {
-      debugPrint(
-        "Fit ride locations error: $e",
-      );
-    }
   }
 
   // ============================================================
@@ -1080,9 +1129,11 @@ class _HomePageState extends State<HomePage> {
     if (query.isEmpty) {
       setState(() {
         _pickupSuggestions = [];
-        _pickupLocation = null;
-        _updateRideRoute();
       });
+
+      // If pickup text was cleared, remove pickup selection.
+      _selectedPickupLocation = null;
+      _updateRouteLine();
 
       return;
     }
@@ -1110,9 +1161,11 @@ class _HomePageState extends State<HomePage> {
     if (query.isEmpty) {
       setState(() {
         _destinationSuggestions = [];
-        _destinationLocation = null;
-        _updateRideRoute();
       });
+
+      // Remove destination and dotted line.
+      _selectedDestinationLocation = null;
+      _updateRouteLine();
 
       return;
     }
@@ -1144,7 +1197,6 @@ class _HomePageState extends State<HomePage> {
       debugPrint(
         "Google Places API key has not been configured.",
       );
-
       return;
     }
 
@@ -1161,7 +1213,11 @@ class _HomePageState extends State<HomePage> {
     try {
       final Map<String, dynamic> requestBody = {
         "input": query,
+
+        // Restrict results to Nigeria.
         "includedRegionCodes": ["ng"],
+
+        // Prefer locations around the user.
         if (userLocation != null)
           "locationBias": {
             "circle": {
@@ -1203,7 +1259,6 @@ class _HomePageState extends State<HomePage> {
           "Places autocomplete error: "
           "${response.statusCode} ${response.body}",
         );
-
         return;
       }
 
@@ -1290,10 +1345,8 @@ class _HomePageState extends State<HomePage> {
 
       if (response.statusCode != 200) {
         debugPrint(
-          "Place details error: "
-          "${response.statusCode}",
+          "Place details error: ${response.statusCode}",
         );
-
         return null;
       }
 
@@ -1307,16 +1360,13 @@ class _HomePageState extends State<HomePage> {
 
       final double? lng = (location["longitude"] as num?)?.toDouble();
 
-      if (lat == null || lng == null) {
-        return null;
-      }
+      if (lat == null || lng == null) return null;
 
       return LatLng(lat, lng);
     } catch (e) {
       debugPrint(
         "Place details failed: $e",
       );
-
       return null;
     }
   }
@@ -1333,53 +1383,96 @@ class _HomePageState extends State<HomePage> {
 
     final String placeId = suggestion["placeId"]?.toString() ?? "";
 
-    if (description.isEmpty || placeId.isEmpty) {
-      return;
-    }
+    if (description.isEmpty) return;
 
     FocusScope.of(context).unfocus();
 
     setState(() {
       if (isPickup) {
         _pickupController.text = description;
-
         _pickupSuggestions = [];
       } else {
         _destinationController.text = description;
-
         _destinationSuggestions = [];
       }
-
-      _activeAutocompleteField = null;
     });
 
+    // Get exact coordinates of selected place.
     final LatLng? location = await _getPlaceLocation(placeId);
 
-    if (location == null || !mounted) return;
+    if (location == null) return;
+
+    // Add selected place marker.
+    final Set<Marker> updatedMarkers = {
+      ..._markers,
+      Marker(
+        markerId: MarkerId(
+          isPickup ? "selected_pickup" : "selected_destination",
+        ),
+        position: location,
+        infoWindow: InfoWindow(
+          title: isPickup ? "Pickup location" : "Destination",
+          snippet: description,
+        ),
+      ),
+    };
+
+    if (!mounted) return;
 
     setState(() {
-      if (isPickup) {
-        _pickupLocation = location;
-      } else {
-        _destinationLocation = location;
-      }
+      _markers = updatedMarkers;
     });
 
-    _setMarkers();
-    _updateRideRoute();
+    // ----------------------------------------------------------
+    // PICKUP SELECTED
+    // ----------------------------------------------------------
 
-    if (_pickupLocation != null && _destinationLocation != null) {
-      await _fitRideLocations();
-    } else if (_mapController != null) {
-      await _mapController!.animateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(
-            target: location,
-            zoom: 16,
+    if (isPickup) {
+      // If pickup was manually selected, remember it as
+      // the user's pickup location.
+      userLocation = location;
+
+      // If a destination has already been selected,
+      // redraw the route using this pickup.
+      if (_destinationController.text.trim().isNotEmpty) {
+        final destinationText = _destinationController.text.trim();
+
+        // Find destination coordinates from existing marker.
+        final destinationMarker = _markers.firstWhere(
+          (marker) => marker.markerId.value == "selected_destination",
+          orElse: () => Marker(
+            markerId: const MarkerId("none"),
+            position: location,
           ),
-        ),
-      );
+        );
+
+        if (destinationMarker.markerId.value != "none") {
+          await _drawRoute(
+            origin: location,
+            destination: destinationMarker.position,
+          );
+        }
+      }
+
+      return;
     }
+
+    // ----------------------------------------------------------
+    // DESTINATION SELECTED
+    // ----------------------------------------------------------
+
+    if (userLocation == null) {
+      debugPrint(
+        "Cannot draw route because pickup location is unavailable.",
+      );
+      return;
+    }
+
+    // Draw actual road-following route.
+    await _drawRoute(
+      origin: userLocation!,
+      destination: location,
+    );
   }
 
   // ============================================================
@@ -1443,6 +1536,11 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
         ),
+
+        // ======================================================
+        // AUTOCOMPLETE RESULTS
+        // ======================================================
+
         if (_activeAutocompleteField == (isPickup ? "pickup" : "destination") &&
             suggestions.isNotEmpty)
           Container(
@@ -1532,33 +1630,40 @@ class _HomePageState extends State<HomePage> {
   Future<void> _handleRideSelection(
     String rideType,
   ) async {
-    if (_pickupLocation == null) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+    if (userLocation == null) {
+      showDialog(
+        context: context,
+        builder: (_) => const AlertDialog(
+          title: Text("Location Error"),
           content: Text(
-            "Please select a pickup location.",
+            "Your location is still being detected. "
+            "Please wait a moment and try again.",
           ),
+          actions: [
+            TextButton(
+              onPressed: null,
+              child: Text("OK"),
+            ),
+          ],
         ),
       );
 
       return;
     }
 
-    if (_destinationLocation == null) {
-      if (!mounted) return;
+    final requestDoc =
+        await FirebaseFirestore.instance.collection('ride_requests').add({
+      'RideType': rideType,
+      'Status': 'pending',
+      'Time': FieldValue.serverTimestamp(),
+      'Pickup Location': _pickupController.text.trim(),
+      'Destination': _destinationController.text.trim(),
+      'userName': widget.userName,
+      'DriverStatus': "driver_booked",
+      'Code': "8492",
+    });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            "Please select a destination.",
-          ),
-        ),
-      );
-
-      return;
-    }
+    final rideId = requestDoc.id;
 
     if (!mounted) return;
 
@@ -1566,18 +1671,47 @@ class _HomePageState extends State<HomePage> {
       MaterialPageRoute(
         fullscreenDialog: true,
         builder: (_) => SearchingScreen(
+          rideId: rideId,
           rideType: rideType,
           pickupLocation: _pickupController.text.trim(),
           destination: _destinationController.text.trim(),
-          pickupLatitude: _pickupLocation!.latitude,
-          pickupLongitude: _pickupLocation!.longitude,
-          destinationLatitude: _destinationLocation!.latitude,
-          destinationLongitude: _destinationLocation!.longitude,
-          userName: widget.userName,
-          onCancel: () {
-            if (Navigator.of(context).canPop()) {
-              Navigator.of(context).pop();
-            }
+          onCancel: () async {
+            Navigator.of(context).pop();
+
+            await FirebaseFirestore.instance
+                .collection('ride_requests')
+                .doc(requestDoc.id)
+                .update({
+              'Status': 'cancelled',
+            });
+
+            if (!mounted) return;
+
+            showDialog(
+              context: context,
+              builder: (_) => AlertDialog(
+                title: const Text(
+                  "Ride Cancelled",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                content: const Text(
+                  "You have cancelled the ride.",
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text(
+                      "OK",
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
           },
         ),
       ),
@@ -1603,6 +1737,7 @@ class _HomePageState extends State<HomePage> {
               flex: 2,
               child: Stack(
                 children: [
+                  // Map is ALWAYS displayed immediately.
                   GoogleMap(
                     initialCameraPosition: const CameraPosition(
                       target: _nigeriaCenter,
@@ -1617,6 +1752,11 @@ class _HomePageState extends State<HomePage> {
                     polylines: _polylines,
                     onMapCreated: _onMapCreated,
                   ),
+
+                  // =================================================
+                  // LOCATION LOADING INDICATOR
+                  // =================================================
+
                   if (!_locationLoaded)
                     Positioned(
                       top: 16,
@@ -1650,7 +1790,7 @@ class _HomePageState extends State<HomePage> {
                               width: 7,
                             ),
                             Text(
-                              "",
+                              "Finding you...",
                               style: TextStyle(
                                 fontSize: 11,
                                 color: Colors.grey[700],
@@ -1661,6 +1801,11 @@ class _HomePageState extends State<HomePage> {
                         ),
                       ),
                     ),
+
+                  // =================================================
+                  // BACK BUTTON
+                  // =================================================
+
                   Positioned(
                     top: 16,
                     left: 16,
@@ -1692,7 +1837,7 @@ class _HomePageState extends State<HomePage> {
             ),
 
             // ==================================================
-            // BOOKING SECTION
+            // BOTTOM BOOKING SECTION
             // ==================================================
 
             Expanded(
@@ -1715,6 +1860,10 @@ class _HomePageState extends State<HomePage> {
                 ),
                 child: Column(
                   children: [
+                    // =================================================
+                    // PICKUP
+                    // =================================================
+
                     _buildLocationField(
                       controller: _pickupController,
                       focusNode: _pickupFocusNode,
@@ -1723,9 +1872,15 @@ class _HomePageState extends State<HomePage> {
                       iconColor: Colors.grey[800]!,
                       isPickup: true,
                     ),
+
                     const SizedBox(
                       height: 14,
                     ),
+
+                    // =================================================
+                    // DESTINATION
+                    // =================================================
+
                     _buildLocationField(
                       controller: _destinationController,
                       focusNode: _destinationFocusNode,
@@ -1734,31 +1889,27 @@ class _HomePageState extends State<HomePage> {
                       iconColor: Colors.green,
                       isPickup: false,
                     ),
+
                     const Spacer(),
+
+                    // =================================================
+                    // BOOK BUTTON
+                    // =================================================
+
                     SizedBox(
                       width: double.infinity,
                       height: 52,
                       child: ElevatedButton(
                         onPressed: () {
-                          if (_pickupLocation == null) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  "Please select your pickup location.",
-                                ),
-                              ),
-                            );
-
-                            return;
-                          }
-
-                          if (_destinationLocation == null) {
+                          if (_destinationController.text.trim().isEmpty) {
                             _destinationFocusNode.requestFocus();
 
-                            ScaffoldMessenger.of(context).showSnackBar(
+                            ScaffoldMessenger.of(
+                              context,
+                            ).showSnackBar(
                               const SnackBar(
                                 content: Text(
-                                  "Please select your destination.",
+                                  "Please Enter Your Destination!",
                                 ),
                               ),
                             );
@@ -1778,7 +1929,9 @@ class _HomePageState extends State<HomePage> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.black,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(18),
+                            borderRadius: BorderRadius.circular(
+                              18,
+                            ),
                           ),
                         ),
                         child: const Text(
@@ -8602,8 +8755,8 @@ class _TicketBookingPageState extends State<TicketBookingPage> {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(
-        horizontal: 18,
-        vertical: 18,
+        horizontal: 16,
+        vertical: 16,
       ),
       decoration: BoxDecoration(
         color: Colors.grey.shade50,
@@ -8612,80 +8765,109 @@ class _TicketBookingPageState extends State<TicketBookingPage> {
           color: Colors.grey.shade300,
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          /// FROM
-          Row(
-            children: [
-              const Text(
-                "From",
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.grey,
-                  fontWeight: FontWeight.w500,
+          // =====================================================
+          // FROM
+          // =====================================================
+
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  "From",
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-              ),
-              const Spacer(),
-              Text(
-                route['from'],
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
+                const SizedBox(height: 6),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 11,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: Colors.grey.shade300,
+                    ),
+                  ),
+                  child: Text(
+                    route['from']?.toString() ?? '',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black,
+                    ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
 
-          const SizedBox(height: 5),
+          // =====================================================
+          // CONNECTING LINE
+          // =====================================================
 
-          /// Route indicator
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Column(
-                children: [
-                  Icon(
-                    Icons.trip_origin,
-                    size: 16,
-                    color: Colors.grey.shade700,
+          Container(
+            width: 20,
+            height: 1,
+            margin: const EdgeInsets.only(
+              bottom: 16,
+            ),
+            color: Colors.grey.shade400,
+          ),
+          // =====================================================
+          // TO
+          // =====================================================
+
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  "To",
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey,
+                    fontWeight: FontWeight.w500,
                   ),
-                  Container(
-                    width: 2,
-                    height: 22,
-                    color: Colors.grey.shade300,
-                  ),
-                  const Icon(
-                    Icons.location_on,
-                    size: 18,
-                    color: Colors.black,
-                  ),
-                ],
-              ),
-              const SizedBox(width: 5),
-              Expanded(
-                child: Row(
-                  children: [
-                    const Text(
-                      "To",
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      route['to'],
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
                 ),
-              ),
-            ],
+                const SizedBox(height: 6),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 11,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: Colors.grey.shade300,
+                    ),
+                  ),
+                  child: Text(
+                    route['to']?.toString() ?? '',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -9095,7 +9277,7 @@ class _TransportTicketPageState extends State<TransportTicketPage> {
           flex: 3,
           child: Text(
             value,
-            textAlign: TextAlign.left,
+            textAlign: TextAlign.right,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
@@ -9411,46 +9593,49 @@ class _TransportTicketPageState extends State<TransportTicketPage> {
 
             const SizedBox(height: 15),
 
-            Row(
-              children: [
-                /// CANCEL
-                Expanded(
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                    onPressed: loadingCancel ? null : _cancelTicket,
-                    child: const Text(
-                      "Cancel Ticket",
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Row(
+                children: [
+                  /// CANCEL
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      onPressed: loadingCancel ? null : _cancelTicket,
+                      child: const Text(
+                        "Cancel Ticket",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ),
-                ),
 
-                const SizedBox(height: 10),
+                  const SizedBox(height: 10),
 
-                /// DOWNLOAD
-                Expanded(
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.black,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                    onPressed: _downloadTicketPdf,
-                    child: const Text(
-                      "Download",
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                  /// DOWNLOAD
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      onPressed: _downloadTicketPdf,
+                      child: const Text(
+                        "Download",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
 
             const SizedBox(height: 20),
@@ -21014,10 +21199,7 @@ class _RegisterPageState extends State<RegisterPage>
 class RidePage extends StatefulWidget {
   final void Function(String)? onSelect;
 
-  const RidePage({
-    Key? key,
-    this.onSelect,
-  }) : super(key: key);
+  const RidePage({Key? key, this.onSelect}) : super(key: key);
 
   @override
   State<RidePage> createState() => _RidePageState();
@@ -21026,30 +21208,20 @@ class RidePage extends StatefulWidget {
 class _RidePageState extends State<RidePage> {
   bool isLoading = false;
 
-  Future<void> _handleSelection(
-    String rideType,
-  ) async {
+  void _handleSelection(String rideType) async {
     setState(() {
       isLoading = true;
     });
 
-    // Keep your existing loading experience.
-    await Future.delayed(
-      const Duration(seconds: 2),
-    );
+    await Future.delayed(const Duration(seconds: 2));
 
-    if (!mounted) return;
-
-    // Return the selected vehicle to HomePage.
     if (widget.onSelect != null) {
       widget.onSelect!(rideType);
     }
 
-    // Only close this bottom sheet.
-    //
-    // HomePage handles navigation to SearchingScreen.
     if (mounted) {
       Navigator.pop(context);
+      Navigator.pushNamed(context, '/searching');
     }
   }
 
@@ -21088,9 +21260,7 @@ class _RidePageState extends State<RidePage> {
       child: isLoading
           ? const Center(
               child: Padding(
-                padding: EdgeInsets.symmetric(
-                  vertical: 40,
-                ),
+                padding: EdgeInsets.symmetric(vertical: 40),
                 child: CircularProgressIndicator(),
               ),
             )
@@ -21100,9 +21270,7 @@ class _RidePageState extends State<RidePage> {
                 Container(
                   width: 40,
                   height: 5,
-                  margin: const EdgeInsets.only(
-                    bottom: 12,
-                  ),
+                  margin: const EdgeInsets.only(bottom: 12),
                   decoration: BoxDecoration(
                     color: Colors.grey[500],
                     borderRadius: BorderRadius.circular(10),
@@ -21115,9 +21283,7 @@ class _RidePageState extends State<RidePage> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                const SizedBox(
-                  height: 12,
-                ),
+                const SizedBox(height: 12),
                 Flexible(
                   child: ListView.builder(
                     shrinkWrap: true,
@@ -21126,9 +21292,7 @@ class _RidePageState extends State<RidePage> {
                       final option = rideOptions[index];
 
                       return Card(
-                        margin: const EdgeInsets.symmetric(
-                          vertical: 8,
-                        ),
+                        margin: const EdgeInsets.symmetric(vertical: 8),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -21179,31 +21343,18 @@ class _RidePageState extends State<RidePage> {
 }
 
 class SearchingScreen extends StatefulWidget {
+  final String rideId;
   final String rideType;
-
   final String pickupLocation;
   final String destination;
-
-  final double pickupLatitude;
-  final double pickupLongitude;
-
-  final double destinationLatitude;
-  final double destinationLongitude;
-
-  final String userName;
-
   final VoidCallback onCancel;
 
   const SearchingScreen({
     Key? key,
+    required this.rideId,
     required this.rideType,
     required this.pickupLocation,
     required this.destination,
-    required this.pickupLatitude,
-    required this.pickupLongitude,
-    required this.destinationLatitude,
-    required this.destinationLongitude,
-    required this.userName,
     required this.onCancel,
   }) : super(key: key);
 
@@ -21212,290 +21363,52 @@ class SearchingScreen extends StatefulWidget {
 }
 
 class _SearchingScreenState extends State<SearchingScreen> {
-  // ============================================================
-  // RIDE DATA
-  // ============================================================
-
-  String? rideId;
-
-  StreamSubscription<DocumentSnapshot>? _rideSubscription;
-
-  // ============================================================
-  // TIMER
-  // ============================================================
+  late Stream<DocumentSnapshot> rideStream;
 
   Timer? timer;
 
   double progress = 0.0;
   int cycleCount = 0;
 
-  // ============================================================
-  // MAP
-  // ============================================================
+  LatLng? userLocation;
+  List<LatLng> nearbyDrivers = [];
 
   GoogleMapController? _mapController;
-
   Set<Marker> _markers = {};
 
-  Set<Polyline> _polylines = {};
+  String getRideTypeImage(String rideType) {
+    switch (rideType.toLowerCase()) {
+      case 'cab':
+        return 'assets/images/taxi.png';
 
-  // ============================================================
-  // DARK MAP STYLE
-  // ============================================================
+      case 'bike':
+        return 'assets/images/man.png';
 
-  static const String _darkMapStyle = '''
-[
-  {
-    "elementType": "geometry",
-    "stylers": [
-      {
-        "color": "#212121"
-      }
-    ]
-  },
-  {
-    "elementType": "labels.icon",
-    "stylers": [
-      {
-        "visibility": "off"
-      }
-    ]
-  },
-  {
-    "elementType": "labels.text.fill",
-    "stylers": [
-      {
-        "color": "#757575"
-      }
-    ]
-  },
-  {
-    "elementType": "labels.text.stroke",
-    "stylers": [
-      {
-        "color": "#212121"
-      }
-    ]
-  },
-  {
-    "featureType": "administrative",
-    "elementType": "geometry",
-    "stylers": [
-      {
-        "color": "#757575"
-      }
-    ]
-  },
-  {
-    "featureType": "administrative.country",
-    "elementType": "geometry.stroke",
-    "stylers": [
-      {
-        "color": "#424242"
-      }
-    ]
-  },
-  {
-    "featureType": "road",
-    "elementType": "geometry.fill",
-    "stylers": [
-      {
-        "color": "#2c2c2c"
-      }
-    ]
-  },
-  {
-    "featureType": "road",
-    "elementType": "geometry.stroke",
-    "stylers": [
-      {
-        "color": "#1a1a1a"
-      }
-    ]
-  },
-  {
-    "featureType": "road",
-    "elementType": "labels.text.fill",
-    "stylers": [
-      {
-        "color": "#8a8a8a"
-      }
-    ]
-  },
-  {
-    "featureType": "water",
-    "elementType": "geometry",
-    "stylers": [
-      {
-        "color": "#000000"
-      }
-    ]
-  },
-  {
-    "featureType": "water",
-    "elementType": "labels.text.fill",
-    "stylers": [
-      {
-        "color": "#3d3d3d"
-      }
-    ]
-  }
-]
-''';
+      case 'tricycle':
+        return 'assets/images/tricycle.png';
 
-  // ============================================================
-  // INITIALIZE
-  // ============================================================
-
-  @override
-  void initState() {
-    super.initState();
-
-    _setMarkers();
-
-    _setRidePolyline();
-
-    _createRideRequest();
-  }
-
-  // ============================================================
-  // CREATE FIRESTORE RIDE
-  // ============================================================
-
-  Future<void> _createRideRequest() async {
-    try {
-      final DocumentReference requestDoc =
-          await FirebaseFirestore.instance.collection('ride_requests').add({
-        'RideType': widget.rideType,
-        'Status': 'pending',
-        'Time': FieldValue.serverTimestamp(),
-        'Pickup Location': widget.pickupLocation,
-        'Destination': widget.destination,
-        'pickupLatitude': widget.pickupLatitude,
-        'pickupLongitude': widget.pickupLongitude,
-        'destinationLatitude': widget.destinationLatitude,
-        'destinationLongitude': widget.destinationLongitude,
-        'userName': widget.userName,
-        'DriverStatus': 'driver_booked',
-        'Code': '8492',
-      });
-
-      if (!mounted) return;
-
-      setState(() {
-        rideId = requestDoc.id;
-      });
-
-      _listenForRideUpdates(
-        requestDoc.id,
-      );
-
-      debugPrint(
-        "Ride created: ${requestDoc.id}",
-      );
-    } catch (e) {
-      debugPrint(
-        "Error creating ride request: $e",
-      );
-
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            "Unable to create ride request. Please try again.",
-          ),
-        ),
-      );
+      default:
+        return 'assets/images/man.png';
     }
   }
-
-  // ============================================================
-  // LISTEN FOR DRIVER
-  // ============================================================
-
-  void _listenForRideUpdates(
-    String id,
-  ) {
-    _rideSubscription?.cancel();
-
-    _rideSubscription = FirebaseFirestore.instance
-        .collection('ride_requests')
-        .doc(id)
-        .snapshots()
-        .listen(
-      (snapshot) {
-        if (!snapshot.exists) return;
-
-        final data = snapshot.data() as Map<String, dynamic>?;
-
-        if (data == null) return;
-
-        if (data['Status'] == 'driver_accepted') {
-          timer?.cancel();
-
-          if (!mounted) return;
-
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (_) => DriverOfferScreen(
-                rideId: id,
-                driverName: data['driverId'] ?? '',
-                price: data['price'],
-                vehicleType: data['vehicleType'],
-                vehicleDescription: data['vehicleType'],
-                pickup: data['Pickup Location'] ?? widget.pickupLocation,
-                destination: data['Destination'] ?? widget.destination,
-                rideType: data['RideType'] ?? widget.rideType,
-              ),
-            ),
-          );
-        }
-
-        if (data['Status'] == 'cancelled') {
-          timer?.cancel();
-        }
-      },
-      onError: (error) {
-        debugPrint(
-          "Ride listener error: $error",
-        );
-      },
-    );
-  }
-
-  // ============================================================
-  // TIMER
-  // ============================================================
 
   void startTimerLoop() {
     progress = 0;
 
-    timer?.cancel();
-
     timer = Timer.periodic(
       const Duration(seconds: 1),
       (timer) {
-        if (!mounted) {
-          timer.cancel();
-          return;
-        }
-
         setState(() {
           progress += 1 / 120;
 
           if (progress >= 1) {
             timer.cancel();
-
             cycleCount++;
 
             if (cycleCount < 2) {
               startTimerLoop();
             } else {
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(
+              ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text(
                     'Unable to find a driver. Please try again.',
@@ -21503,7 +21416,7 @@ class _SearchingScreenState extends State<SearchingScreen> {
                 ),
               );
 
-              _cancelRide();
+              widget.onCancel();
             }
           }
         });
@@ -21511,326 +21424,154 @@ class _SearchingScreenState extends State<SearchingScreen> {
     );
   }
 
-  // ============================================================
-  // MAP MARKERS
-  // ============================================================
+  Future<void> fetchUserLocation() async {
+    final position = await Geolocator.getCurrentPosition(
+      desiredAccuracy: LocationAccuracy.high,
+    );
+
+    setState(() {
+      userLocation = LatLng(
+        position.latitude,
+        position.longitude,
+      );
+
+      _setMarkers();
+    });
+  }
+
+  void loadNearbyDrivers() {
+    if (userLocation != null) {
+      nearbyDrivers = [
+        LatLng(
+          userLocation!.latitude + 0.001,
+          userLocation!.longitude + 0.001,
+        ),
+        LatLng(
+          userLocation!.latitude - 0.001,
+          userLocation!.longitude - 0.001,
+        ),
+      ];
+
+      _setMarkers();
+    }
+  }
 
   void _setMarkers() {
-    final Set<Marker> markers = {};
+    final markers = <Marker>{};
 
-    markers.add(
-      Marker(
-        markerId: const MarkerId('pickup'),
-        position: LatLng(
-          widget.pickupLatitude,
-          widget.pickupLongitude,
+    if (userLocation != null) {
+      markers.add(
+        Marker(
+          markerId: const MarkerId('user'),
+          position: userLocation!,
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueBlue,
+          ),
         ),
-        infoWindow: InfoWindow(
-          title: "Pickup location",
-          snippet: widget.pickupLocation,
-        ),
-        icon: BitmapDescriptor.defaultMarkerWithHue(
-          BitmapDescriptor.hueBlue,
-        ),
-      ),
-    );
+      );
+    }
 
-    markers.add(
-      Marker(
-        markerId: const MarkerId('destination'),
-        position: LatLng(
-          widget.destinationLatitude,
-          widget.destinationLongitude,
+    for (int i = 0; i < nearbyDrivers.length; i++) {
+      markers.add(
+        Marker(
+          markerId: MarkerId('driver_$i'),
+          position: nearbyDrivers[i],
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueOrange,
+          ),
         ),
-        infoWindow: InfoWindow(
-          title: "Destination",
-          snippet: widget.destination,
-        ),
-        icon: BitmapDescriptor.defaultMarkerWithHue(
-          BitmapDescriptor.hueGreen,
-        ),
-      ),
-    );
+      );
+    }
 
     setState(() {
       _markers = markers;
     });
   }
 
-  // ============================================================
-  // MAP POLYLINE
-  // ============================================================
+  @override
+  void initState() {
+    super.initState();
 
-  void _setRidePolyline() {
-    final LatLng pickup = LatLng(
-      widget.pickupLatitude,
-      widget.pickupLongitude,
+    fetchUserLocation().then(
+      (_) => setState(() {
+        loadNearbyDrivers();
+      }),
     );
 
-    final LatLng destination = LatLng(
-      widget.destinationLatitude,
-      widget.destinationLongitude,
-    );
+    rideStream = FirebaseFirestore.instance
+        .collection('ride_requests')
+        .doc(widget.rideId)
+        .snapshots();
 
-    setState(() {
-      _polylines = {
-        Polyline(
-          polylineId: const PolylineId(
-            'ride_route',
+    rideStream.listen((snapshot) {
+      final data = snapshot.data() as Map<String, dynamic>?;
+
+      if (data != null && data['Status'] == 'driver_accepted') {
+        timer?.cancel();
+
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => DriverOfferScreen(
+              rideId: widget.rideId,
+              driverName: data['driverId'],
+              price: data['price'],
+              vehicleType: data['vehicleType'],
+              vehicleDescription: data['vehicleType'],
+              pickup: data['Pickup Location'],
+              destination: data['Destination'],
+              rideType: data['RideType'],
+            ),
           ),
-          points: [
-            pickup,
-            destination,
-          ],
-          color: Colors.deepPurple,
-          width: 5,
-          startCap: Cap.roundCap,
-          endCap: Cap.roundCap,
-        ),
-      };
+        );
+      }
     });
+
+    startTimerLoop();
   }
-
-  // ============================================================
-  // FIT ROUTE
-  // ============================================================
-
-  Future<void> _fitRoute() async {
-    if (_mapController == null) {
-      return;
-    }
-
-    final LatLng pickup = LatLng(
-      widget.pickupLatitude,
-      widget.pickupLongitude,
-    );
-
-    final LatLng destination = LatLng(
-      widget.destinationLatitude,
-      widget.destinationLongitude,
-    );
-
-    try {
-      final double minLat = min(
-        pickup.latitude,
-        destination.latitude,
-      );
-
-      final double maxLat = max(
-        pickup.latitude,
-        destination.latitude,
-      );
-
-      final double minLng = min(
-        pickup.longitude,
-        destination.longitude,
-      );
-
-      final double maxLng = max(
-        pickup.longitude,
-        destination.longitude,
-      );
-
-      if ((maxLat - minLat).abs() < 0.0001 &&
-          (maxLng - minLng).abs() < 0.0001) {
-        await _mapController!.animateCamera(
-          CameraUpdate.newCameraPosition(
-            CameraPosition(
-              target: pickup,
-              zoom: 16,
-            ),
-          ),
-        );
-
-        return;
-      }
-
-      await _mapController!.animateCamera(
-        CameraUpdate.newLatLngBounds(
-          LatLngBounds(
-            southwest: LatLng(
-              minLat,
-              minLng,
-            ),
-            northeast: LatLng(
-              maxLat,
-              maxLng,
-            ),
-          ),
-          80,
-        ),
-      );
-    } catch (e) {
-      debugPrint(
-        "Searching map bounds error: $e",
-      );
-    }
-  }
-
-  // ============================================================
-  // CANCEL RIDE
-  // ============================================================
-
-  Future<void> _cancelRide() async {
-    timer?.cancel();
-
-    final String? id = rideId;
-
-    if (id != null) {
-      try {
-        await FirebaseFirestore.instance
-            .collection('ride_requests')
-            .doc(id)
-            .update({
-          'Status': 'cancelled',
-        });
-      } catch (e) {
-        debugPrint(
-          "Error cancelling ride: $e",
-        );
-      }
-    }
-
-    if (!mounted) return;
-
-    widget.onCancel();
-  }
-
-  // ============================================================
-  // DISPOSE
-  // ============================================================
 
   @override
   void dispose() {
     timer?.cancel();
-
-    _rideSubscription?.cancel();
-
-    _mapController?.dispose();
-
     super.dispose();
   }
 
-  // ============================================================
-  // BUILD
-  // ============================================================
-
   @override
   Widget build(BuildContext context) {
-    final LatLng pickup = LatLng(
-      widget.pickupLatitude,
-      widget.pickupLongitude,
-    );
-
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
       body: Stack(
         children: [
-          // ======================================================
-          // MAP
-          // ======================================================
-
-          GoogleMap(
-            onMapCreated: (controller) async {
-              _mapController = controller;
-
-              await controller.setMapStyle(
-                _darkMapStyle,
-              );
-
-              await Future.delayed(
-                const Duration(
-                  milliseconds: 300,
-                ),
-              );
-
-              if (!mounted) return;
-
-              await _fitRoute();
-            },
-            initialCameraPosition: CameraPosition(
-              target: pickup,
-              zoom: 14,
+          if (userLocation != null)
+            GoogleMap(
+              onMapCreated: (controller) {
+                _mapController = controller;
+              },
+              initialCameraPosition: CameraPosition(
+                target: userLocation!,
+                zoom: 16,
+              ),
+              markers: _markers,
+              myLocationEnabled: true,
+              myLocationButtonEnabled: true,
+            )
+          else
+            const Center(
+              child: CircularProgressIndicator(),
             ),
-            markers: _markers,
-            polylines: _polylines,
-            zoomControlsEnabled: false,
-            compassEnabled: true,
-            mapToolbarEnabled: false,
-          ),
-
-          // ======================================================
-          // SEARCH STATUS
-          // ======================================================
-
-          Positioned(
-            top: 50,
-            left: 20,
-            right: 20,
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 12,
-              ),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(
-                  25,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.12),
-                    blurRadius: 10,
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    "Searching for a ${widget.rideType}",
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(
-                    width: 10,
-                  ),
-                  const SizedBox(
-                    height: 12,
-                    width: 12,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      valueColor: AlwaysStoppedAnimation(
-                        Colors.black,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // ======================================================
-          // BOTTOM PANEL
-          // ======================================================
-
           Positioned(
             bottom: 0,
             left: 0,
             right: 0,
             child: Container(
               padding: const EdgeInsets.symmetric(
-                horizontal: 20,
+                horizontal: 20.0,
                 vertical: 20,
               ),
               decoration: const BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(
-                    24,
-                  ),
+                  top: Radius.circular(24),
                 ),
                 boxShadow: [
                   BoxShadow(
@@ -21843,25 +21584,32 @@ class _SearchingScreenState extends State<SearchingScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(
-                    width: 40,
-                    height: 4,
-                    margin: const EdgeInsets.only(
-                      bottom: 14,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[400],
-                      borderRadius: BorderRadius.circular(
-                        10,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        "Searching for a ${widget.rideType}",
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      const SizedBox(
+                        height: 10,
+                        width: 10,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 3,
+                          valueColor: AlwaysStoppedAnimation(Colors.black),
+                        ),
+                      ),
+                    ],
                   ),
+                  const SizedBox(height: 20),
                   Container(
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(
-                        12,
-                      ),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                     padding: const EdgeInsets.all(16),
                     child: Column(
@@ -21873,21 +21621,15 @@ class _SearchingScreenState extends State<SearchingScreen> {
                             color: Colors.grey[500],
                           ),
                         ),
-                        const SizedBox(
-                          height: 2,
-                        ),
+                        const SizedBox(height: 2),
                         Container(
                           height: 55,
                           decoration: BoxDecoration(
                             color: Colors.grey[200],
-                            borderRadius: BorderRadius.circular(
-                              10,
-                            ),
+                            borderRadius: BorderRadius.circular(10),
                           ),
                           child: Padding(
-                            padding: const EdgeInsets.all(
-                              8.0,
-                            ),
+                            padding: const EdgeInsets.all(8.0),
                             child: Row(
                               children: [
                                 const Icon(
@@ -21895,9 +21637,7 @@ class _SearchingScreenState extends State<SearchingScreen> {
                                   color: Colors.black,
                                   size: 20,
                                 ),
-                                const SizedBox(
-                                  width: 8,
-                                ),
+                                const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
                                     widget.pickupLocation,
@@ -21912,30 +21652,22 @@ class _SearchingScreenState extends State<SearchingScreen> {
                             ),
                           ),
                         ),
-                        const SizedBox(
-                          height: 5,
-                        ),
+                        const SizedBox(height: 5),
                         Text(
                           'Destination',
                           style: TextStyle(
                             color: Colors.grey[500],
                           ),
                         ),
-                        const SizedBox(
-                          height: 2,
-                        ),
+                        const SizedBox(height: 2),
                         Container(
                           height: 55,
                           decoration: BoxDecoration(
                             color: Colors.grey[200],
-                            borderRadius: BorderRadius.circular(
-                              10,
-                            ),
+                            borderRadius: BorderRadius.circular(10),
                           ),
                           child: Padding(
-                            padding: const EdgeInsets.all(
-                              8.0,
-                            ),
+                            padding: const EdgeInsets.all(8.0),
                             child: Row(
                               children: [
                                 Icon(
@@ -21943,9 +21675,7 @@ class _SearchingScreenState extends State<SearchingScreen> {
                                   color: Colors.green[700],
                                   size: 20,
                                 ),
-                                const SizedBox(
-                                  width: 8,
-                                ),
+                                const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
                                     widget.destination,
@@ -21963,9 +21693,7 @@ class _SearchingScreenState extends State<SearchingScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(
-                    height: 20,
-                  ),
+                  const SizedBox(height: 20),
                   Container(
                     height: 50,
                     width: double.infinity,
@@ -21976,22 +21704,20 @@ class _SearchingScreenState extends State<SearchingScreen> {
                           Colors.black,
                         ],
                       ),
-                      borderRadius: BorderRadius.circular(
-                        25,
-                      ),
+                      borderRadius: BorderRadius.circular(25),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.grey.shade200,
                           blurRadius: 8,
-                          offset: const Offset(
-                            0,
-                            4,
-                          ),
+                          offset: const Offset(0, 4),
                         ),
                       ],
                     ),
                     child: TextButton(
-                      onPressed: _cancelRide,
+                      onPressed: () {
+                        timer?.cancel();
+                        widget.onCancel();
+                      },
                       child: const Text(
                         "Cancel Ride",
                         style: TextStyle(
