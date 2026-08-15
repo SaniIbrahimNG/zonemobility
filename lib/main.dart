@@ -27469,6 +27469,7 @@ class _ShuttleDriverOnboardingState extends State<ShuttleDriverOnboarding> {
 }
 
 /// ---------------------- DRIVER DASHBOARD ----------------------
+
 class ShuttleDriverDashboard extends StatefulWidget {
   const ShuttleDriverDashboard({Key? key}) : super(key: key);
 
@@ -27495,116 +27496,211 @@ class _ShuttleDriverDashboardState extends State<ShuttleDriverDashboard> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(28),
+        ),
+      ),
       builder: (_) {
-        return StatefulBuilder(builder: (context, setModalState) {
-          List<String> locations = [];
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            List<String> locations = [];
 
-          if (selectedInstitution != null) {
-            final inst = institutions
-                .firstWhere((e) => e['name'] == selectedInstitution);
-            locations = List<String>.from(inst['locations']);
-          }
+            if (selectedInstitution != null) {
+              final inst = institutions.firstWhere(
+                (e) => e['name'] == selectedInstitution,
+              );
 
-          return Padding(
-            padding: EdgeInsets.fromLTRB(
-                20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text("Select Route",
-                    style: TextStyle(fontWeight: FontWeight.bold)),
+              locations = List<String>.from(inst['locations']);
+            }
 
-                /// Institution
-                DropdownButtonFormField<String>(
-                  hint: Text("Institution"),
-                  value: selectedInstitution,
-                  items: institutions
-                      .map((e) => DropdownMenuItem<String>(
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                24,
+                20,
+                MediaQuery.of(context).viewInsets.bottom + 24,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 45,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      "Select Route",
+                      style: TextStyle(
+                        fontSize: 21,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  /// Institution
+                  DropdownButtonFormField<String>(
+                    hint: const Text("Institution"),
+                    value: selectedInstitution,
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Colors.grey.shade100,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                    items: institutions
+                        .map(
+                          (e) => DropdownMenuItem<String>(
                             value: e['name'],
                             child: Text(e['name']),
-                          ))
-                      .toList(),
-                  onChanged: (v) {
-                    setModalState(() {
-                      selectedInstitution = v;
-                      pickup = null;
-                      destination = null;
-                    });
-                  },
-                ),
-
-                /// Pickup
-                DropdownButtonFormField<String>(
-                  hint: Text("Pickup"),
-                  value: pickup,
-                  items: locations
-                      .map((e) => DropdownMenuItem<String>(
-                            value: e,
-                            child: Text(e),
-                          ))
-                      .toList(),
-                  onChanged: (v) => setModalState(() => pickup = v),
-                ),
-
-                /// Destination
-                DropdownButtonFormField<String>(
-                  hint: Text("Destination"),
-                  value: destination,
-                  items: locations
-                      .map((e) => DropdownMenuItem<String>(
-                            value: e,
-                            child: Text(e),
-                          ))
-                      .toList(),
-                  onChanged: (v) => setModalState(() => destination = v),
-                ),
-
-                /// 💰 PRICE INPUT
-                TextField(
-                  controller: priceController,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    hintText: "Enter Price",
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) {
+                      setModalState(() {
+                        selectedInstitution = v;
+                        pickup = null;
+                        destination = null;
+                      });
+                    },
                   ),
-                ),
 
-                SizedBox(height: 20),
+                  const SizedBox(height: 12),
 
-                ElevatedButton(
-                  onPressed: () async {
-                    if (selectedInstitution == null ||
-                        pickup == null ||
-                        destination == null ||
-                        priceController.text.isEmpty) return;
+                  /// Pickup
+                  DropdownButtonFormField<String>(
+                    hint: const Text("Pickup"),
+                    value: pickup,
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Colors.grey.shade100,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                    items: locations
+                        .map(
+                          (e) => DropdownMenuItem<String>(
+                            value: e,
+                            child: Text(e),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) => setModalState(() => pickup = v),
+                  ),
 
-                    await FirebaseFirestore.instance
-                        .collection("shuttle_drivers")
-                        .doc(user!.uid)
-                        .update({
-                      "status": "online",
-                      "activeInstitution": selectedInstitution,
-                      "pickupLocation": pickup,
-                      "destinationLocation": destination,
-                      "price": int.parse(priceController.text),
+                  const SizedBox(height: 12),
 
-                      /// reset trip stats
-                      "boardedPassengers": 0,
-                      "amountCollected": 0,
-                      "timestamp": FieldValue.serverTimestamp(),
-                    });
+                  /// Destination
+                  DropdownButtonFormField<String>(
+                    hint: const Text("Destination"),
+                    value: destination,
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Colors.grey.shade100,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                    items: locations
+                        .map(
+                          (e) => DropdownMenuItem<String>(
+                            value: e,
+                            child: Text(e),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) => setModalState(() => destination = v),
+                  ),
 
-                    Navigator.pop(context);
-                  },
-                  child: Text("Go Online"),
-                )
-              ],
-            ),
-          );
-        });
+                  const SizedBox(height: 12),
+
+                  /// Price
+                  TextField(
+                    controller: priceController,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      hintText: "Enter Price",
+                      filled: true,
+                      fillColor: Colors.grey.shade100,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.black,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      onPressed: () async {
+                        if (selectedInstitution == null ||
+                            pickup == null ||
+                            destination == null ||
+                            priceController.text.isEmpty) {
+                          return;
+                        }
+
+                        await FirebaseFirestore.instance
+                            .collection("shuttle_drivers")
+                            .doc(user!.uid)
+                            .update({
+                          "status": "online",
+                          "activeInstitution": selectedInstitution,
+                          "pickupLocation": pickup,
+                          "destinationLocation": destination,
+                          "price": int.parse(priceController.text),
+                          "boardedPassengers": 0,
+                          "amountCollected": 0,
+                          "timestamp": FieldValue.serverTimestamp(),
+                        });
+
+                        Navigator.pop(context);
+                      },
+                      child: const Text(
+                        "Go Online",
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
       },
     );
   }
 
+  /// ================= GO OFFLINE =================
   void goOffline() async {
     await FirebaseFirestore.instance
         .collection("shuttle_drivers")
@@ -27617,11 +27713,11 @@ class _ShuttleDriverDashboardState extends State<ShuttleDriverDashboard> {
     });
   }
 
+  /// ================= DEPART TRIP =================
   Future<void> departTrip(Map<String, dynamic> data) async {
     final driverRef =
         FirebaseFirestore.instance.collection("shuttle_drivers").doc(user!.uid);
 
-    /// Save to history
     await FirebaseFirestore.instance.collection("shuttle_departures").add({
       "driverId": user!.uid,
       "name": data['name'],
@@ -27636,7 +27732,6 @@ class _ShuttleDriverDashboardState extends State<ShuttleDriverDashboard> {
       "departedAt": FieldValue.serverTimestamp(),
     });
 
-    /// Reset driver
     await driverRef.update({
       "status": "offline",
       "activeInstitution": null,
@@ -27647,116 +27742,720 @@ class _ShuttleDriverDashboardState extends State<ShuttleDriverDashboard> {
     });
   }
 
+  /// ================= PASSENGER MODAL =================
+  void showPassengerDetails(Map<String, dynamic> data) {
+    final int boarded = (data['boardedPassengers'] ?? 0) as int;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.grey.shade100,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(28),
+        ),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 45,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  "Boarded Passengers",
+                  style: TextStyle(
+                    fontSize: 21,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                if (boarded == 0)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(30),
+                      child: Text(
+                        "No passengers boarded yet.",
+                        style: TextStyle(
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  ...List.generate(
+                    boarded,
+                    (index) {
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              backgroundColor: Colors.grey.shade100,
+                              child: Text(
+                                "${index + 1}",
+                                style: const TextStyle(
+                                  color: Colors.black,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            const Text(
+                              "Passenger",
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                const SizedBox(height: 10),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// ================= VEHICLE IMAGE =================
+  Widget _vehicleImage(Map<String, dynamic> data) {
+    final imageUrl =
+        data['vehicleImage'] ?? data['imageUrl'] ?? data['vehicleImageUrl'];
+
+    return Container(
+      width: 82,
+      height: 82,
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        shape: BoxShape.circle,
+      ),
+      child: ClipOval(
+        child: imageUrl != null && imageUrl.toString().isNotEmpty
+            ? Image.network(
+                imageUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) {
+                  return const Icon(
+                    Icons.directions_bus_rounded,
+                    size: 38,
+                    color: Colors.black54,
+                  );
+                },
+              )
+            : const Icon(
+                Icons.directions_bus_rounded,
+                size: 38,
+                color: Colors.black54,
+              ),
+      ),
+    );
+  }
+
+  /// ================= INFO CARD =================
+  Widget _statCard(String value) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: 14,
+        vertical: 12,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Text(
+        value,
+        style: const TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  /// ================= ROUTE BOX =================
+  Widget _locationCard(String value) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 13,
+        ),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Text(
+          value,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// ================= ACTIVE TRIP CARD =================
+  Widget _activeTripCard(Map<String, dynamic> data) {
+    return Column(
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(.06),
+                blurRadius: 18,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                data['activeInstitution'] ?? "",
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: const [
+                  Expanded(
+                    child: Text(
+                      "From",
+                      style: TextStyle(
+                        color: Colors.grey,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      "To",
+                      style: TextStyle(
+                        color: Colors.grey,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 7),
+              Row(
+                children: [
+                  _locationCard(
+                    data['pickupLocation'] ?? "",
+                  ),
+                  const SizedBox(width: 10),
+                  _locationCard(
+                    data['destinationLocation'] ?? "",
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                "Passengers",
+                style: TextStyle(
+                  color: Colors.grey,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 7),
+              GestureDetector(
+                onTap: () => showPassengerDetails(data),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 15,
+                    vertical: 14,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        "${data['boardedPassengers'] ?? 0} / ${data['vehicleCapacity'] ?? 0}",
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const Icon(
+                        Icons.chevron_right_rounded,
+                        color: Colors.grey,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                "Amount",
+                style: TextStyle(
+                  color: Colors.grey,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 7),
+              _statCard(
+                "₦${data['amountCollected'] ?? 0}",
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 14),
+
+        /// DEPART BUTTON OUTSIDE CARD
+        SizedBox(
+          width: double.infinity,
+          height: 56,
+          child: ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.black,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+            ),
+            onPressed: () async {
+              await departTrip(data);
+            },
+            child: const Text(
+              "Depart",
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// ================= COMPLETED TRIP CARD =================
+  Widget _completedTripCard(Map<String, dynamic> d) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(17),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(.05),
+            blurRadius: 14,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            d['institution'] ?? "",
+            style: const TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              _locationCard(
+                d['pickup'] ?? "",
+              ),
+              const SizedBox(width: 10),
+              _locationCard(
+                d['destination'] ?? "",
+              ),
+            ],
+          ),
+          const SizedBox(height: 15),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                "Passengers",
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                ),
+              ),
+              Text(
+                "${d['passengers'] ?? 0} / ${d['capacity'] ?? 0}",
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                "Amount",
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                ),
+              ),
+              Text(
+                "₦${d['amount'] ?? 0}",
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   /// ================= BUILD =================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Driver Dashboard")),
+      backgroundColor: Colors.grey.shade50,
+
+      /// TRANSPARENT APP BAR
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        leading: Padding(
+          padding: const EdgeInsets.only(
+            left: 12,
+            top: 7,
+            bottom: 7,
+          ),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: IconButton(
+              icon: const Icon(
+                Icons.arrow_back_ios_new_rounded,
+                size: 19,
+                color: Colors.black,
+              ),
+              onPressed: () {
+                Navigator.pop(context);
+              },
+            ),
+          ),
+        ),
+      ),
+
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance
             .collection("shuttle_drivers")
             .doc(user!.uid)
             .snapshots(),
         builder: (context, snapshot) {
-          if (!snapshot.hasData)
-            return Center(child: CircularProgressIndicator());
+          if (!snapshot.hasData) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          }
 
           final data = snapshot.data!.data() as Map<String, dynamic>;
 
-          return ListView(
-            padding: EdgeInsets.all(16),
-            children: [
-              /// ONLINE SWITCH
-              SwitchListTile(
-                value: data['status'] == "online",
-                title: Text("Go Online"),
-                onChanged: (value) {
-                  if (value) {
-                    openRouteSelector();
-                  } else {
-                    goOffline();
-                  }
-                },
+          final bool isOnline = data['status'] == "online";
+
+          return DefaultTabController(
+            length: 2,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(
+                16,
+                8,
+                16,
+                30,
               ),
-
-              /// ACTIVE ROUTE DISPLAY
-              if (data['status'] == "online")
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          data['activeInstitution'] ?? "",
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-
-                        SizedBox(height: 5),
-
-                        Text(
-                          "${data['pickupLocation']} → ${data['destinationLocation']}",
-                        ),
-
-                        SizedBox(height: 10),
-
-                        /// 🧍 Capacity
-                        Text(
-                          "Passengers: ${data['boardedPassengers']} / ${data['vehicleCapacity']}",
-                        ),
-
-                        /// 💰 Earnings
-                        Text(
-                          "Amount: ₦${data['amountCollected']}",
-                        ),
-
-                        SizedBox(height: 10),
-
-                        /// 🚀 DEPART BUTTON
-                        ElevatedButton(
-                          onPressed: () async {
-                            await departTrip(data);
-                          },
-                          child: Text("Depart"),
-                        )
-                      ],
-                    ),
+              children: [
+                /// ================= DRIVER / VEHICLE HEADER =================
+                Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(.05),
+                        blurRadius: 18,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          _vehicleImage(data),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  data['vehicleName'] ?? "Shuttle",
+                                  style: const TextStyle(
+                                    fontSize: 19,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 5),
+                                Text(
+                                  data['name'] ?? "Driver",
+                                  style: TextStyle(
+                                    color: Colors.grey.shade600,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  "Balance",
+                                  style: TextStyle(
+                                    color: Colors.grey,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                const SizedBox(height: 7),
+                                _statCard(
+                                  "₦${data['balance'] ?? 0}",
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  "Total Trips",
+                                  style: TextStyle(
+                                    color: Colors.grey,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                const SizedBox(height: 7),
+                                _statCard(
+                                  "${data['totalTrips'] ?? 0}",
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-              SizedBox(height: 20),
 
-              Text("Driver: ${data['name']}"),
-              Text("Vehicle: ${data['vehicleName']}"),
-              SizedBox(height: 20),
+                const SizedBox(height: 22),
 
-              Text("Trip History",
-                  style: TextStyle(fontWeight: FontWeight.bold)),
+                /// ================= ACTIVE / COMPLETED =================
+                Container(
+                  height: 46,
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  child: const TabBar(
+                    indicator: BoxDecoration(
+                      color: Colors.black,
+                      borderRadius: BorderRadius.all(
+                        Radius.circular(12),
+                      ),
+                    ),
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    dividerColor: Colors.transparent,
+                    labelColor: Colors.white,
+                    unselectedLabelColor: Colors.black54,
+                    labelStyle: TextStyle(
+                      fontWeight: FontWeight.bold,
+                    ),
+                    tabs: [
+                      Tab(text: "Active"),
+                      Tab(text: "Completed"),
+                    ],
+                  ),
+                ),
 
-              StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection("shuttle_departures")
-                    .where("driverId", isEqualTo: user!.uid)
-                    .orderBy("departedAt", descending: true)
-                    .snapshots(),
-                builder: (context, snapshot) {
-                  if (!snapshot.hasData) return SizedBox();
+                const SizedBox(height: 20),
 
-                  return Column(
-                    children: snapshot.data!.docs.map((doc) {
-                      final d = doc.data() as Map<String, dynamic>;
+                SizedBox(
+                  height: 500,
+                  child: TabBarView(
+                    physics: const NeverScrollableScrollPhysics(),
+                    children: [
+                      /// ================= ACTIVE =================
+                      isOnline
+                          ? _activeTripCard(data)
+                          : Container(
+                              padding: const EdgeInsets.all(30),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(22),
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Container(
+                                    width: 64,
+                                    height: 64,
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey.shade100,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.directions_bus_outlined,
+                                      size: 30,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  const Text(
+                                    "You're offline",
+                                    style: TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  const Text(
+                                    "Go online to start a shuttle trip.",
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 20),
+                                  SizedBox(
+                                    width: 150,
+                                    height: 46,
+                                    child: ElevatedButton(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.black,
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            14,
+                                          ),
+                                        ),
+                                      ),
+                                      onPressed: openRouteSelector,
+                                      child: const Text(
+                                        "Go Online",
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
 
-                      return Card(
-                        child: ListTile(
-                          title: Text("${d['pickup']} → ${d['destination']}"),
-                          subtitle: Text(
-                              "Passengers: ${d['passengers']} | ₦${d['amount']}"),
-                        ),
-                      );
-                    }).toList(),
-                  );
-                },
-              )
-            ],
+                      /// ================= COMPLETED =================
+                      StreamBuilder<QuerySnapshot>(
+                        stream: FirebaseFirestore.instance
+                            .collection("shuttle_departures")
+                            .where(
+                              "driverId",
+                              isEqualTo: user!.uid,
+                            )
+                            .orderBy(
+                              "departedAt",
+                              descending: true,
+                            )
+                            .snapshots(),
+                        builder: (context, snapshot) {
+                          if (!snapshot.hasData) {
+                            return const Center(
+                              child: CircularProgressIndicator(),
+                            );
+                          }
+
+                          if (snapshot.data!.docs.isEmpty) {
+                            return Container(
+                              padding: const EdgeInsets.all(30),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(22),
+                              ),
+                              child: const Center(
+                                child: Text(
+                                  "No completed trips yet.",
+                                  style: TextStyle(
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }
+
+                          return ListView(
+                            physics: const NeverScrollableScrollPhysics(),
+                            children: snapshot.data!.docs.map((doc) {
+                              final d = doc.data() as Map<String, dynamic>;
+
+                              return _completedTripCard(d);
+                            }).toList(),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           );
         },
       ),
