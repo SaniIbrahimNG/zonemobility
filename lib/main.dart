@@ -6787,27 +6787,1855 @@ class ManageTicketsPage extends StatelessWidget {
   }
 }
 
-class ManageVehiclesPage extends StatelessWidget {
+class ManageVehiclesPage extends StatefulWidget {
   const ManageVehiclesPage({super.key});
+
+  @override
+  State<ManageVehiclesPage> createState() => _ManageVehiclesPageState();
+}
+
+class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseStorage _storage = FirebaseStorage.instance;
+
+  String? get providerId => _auth.currentUser?.uid;
+
+  // ============================================================
+  // VEHICLES REFERENCE
+  // ============================================================
+  //
+  // providers/{providerId}/vehicles/{vehicleId}
+  //
+  CollectionReference<Map<String, dynamic>> get _vehiclesRef {
+    final uid = providerId;
+
+    if (uid == null || uid.isEmpty) {
+      return _firestore
+          .collection('providers')
+          .doc('_invalid_provider_')
+          .collection('vehicles');
+    }
+
+    return _firestore.collection('providers').doc(uid).collection('vehicles');
+  }
+
+  // ============================================================
+  // ADD VEHICLE MODAL
+  // ============================================================
+
+  void _openAddVehicleModal() {
+    final driverController = TextEditingController();
+    final capacityController = TextEditingController();
+
+    String? selectedRouteId;
+    Map<String, dynamic>? selectedRoute;
+
+    XFile? selectedImage;
+    bool uploading = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(26),
+        ),
+      ),
+      builder: (modalContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            // ========================================================
+            // PICK IMAGE
+            // ========================================================
+
+            Future<void> pickImage() async {
+              if (uploading) return;
+
+              try {
+                final picker = ImagePicker();
+
+                final image = await picker.pickImage(
+                  source: ImageSource.gallery,
+                  imageQuality: 80,
+                );
+
+                if (image != null) {
+                  setModalState(() {
+                    selectedImage = image;
+                  });
+                }
+              } catch (e, stackTrace) {
+                debugPrint("PICK VEHICLE IMAGE ERROR: $e");
+                debugPrint(
+                  "PICK VEHICLE IMAGE STACK TRACE: $stackTrace",
+                );
+
+                _showMessage(
+                  "Unable to select image.",
+                );
+              }
+            }
+
+            // ========================================================
+            // SUBMIT VEHICLE
+            // ========================================================
+
+            Future<void> submitVehicle() async {
+              final uid = providerId;
+
+              if (uid == null || uid.isEmpty) {
+                _showMessage(
+                  "You must be logged in.",
+                );
+                return;
+              }
+
+              final driverName = driverController.text.trim();
+              final capacityText = capacityController.text.trim();
+
+              // ------------------------------------------------------
+              // VALIDATION
+              // ------------------------------------------------------
+
+              if (selectedImage == null) {
+                _showMessage(
+                  "Please select a vehicle image.",
+                );
+                return;
+              }
+
+              if (driverName.isEmpty) {
+                _showMessage(
+                  "Please enter the driver name.",
+                );
+                return;
+              }
+
+              if (capacityText.isEmpty) {
+                _showMessage(
+                  "Please enter the vehicle capacity.",
+                );
+                return;
+              }
+
+              final capacity = int.tryParse(capacityText);
+
+              if (capacity == null || capacity <= 0) {
+                _showMessage(
+                  "Enter a valid vehicle capacity.",
+                );
+                return;
+              }
+
+              if (selectedRouteId == null || selectedRoute == null) {
+                _showMessage(
+                  "Please select a route.",
+                );
+                return;
+              }
+
+              // ------------------------------------------------------
+              // START UPLOAD
+              // ------------------------------------------------------
+
+              setModalState(() {
+                uploading = true;
+              });
+
+              String? uploadedImagePath;
+              DocumentReference<Map<String, dynamic>>? vehicleRef;
+
+              try {
+                // ====================================================
+                // CREATE VEHICLE DOCUMENT REFERENCE
+                //
+                // IMPORTANT:
+                // This creates:
+                //
+                // providers/{providerId}/vehicles/{vehicleId}
+                //
+                // NOT:
+                //
+                // providers/{randomId}
+                // ====================================================
+
+                vehicleRef = _vehiclesRef.doc();
+
+                final vehicleId = vehicleRef.id;
+
+                debugPrint(
+                  "==============================================",
+                );
+                debugPrint(
+                  "ADDING VEHICLE",
+                );
+                debugPrint(
+                  "Provider ID: $uid",
+                );
+                debugPrint(
+                  "Vehicle ID: $vehicleId",
+                );
+                debugPrint(
+                  "Vehicle Path: ${vehicleRef.path}",
+                );
+                debugPrint(
+                  "==============================================",
+                );
+
+                // ====================================================
+                // STORAGE PATH
+                //
+                // vehicles/{providerId}/{vehicleId}.jpg
+                // ====================================================
+
+                final storageRef = _storage
+                    .ref()
+                    .child('vehicles')
+                    .child(uid)
+                    .child('$vehicleId.jpg');
+
+                uploadedImagePath = storageRef.fullPath;
+
+                debugPrint(
+                  "Vehicle image path: $uploadedImagePath",
+                );
+
+                // ====================================================
+                // UPLOAD IMAGE
+                // ====================================================
+
+                final file = File(selectedImage!.path);
+
+                if (!await file.exists()) {
+                  throw Exception(
+                    "Selected image file no longer exists.",
+                  );
+                }
+
+                final uploadTask = await storageRef.putFile(
+                  file,
+                  SettableMetadata(
+                    contentType: 'image/jpeg',
+                    customMetadata: {
+                      'providerId': uid,
+                      'vehicleId': vehicleId,
+                    },
+                  ),
+                );
+
+                debugPrint(
+                  "IMAGE UPLOAD COMPLETE: ${uploadTask.state}",
+                );
+
+                // ====================================================
+                // GET DOWNLOAD URL
+                // ====================================================
+
+                final imageUrl = await storageRef.getDownloadURL();
+
+                debugPrint(
+                  "Vehicle image URL obtained successfully.",
+                );
+
+                // ====================================================
+                // ROUTE DATA
+                // ====================================================
+
+                final routeData = Map<String, dynamic>.from(selectedRoute!);
+
+                final driverCode =
+                    'DRV-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
+
+                // ====================================================
+                // VEHICLE DATA
+                // ====================================================
+
+                final vehicleData = {
+                  'providerId': uid,
+                  'vehicleId': vehicleId,
+
+                  // IMAGE
+                  'vehicleImage': imageUrl,
+                  'vehicleImagePath': uploadedImagePath,
+
+                  // DRIVER
+                  'driverName': driverName,
+                  'driverCode': driverCode,
+
+                  // CAPACITY
+                  'vehicleCapacity': capacity,
+                  'boardedPassengers': 0,
+
+                  // STATUS
+                  'status': 'offline',
+                  'active': true,
+
+                  // ROUTE
+                  'routeId': selectedRouteId,
+                  'routeFrom': routeData['from'] ?? '',
+                  'routeTo': routeData['to'] ?? '',
+                  'routePrice': routeData['price'] ?? 0,
+
+                  // TIMESTAMPS
+                  'createdAt': FieldValue.serverTimestamp(),
+                  'updatedAt': FieldValue.serverTimestamp(),
+                };
+
+                debugPrint(
+                  "Creating vehicle document at:",
+                );
+                debugPrint(
+                  vehicleRef.path,
+                );
+
+                // ====================================================
+                // CREATE VEHICLE DOCUMENT
+                // ====================================================
+
+                await vehicleRef.set(vehicleData);
+
+                debugPrint(
+                  "==============================================",
+                );
+                debugPrint(
+                  "VEHICLE CREATED SUCCESSFULLY",
+                );
+                debugPrint(
+                  "Firestore path: ${vehicleRef.path}",
+                );
+                debugPrint(
+                  "==============================================",
+                );
+
+                if (modalContext.mounted) {
+                  Navigator.pop(modalContext);
+                }
+
+                driverController.dispose();
+                capacityController.dispose();
+
+                _showMessage(
+                  "Vehicle added successfully.",
+                  success: true,
+                );
+              } catch (e, stackTrace) {
+                debugPrint(
+                  "==============================================",
+                );
+                debugPrint(
+                  "ADD VEHICLE ERROR: $e",
+                );
+                debugPrint(
+                  "ADD VEHICLE STACK TRACE:",
+                );
+                debugPrint(
+                  "$stackTrace",
+                );
+                debugPrint(
+                  "==============================================",
+                );
+
+                // ====================================================
+                // CLEAN UP IMAGE IF FIRESTORE CREATION FAILED
+                // ====================================================
+
+                if (uploadedImagePath != null) {
+                  try {
+                    await _storage.ref(uploadedImagePath).delete();
+
+                    debugPrint(
+                      "Uploaded vehicle image cleaned up.",
+                    );
+                  } catch (cleanupError, cleanupStackTrace) {
+                    debugPrint(
+                      "IMAGE CLEANUP ERROR: $cleanupError",
+                    );
+                    debugPrint(
+                      "IMAGE CLEANUP STACK TRACE: "
+                      "$cleanupStackTrace",
+                    );
+                  }
+                }
+
+                if (context.mounted) {
+                  setModalState(() {
+                    uploading = false;
+                  });
+                }
+
+                String message = "Unable to add vehicle. Please try again.";
+
+                final errorString = e.toString().toLowerCase();
+
+                if (errorString.contains('permission-denied')) {
+                  message = "Permission denied. Please check your provider "
+                      "Firestore rules.";
+                } else if (errorString.contains('unauthorized')) {
+                  message = "Image upload was not authorized. "
+                      "Please check your Storage rules.";
+                } else if (errorString.contains('network')) {
+                  message = "Network error. Please check your connection.";
+                }
+
+                _showMessage(message);
+              }
+            }
+
+            // ========================================================
+            // MODAL UI
+            // ========================================================
+
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: 20,
+                  right: 20,
+                  top: 14,
+                  bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // ==================================================
+                      // HANDLE
+                      // ==================================================
+
+                      Center(
+                        child: Container(
+                          width: 45,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade300,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 22),
+
+                      // ==================================================
+                      // HEADER
+                      // ==================================================
+
+                      Row(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade100,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.directions_bus_rounded,
+                              size: 21,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  "Add New Vehicle",
+                                  style: TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                SizedBox(height: 3),
+                                Text(
+                                  "Add a vehicle to one of your routes.",
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 25),
+
+                      // ==================================================
+                      // VEHICLE IMAGE
+                      // ==================================================
+
+                      const Text(
+                        "Vehicle Image",
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+
+                      const SizedBox(height: 9),
+
+                      GestureDetector(
+                        onTap: uploading ? null : pickImage,
+                        child: Container(
+                          height: 150,
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: Colors.grey.shade300,
+                            ),
+                          ),
+                          child: selectedImage == null
+                              ? Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Container(
+                                      width: 48,
+                                      height: 48,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        shape: BoxShape.circle,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color:
+                                                Colors.black.withOpacity(.05),
+                                            blurRadius: 8,
+                                          ),
+                                        ],
+                                      ),
+                                      child: const Icon(
+                                        Icons.add_a_photo_outlined,
+                                        size: 21,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    const Text(
+                                      "Tap to upload vehicle image",
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      "JPG or PNG",
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.grey.shade500,
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : ClipRRect(
+                                  borderRadius: BorderRadius.circular(16),
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      Image.file(
+                                        File(
+                                          selectedImage!.path,
+                                        ),
+                                        fit: BoxFit.cover,
+                                      ),
+                                      Positioned(
+                                        right: 10,
+                                        top: 10,
+                                        child: Container(
+                                          padding: const EdgeInsets.all(
+                                            7,
+                                          ),
+                                          decoration: const BoxDecoration(
+                                            color: Colors.black87,
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: const Icon(
+                                            Icons.edit,
+                                            color: Colors.white,
+                                            size: 15,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // ==================================================
+                      // DRIVER NAME
+                      // ==================================================
+
+                      _fieldLabel("Driver Name"),
+
+                      const SizedBox(height: 8),
+
+                      TextField(
+                        controller: driverController,
+                        textCapitalization: TextCapitalization.words,
+                        decoration: _inputDecoration(
+                          hint: "Enter driver's name",
+                          icon: Icons.person_outline,
+                        ),
+                      ),
+
+                      const SizedBox(height: 18),
+
+                      // ==================================================
+                      // CAPACITY
+                      // ==================================================
+
+                      _fieldLabel("Total Capacity"),
+
+                      const SizedBox(height: 8),
+
+                      TextField(
+                        controller: capacityController,
+                        keyboardType: TextInputType.number,
+                        decoration: _inputDecoration(
+                          hint: "e.g. 18",
+                          icon: Icons.event_seat_outlined,
+                        ),
+                      ),
+
+                      const SizedBox(height: 18),
+
+                      // ==================================================
+                      // ROUTE
+                      // ==================================================
+
+                      _fieldLabel("Assign Route"),
+
+                      const SizedBox(height: 8),
+
+                      StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                        stream: _firestore
+                            .collection('routes')
+                            .where(
+                              'providerId',
+                              isEqualTo: providerId,
+                            )
+                            .snapshots(),
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return Container(
+                              height: 56,
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade50,
+                                borderRadius: BorderRadius.circular(
+                                  14,
+                                ),
+                                border: Border.all(
+                                  color: Colors.grey.shade200,
+                                ),
+                              ),
+                              child: const Center(
+                                child: SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }
+
+                          if (snapshot.hasError) {
+                            debugPrint(
+                              "ROUTES ERROR: "
+                              "${snapshot.error}",
+                            );
+
+                            return _errorBox(
+                              "Unable to load your routes.",
+                            );
+                          }
+
+                          final routes = snapshot.data?.docs ?? [];
+
+                          if (routes.isEmpty) {
+                            return _errorBox(
+                              "No routes found. Add a route first.",
+                            );
+                          }
+
+                          return GestureDetector(
+                            onTap: uploading
+                                ? null
+                                : () async {
+                                    final result = await _showRoutePicker(
+                                      context,
+                                      routes,
+                                      selectedRouteId,
+                                    );
+
+                                    if (result != null) {
+                                      setModalState(() {
+                                        selectedRouteId = result['id'];
+                                        selectedRoute = result['data'];
+                                      });
+                                    }
+                                  },
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 15,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: selectedRoute != null
+                                      ? Colors.black
+                                      : Colors.grey.shade300,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 36,
+                                    height: 36,
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey.shade100,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.alt_route_rounded,
+                                      size: 18,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: selectedRoute == null
+                                        ? Text(
+                                            "Select a route",
+                                            style: TextStyle(
+                                              color: Colors.grey.shade500,
+                                              fontSize: 13,
+                                            ),
+                                          )
+                                        : Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                "${selectedRoute!['from'] ?? ''} → ${selectedRoute!['to'] ?? ''}",
+                                                style: const TextStyle(
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                              const SizedBox(
+                                                height: 3,
+                                              ),
+                                              Text(
+                                                "₦${selectedRoute!['price'] ?? 0}",
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: Colors.grey.shade600,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                  ),
+                                  const Icon(
+                                    Icons.keyboard_arrow_down_rounded,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+
+                      const SizedBox(height: 25),
+
+                      // ==================================================
+                      // ADD BUTTON
+                      // ==================================================
+
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: ElevatedButton(
+                          onPressed: uploading ? null : submitVehicle,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.black,
+                            disabledBackgroundColor: Colors.grey.shade400,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          child: uploading
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Text(
+                                  "Add Vehicle",
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    ).whenComplete(() {
+      driverController.dispose();
+      capacityController.dispose();
+    });
+  }
+
+  // ============================================================
+  // ROUTE PICKER
+  // ============================================================
+
+  Future<Map<String, dynamic>?> _showRoutePicker(
+    BuildContext context,
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> routes,
+    String? selectedId,
+  ) async {
+    return showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(24),
+        ),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+            child: Column(
+              children: [
+                Container(
+                  width: 45,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    "Select Route",
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    "Choose the route this vehicle will operate on.",
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey.shade500,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: routes.length,
+                    itemBuilder: (context, index) {
+                      final route = routes[index];
+                      final data = route.data();
+
+                      final isSelected = route.id == selectedId;
+
+                      return GestureDetector(
+                        onTap: () {
+                          Navigator.pop(
+                            context,
+                            {
+                              'id': route.id,
+                              'data': data,
+                            },
+                          );
+                        },
+                        child: Container(
+                          margin: const EdgeInsets.only(
+                            bottom: 10,
+                          ),
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? Colors.grey.shade100
+                                : Colors.white,
+                            borderRadius: BorderRadius.circular(15),
+                            border: Border.all(
+                              color: isSelected
+                                  ? Colors.black
+                                  : Colors.grey.shade200,
+                              width: isSelected ? 1.4 : 1,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 42,
+                                height: 42,
+                                decoration: BoxDecoration(
+                                  color: Colors.black,
+                                  borderRadius: BorderRadius.circular(
+                                    12,
+                                  ),
+                                ),
+                                child: const Icon(
+                                  Icons.alt_route_rounded,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      "${data['from'] ?? ''} → ${data['to'] ?? ''}",
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(
+                                      height: 5,
+                                    ),
+                                    Text(
+                                      "₦${data['price'] ?? 0}",
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (isSelected)
+                                const Icon(
+                                  Icons.check_circle,
+                                  color: Colors.black,
+                                  size: 20,
+                                )
+                              else
+                                const Icon(
+                                  Icons.arrow_forward_ios_rounded,
+                                  size: 13,
+                                  color: Colors.grey,
+                                ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ============================================================
+  // VEHICLES
+  // ============================================================
+
+  Widget _buildVehicles() {
+    if (providerId == null) {
+      return const Center(
+        child: Text(
+          "Please sign in to manage vehicles.",
+        ),
+      );
+    }
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      // IMPORTANT:
+      // Read from:
+      // providers/{providerId}/vehicles
+      stream: _vehiclesRef.snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Column(
+            children: List.generate(
+              3,
+              (_) => _vehicleShimmer(),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          debugPrint(
+            "LOAD VEHICLES ERROR: ${snapshot.error}",
+          );
+
+          return _emptyMessage(
+            icon: Icons.error_outline,
+            title: "Unable to load vehicles",
+            subtitle: "Please try again later.",
+          );
+        }
+
+        final vehicles = snapshot.data?.docs ?? [];
+
+        if (vehicles.isEmpty) {
+          return _emptyMessage(
+            icon: Icons.directions_bus_outlined,
+            title: "No vehicles yet",
+            subtitle: "Add your first vehicle to start managing your fleet.",
+          );
+        }
+
+        return Column(
+          children: vehicles.map((doc) {
+            final data = doc.data();
+
+            return _vehicleCard(
+              docId: doc.id,
+              data: data,
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
+  // ============================================================
+  // VEHICLE CARD
+  // ============================================================
+
+  Widget _vehicleCard({
+    required String docId,
+    required Map<String, dynamic> data,
+  }) {
+    final image = data['vehicleImage']?.toString() ?? '';
+
+    final driverName = data['driverName']?.toString() ?? 'Unknown Driver';
+
+    final capacity = data['vehicleCapacity'] ?? 0;
+
+    final boarded = data['boardedPassengers'] ?? 0;
+
+    final from = data['routeFrom']?.toString() ?? '';
+
+    final to = data['routeTo']?.toString() ?? '';
+
+    final status = data['status']?.toString() ?? 'offline';
+
+    final capacityValue =
+        capacity is int ? capacity : int.tryParse('$capacity') ?? 0;
+
+    final boardedValue =
+        boarded is int ? boarded : int.tryParse('$boarded') ?? 0;
+
+    final seatsLeft = capacityValue - boardedValue;
+
+    final safeSeats = seatsLeft < 0 ? 0 : seatsLeft;
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(
+        bottom: 14,
+      ),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: Colors.grey.shade200,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              // ======================================================
+              // IMAGE
+              // ======================================================
+
+              ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: image.isNotEmpty
+                    ? Image.network(
+                        image,
+                        width: 82,
+                        height: 82,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) {
+                          return _vehicleImageFallback();
+                        },
+                      )
+                    : _vehicleImageFallback(),
+              ),
+
+              const SizedBox(width: 13),
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            driverName,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        _statusBadge(status),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.event_seat_outlined,
+                          size: 15,
+                          color: Colors.grey.shade600,
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          "$capacityValue seats",
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          "$safeSeats available",
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: safeSeats > 0
+                                ? Colors.green.shade700
+                                : Colors.red,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    if (from.isNotEmpty || to.isNotEmpty)
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.alt_route_rounded,
+                            size: 15,
+                            color: Colors.grey.shade600,
+                          ),
+                          const SizedBox(width: 5),
+                          Expanded(
+                            child: Text(
+                              "$from → $to",
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Divider(
+            height: 1,
+            color: Colors.grey.shade200,
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  "Driver • ${data['driverCode'] ?? 'N/A'}",
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.grey.shade500,
+                  ),
+                ),
+              ),
+              GestureDetector(
+                onTap: () {
+                  _showVehicleOptions(
+                    docId,
+                    data,
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 7,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: const Icon(
+                    Icons.more_horiz,
+                    size: 18,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // VEHICLE IMAGE FALLBACK
+  // ============================================================
+
+  Widget _vehicleImageFallback() {
+    return Container(
+      width: 82,
+      height: 82,
+      color: Colors.grey.shade100,
+      child: const Icon(
+        Icons.directions_bus_rounded,
+        size: 34,
+        color: Colors.grey,
+      ),
+    );
+  }
+
+  // ============================================================
+  // STATUS BADGE
+  // ============================================================
+
+  Widget _statusBadge(String status) {
+    final online = status.toLowerCase() == 'online';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 8,
+        vertical: 4,
+      ),
+      decoration: BoxDecoration(
+        color: online ? Colors.green.shade50 : Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        online ? "ONLINE" : "OFFLINE",
+        style: TextStyle(
+          fontSize: 8,
+          fontWeight: FontWeight.bold,
+          color: online ? Colors.green.shade700 : Colors.grey.shade600,
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // VEHICLE OPTIONS
+  // ============================================================
+
+  void _showVehicleOptions(
+    String docId,
+    Map<String, dynamic> data,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(24),
+        ),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 45,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(
+                      20,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  "Vehicle Options",
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                _optionTile(
+                  icon: Icons.edit_outlined,
+                  title: "Edit Vehicle",
+                  onTap: () {
+                    Navigator.pop(context);
+
+                    _showMessage(
+                      "Vehicle editing can be added here.",
+                    );
+                  },
+                ),
+                _optionTile(
+                  icon: Icons.delete_outline,
+                  title: "Remove Vehicle",
+                  color: Colors.red,
+                  onTap: () {
+                    Navigator.pop(context);
+
+                    _confirmDeleteVehicle(
+                      docId,
+                    );
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ============================================================
+  // OPTION TILE
+  // ============================================================
+
+  Widget _optionTile({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+    Color color = Colors.black,
+  }) {
+    return ListTile(
+      onTap: onTap,
+      leading: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: color.withOpacity(.07),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          icon,
+          color: color,
+          size: 19,
+        ),
+      ),
+      title: Text(
+        title,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
+      trailing: const Icon(
+        Icons.arrow_forward_ios_rounded,
+        size: 13,
+        color: Colors.grey,
+      ),
+    );
+  }
+
+  // ============================================================
+  // DELETE VEHICLE
+  // ============================================================
+
+  Future<void> _confirmDeleteVehicle(
+    String docId,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text(
+            "Remove vehicle?",
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          content: const Text(
+            "This vehicle will be removed from your fleet.",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(
+                context,
+                false,
+              ),
+              child: const Text("Cancel"),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+              ),
+              onPressed: () => Navigator.pop(
+                context,
+                true,
+              ),
+              child: const Text(
+                "Remove",
+                style: TextStyle(
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) {
+      return;
+    }
+
+    try {
+      // ==========================================================
+      // DELETE FIRESTORE VEHICLE
+      // ==========================================================
+
+      final vehicleRef = _vehiclesRef.doc(docId);
+
+      final vehicleSnapshot = await vehicleRef.get();
+
+      final vehicleData = vehicleSnapshot.data();
+
+      await vehicleRef.delete();
+
+      // ==========================================================
+      // DELETE IMAGE FROM STORAGE
+      // ==========================================================
+
+      final imagePath = vehicleData?['vehicleImagePath'];
+
+      if (imagePath != null && imagePath.toString().isNotEmpty) {
+        try {
+          await _storage.ref(imagePath.toString()).delete();
+
+          debugPrint(
+            "Vehicle image deleted.",
+          );
+        } catch (e, stackTrace) {
+          debugPrint(
+            "DELETE VEHICLE IMAGE ERROR: $e",
+          );
+          debugPrint(
+            "DELETE VEHICLE IMAGE STACK TRACE: "
+            "$stackTrace",
+          );
+        }
+      }
+
+      _showMessage(
+        "Vehicle removed.",
+        success: true,
+      );
+    } catch (e, stackTrace) {
+      debugPrint(
+        "DELETE VEHICLE ERROR: $e",
+      );
+      debugPrint(
+        "DELETE VEHICLE STACK TRACE: "
+        "$stackTrace",
+      );
+
+      _showMessage(
+        "Unable to remove vehicle.",
+      );
+    }
+  }
+
+  // ============================================================
+  // SUMMARY
+  // ============================================================
+
+  Widget _buildSummaryCard() {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      // IMPORTANT:
+      // Count vehicles, not providers.
+      stream: _vehiclesRef.snapshots(),
+      builder: (context, snapshot) {
+        final count = snapshot.hasData ? snapshot.data!.docs.length : 0;
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.black,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(.12),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(.10),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.directions_bus_rounded,
+                  color: Colors.white,
+                  size: 25,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "Total Vehicles",
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 11,
+                      ),
+                    ),
+                    const SizedBox(
+                      height: 3,
+                    ),
+                    Text(
+                      "$count",
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 26,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              GestureDetector(
+                onTap: _openAddVehicleModal,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 13,
+                    vertical: 11,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.add,
+                        size: 17,
+                        color: Colors.black,
+                      ),
+                      SizedBox(
+                        width: 5,
+                      ),
+                      Text(
+                        "Add Vehicle",
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // ============================================================
+  // HELPERS
+  // ============================================================
+
+  Widget _fieldLabel(String text) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+      ),
+    );
+  }
+
+  InputDecoration _inputDecoration({
+    required String hint,
+    required IconData icon,
+  }) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: TextStyle(
+        fontSize: 12,
+        color: Colors.grey.shade500,
+      ),
+      prefixIcon: Icon(
+        icon,
+        size: 19,
+        color: Colors.grey.shade600,
+      ),
+      filled: true,
+      fillColor: Colors.grey.shade50,
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: 14,
+        vertical: 15,
+      ),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(
+          14,
+        ),
+        borderSide: BorderSide(
+          color: Colors.grey.shade200,
+        ),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(
+          14,
+        ),
+        borderSide: BorderSide(
+          color: Colors.grey.shade200,
+        ),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(
+          14,
+        ),
+        borderSide: const BorderSide(
+          color: Colors.black,
+          width: 1.2,
+        ),
+      ),
+    );
+  }
+
+  Widget _errorBox(String text) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 11,
+          color: Colors.red.shade700,
+        ),
+      ),
+    );
+  }
+
+  Widget _emptyMessage({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        vertical: 35,
+        horizontal: 20,
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 58,
+            height: 58,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              icon,
+              color: Colors.grey.shade500,
+              size: 26,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.grey.shade500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _vehicleShimmer() {
+    return Container(
+      width: double.infinity,
+      height: 145,
+      margin: const EdgeInsets.only(
+        bottom: 14,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            Container(
+              width: 82,
+              height: 82,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(
+                  14,
+                ),
+              ),
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 130,
+                    height: 14,
+                    color: Colors.grey.shade300,
+                  ),
+                  const SizedBox(
+                    height: 10,
+                  ),
+                  Container(
+                    width: 100,
+                    height: 11,
+                    color: Colors.grey.shade300,
+                  ),
+                  const SizedBox(
+                    height: 10,
+                  ),
+                  Container(
+                    width: 150,
+                    height: 11,
+                    color: Colors.grey.shade300,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // MESSAGE
+  // ============================================================
+
+  void _showMessage(
+    String message, {
+    bool success = false,
+  }) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: success ? Colors.green : Colors.red,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  // ============================================================
+  // BUILD
+  // ============================================================
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.grey[100],
       appBar: AppBar(
-        //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
         scrolledUnderElevation: 0,
-
         leading: Padding(
-          padding: const EdgeInsets.only(left: 10),
+          padding: const EdgeInsets.only(
+            left: 10,
+          ),
           child: GestureDetector(
             onTap: () => Navigator.pop(context),
             child: Container(
               width: 25,
               height: 25,
               decoration: BoxDecoration(
-                color: Colors.grey[100], // ✅ grey 50 look
+                color: Colors.grey[100],
                 shape: BoxShape.circle,
               ),
               child: const Icon(
@@ -6818,9 +8646,10 @@ class ManageVehiclesPage extends StatelessWidget {
             ),
           ),
         ),
-
         title: const Padding(
-          padding: EdgeInsets.only(left: 8), // ✅ spacing from icon
+          padding: EdgeInsets.only(
+            left: 8,
+          ),
           child: Text(
             'Manage Vehicles',
             style: TextStyle(
@@ -6831,9 +8660,58 @@ class ManageVehiclesPage extends StatelessWidget {
           ),
         ),
       ),
-      body: const Center(
-        child: Text("Vehicle management coming soon 🚗"),
-      ),
+      body: providerId == null
+          ? const Center(
+              child: Text("Please sign in."),
+            )
+          : SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(
+                16,
+                18,
+                16,
+                30,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // SUMMARY
+                  _buildSummaryCard(),
+
+                  const SizedBox(
+                    height: 28,
+                  ),
+
+                  // HEADER
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          "Your Vehicles",
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        "Fleet",
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.grey.shade500,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(
+                    height: 14,
+                  ),
+
+                  // VEHICLES
+                  _buildVehicles(),
+                ],
+              ),
+            ),
     );
   }
 }
@@ -6888,6 +8766,227 @@ class _TransportPageState extends State<TransportPage> {
     "Yobe",
     "Zamfara"
   ];
+
+  Widget _shimmerBox({
+    required double width,
+    required double height,
+    double radius = 8,
+  }) {
+    return Shimmer.fromColors(
+      baseColor: Colors.grey.shade200,
+      highlightColor: Colors.grey.shade100,
+      child: Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(radius),
+        ),
+      ),
+    );
+  }
+
+  Widget _providerCardShimmer() {
+    return Container(
+      width: 300,
+      margin: const EdgeInsets.only(right: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          _shimmerBox(
+            width: 50,
+            height: 50,
+            radius: 50,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _shimmerBox(
+                  width: 120,
+                  height: 14,
+                  radius: 5,
+                ),
+                const SizedBox(height: 8),
+                _shimmerBox(
+                  width: 90,
+                  height: 11,
+                  radius: 5,
+                ),
+              ],
+            ),
+          ),
+          _shimmerBox(
+            width: 55,
+            height: 24,
+            radius: 8,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _providersShimmer() {
+    return SizedBox(
+      height: 130,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: 3,
+        itemBuilder: (_, __) {
+          return _providerCardShimmer();
+        },
+      ),
+    );
+  }
+
+  Widget _ticketCardShimmer() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _shimmerBox(
+                width: 40,
+                height: 40,
+                radius: 30,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _shimmerBox(
+                      width: 150,
+                      height: 13,
+                      radius: 5,
+                    ),
+                    const SizedBox(height: 7),
+                    _shimmerBox(
+                      width: 100,
+                      height: 11,
+                      radius: 5,
+                    ),
+                  ],
+                ),
+              ),
+              _shimmerBox(
+                width: 65,
+                height: 22,
+                radius: 8,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _shimmerBox(
+                width: 70,
+                height: 13,
+                radius: 5,
+              ),
+              _shimmerBox(
+                width: 100,
+                height: 11,
+                radius: 5,
+              ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          _shimmerBox(
+            width: 180,
+            height: 11,
+            radius: 5,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _ticketsShimmer() {
+    return Column(
+      children: List.generate(
+        3,
+        (_) => _ticketCardShimmer(),
+      ),
+    );
+  }
+
+  Widget _providerResultShimmer() {
+    return ListView.builder(
+      itemCount: 4,
+      itemBuilder: (_, __) {
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 14,
+          ),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: Colors.grey.shade200,
+            ),
+          ),
+          child: Row(
+            children: [
+              _shimmerBox(
+                width: 56,
+                height: 56,
+                radius: 56,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _shimmerBox(
+                      width: 130,
+                      height: 15,
+                      radius: 5,
+                    ),
+                    const SizedBox(height: 8),
+                    _shimmerBox(
+                      width: 150,
+                      height: 12,
+                      radius: 5,
+                    ),
+                  ],
+                ),
+              ),
+              _shimmerBox(
+                width: 65,
+                height: 30,
+                radius: 12,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -7090,8 +9189,7 @@ class _TransportPageState extends State<TransportPage> {
                           .snapshots(),
                       builder: (context, AsyncSnapshot snapshot) {
                         if (!snapshot.hasData) {
-                          return const Center(
-                              child: CircularProgressIndicator());
+                          return _providersShimmer();
                         }
 
                         final providers = snapshot.data.docs;
@@ -7181,7 +9279,7 @@ class _TransportPageState extends State<TransportPage> {
                         .snapshots(),
                     builder: (context, snapshot) {
                       if (!snapshot.hasData) {
-                        return const Center(child: CircularProgressIndicator());
+                        return _ticketsShimmer();
                       }
 
                       final docs = snapshot.data!.docs;
@@ -7598,33 +9696,16 @@ class _TransportPageState extends State<TransportPage> {
                             ],
                           ),
                         ),
+                        Spacer(),
 
                         /// 🔥 RIGHT SIDE
-                        Column(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              "₦${data['price'] ?? ''}",
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.green,
-                                fontSize: 15,
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: Colors.black,
-                                borderRadius: BorderRadius.circular(30),
-                              ),
-                              child: const Icon(
-                                Icons.arrow_forward,
-                                color: Colors.white,
-                                size: 18,
-                              ),
-                            ),
-                          ],
+                        Text(
+                          "₦${data['price'] ?? ''}",
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.green,
+                            fontSize: 16,
+                          ),
                         ),
                       ],
                     ),
@@ -7952,7 +10033,7 @@ class _TransportPageState extends State<TransportPage> {
                       .snapshots(),
                   builder: (context, AsyncSnapshot snapshot) {
                     if (!snapshot.hasData) {
-                      return const Center(child: CircularProgressIndicator());
+                      return _providerResultShimmer();
                     }
 
                     final routes = snapshot.data.docs;
@@ -7974,8 +10055,7 @@ class _TransportPageState extends State<TransportPage> {
                           .get(),
                       builder: (context, AsyncSnapshot providersSnap) {
                         if (!providersSnap.hasData) {
-                          return const Center(
-                              child: CircularProgressIndicator());
+                          return _providerResultShimmer();
                         }
 
                         final providersMap = {
@@ -10488,11 +12568,7 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
             return ListView.builder(
               scrollDirection: Axis.horizontal,
               itemCount: 3,
-              itemBuilder: (_, __) => Container(
-                width: 300,
-                margin: const EdgeInsets.only(right: 15),
-                child: _driverShimmer(),
-              ),
+              itemBuilder: (_, __) => _onlineProviderShimmer(),
             );
           }
 
@@ -10690,6 +12766,107 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
     );
   }
 
+  Widget _onlineProviderShimmer() {
+    return Container(
+      width: 300,
+      height: 100,
+      margin: const EdgeInsets.only(right: 15),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: Colors.grey.shade200,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(.05),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Shimmer.fromColors(
+        baseColor: Colors.grey.shade300,
+        highlightColor: Colors.grey.shade100,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            children: [
+              /// VEHICLE IMAGE
+              Container(
+                width: 60,
+                height: 60,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
+              ),
+
+              const SizedBox(width: 12),
+
+              /// VEHICLE + INSTITUTION
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 120,
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      width: 90,
+                      height: 11,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(width: 14),
+
+              /// PRICE + SEATS
+              SizedBox(
+                width: 70,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Container(
+                      width: 55,
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      width: 65,
+                      height: 18,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _providerCard(Map<String, dynamic> data) {
     final image = data["vehicleImage"] ?? "";
     final code = data["driverCode"] ?? "";
@@ -10872,14 +13049,8 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
           .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(30),
-              child: CircularProgressIndicator(),
-            ),
-          );
+          return _recentTicketsShimmer();
         }
-
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
           return Container(
             width: double.infinity,
@@ -11110,6 +13281,107 @@ class _ShuttleBookingPageState extends State<ShuttleBookingPage> {
           }).toList(),
         );
       },
+    );
+  }
+
+  Widget _recentTicketsShimmer() {
+    return Column(
+      children: List.generate(
+        4,
+        (index) => Container(
+          width: 350,
+          height: 85,
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: Colors.grey.shade200,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(.05),
+                blurRadius: 12,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Shimmer.fromColors(
+            baseColor: Colors.grey.shade300,
+            highlightColor: Colors.grey.shade100,
+            child: Row(
+              children: [
+                /// BUS ICON
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+
+                const SizedBox(width: 14),
+
+                /// TICKET ID + VEHICLE
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 100,
+                        height: 13,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                      ),
+                      const SizedBox(height: 7),
+                      Container(
+                        width: 130,
+                        height: 11,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(width: 10),
+
+                /// PRICE + STATUS
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Container(
+                      width: 55,
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Container(
+                      width: 60,
+                      height: 11,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -24706,7 +26978,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  "Where should we collect the package from?",
+                  "Select pickup city?",
                   style: TextStyle(
                     fontSize: 13,
                     color: Colors.grey.shade600,
@@ -24796,7 +27068,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  "Where should we deliver the package?",
+                  "Where should we deliver this package?",
                   style: TextStyle(
                     fontSize: 13,
                     color: Colors.grey.shade600,
@@ -25275,16 +27547,32 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
             title: Text(_pickupAddressController.text),
           ),
           const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              icon: const Icon(Icons.edit_outlined),
-              label: const Text("Edit Details"),
-              onPressed: () {
+          Center(
+            child: GestureDetector(
+              onTap: () {
                 setState(() {
                   _editingSender = true;
                 });
               },
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(
+                    Icons.edit_outlined,
+                    color: Colors.black,
+                    size: 18,
+                  ),
+                  SizedBox(width: 6),
+                  Text(
+                    "Edit Details",
+                    style: TextStyle(
+                      color: Colors.green,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -25407,7 +27695,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
           //borderRadius: BorderRadius.circular(100),
           child: LinearProgressIndicator(
             value: value,
-            minHeight: 8,
+            minHeight: 5,
             backgroundColor: Colors.grey.shade200,
             valueColor: const AlwaysStoppedAnimation<Color>(Colors.green),
           ),
@@ -25487,6 +27775,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
         //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
 
         leading: Padding(
           padding: const EdgeInsets.only(left: 10),
@@ -25538,7 +27827,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
                       Text(
                         _stepTitle,
                         style: const TextStyle(
-                          fontSize: 28,
+                          fontSize: 22,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -25547,7 +27836,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
                         _stepSubtitle,
                         style: TextStyle(
                           color: Colors.grey.shade700,
-                          fontSize: 15,
+                          fontSize: 14,
                           height: 1.5,
                         ),
                       ),
@@ -25581,7 +27870,8 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
                                 style: OutlinedButton.styleFrom(
                                   minimumSize: const Size.fromHeight(55),
                                 ),
-                                child: const Text("Back"),
+                                child: const Text("Back",
+                                    style: TextStyle(color: Colors.black)),
                               ),
                             ),
                           if (_currentStep > 0) const SizedBox(width: 14),
@@ -25621,19 +27911,37 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
         labelText: label,
         filled: true,
         fillColor: Colors.grey[100],
+
+        // Label before typing/focus
+        labelStyle: const TextStyle(
+          color: Colors.grey,
+        ),
+
+        // Label when it moves up
+        floatingLabelStyle: const TextStyle(
+          color: Colors.grey,
+        ),
+
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide.none,
         ),
       );
 
-  Widget _buildTextField(TextEditingController controller, String label,
-      {TextInputType keyboardType = TextInputType.text,
-      Function(String)? onChanged}) {
+  Widget _buildTextField(
+    TextEditingController controller,
+    String label, {
+    TextInputType keyboardType = TextInputType.text,
+    Function(String)? onChanged,
+  }) {
     return TextFormField(
       controller: controller,
       keyboardType: keyboardType,
       onChanged: onChanged,
+
+      // Blinking cursor
+      cursorColor: Colors.black,
+
       decoration: _inputDecoration(label),
     );
   }
@@ -25648,6 +27956,36 @@ class PackagePreviewPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final serviceType = packageData['serviceType'] ?? 'Package Details';
+
+    Widget _buildSummaryRow(String label, String value) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                value,
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  color: Colors.black,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -25695,7 +28033,8 @@ class PackagePreviewPage extends StatelessWidget {
               elevation: 4,
               color: Colors.white,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16)),
+                borderRadius: BorderRadius.circular(16),
+              ),
               child: Padding(
                 padding: const EdgeInsets.all(24.0),
                 child: Column(
@@ -25705,84 +28044,129 @@ class PackagePreviewPage extends StatelessWidget {
                       child: Text(
                         "Confirm Details",
                         style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black),
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
+                        ),
                       ),
                     ),
+
                     const SizedBox(height: 20),
 
+                    // FROM
                     if (packageData['fromCity'] != null)
-                      _buildDetail("From", packageData['fromCity']),
-                    if (packageData['toCity'] != null)
-                      _buildDetail("To", packageData['toCity']),
-
-                    const SizedBox(height: 10),
-
-                    /// 🔹 EXISTING UI
-                    _buildServicePreviewUI(serviceType),
-
-                    /// 🔥 NEW: FROM / TO
-
-                    /// 🔥 NEW: PRICE DISPLAY
-                    if (packageData['price'] != null)
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: Colors.black,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          "₦${packageData['price']}",
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold),
-                        ),
+                      _buildSummaryRow(
+                        "From",
+                        packageData['fromCity'].toString(),
                       ),
 
-                    const SizedBox(height: 20),
+                    // TO
+                    if (packageData['toCity'] != null)
+                      _buildSummaryRow(
+                        "To",
+                        packageData['toCity'].toString(),
+                      ),
 
+                    // PACKAGE NAME
+                    if (packageData['packageName'] != null)
+                      _buildSummaryRow(
+                        "Package Name",
+                        packageData['packageName'].toString(),
+                      ),
+
+                    // PICKUP ADDRESS
+                    if (packageData['pickupAddress'] != null)
+                      _buildSummaryRow(
+                        "Pickup Address",
+                        packageData['pickupAddress'].toString(),
+                      ),
+
+                    // DELIVERY ADDRESS
+                    if (packageData['deliveryAddress'] != null)
+                      _buildSummaryRow(
+                        "Delivery Address",
+                        packageData['deliveryAddress'].toString(),
+                      ),
+
+                    const SizedBox(height: 16),
+
+                    // SERVICE PREVIEW
+                    //    _buildServicePreviewUI(serviceType),
+
+                    // const SizedBox(height: 20),
+
+                    // DELIVERY FEE
+                    if (packageData['price'] != null)
+                      Row(
+                        children: [
+                          const Text(
+                            "Delivery Fee",
+                            style: TextStyle(
+                              color: Colors.black,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            "₦${packageData['price']}",
+                            style: const TextStyle(
+                              color: Colors.green,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+
+                    const SizedBox(height: 24),
+
+                    // ACTION BUTTONS
                     Row(
                       children: [
                         Expanded(
                           child: OutlinedButton(
                             onPressed: () => Navigator.pop(context),
                             style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              //side: const BorderSide(color: Colors.black),
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 14,
+                              ),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
+                                borderRadius: BorderRadius.circular(30),
                               ),
                             ),
-                            child: const Text("Go Back",
-                                style: TextStyle(color: Colors.black)),
+                            child: const Text(
+                              "Go Back",
+                              style: TextStyle(
+                                color: Colors.black,
+                              ),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 16),
                         Expanded(
                           child: ElevatedButton(
-                            onPressed: () =>
-                                _payAndCreateOrder(context), // 🔥 UPDATED
+                            onPressed: () => _payAndCreateOrder(context),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.black,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 14,
+                              ),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
+                                borderRadius: BorderRadius.circular(30),
                               ),
                             ),
                             child: const Text(
                               "Pay",
                               style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold),
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                         ),
                       ],
-                    )
+                    ),
                   ],
                 ),
               ),
