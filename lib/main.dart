@@ -5354,7 +5354,7 @@ class _DashboardPageState extends State<DashboardPage> {
           /// 🔥 OUTER DECORATION (shadow + border FIXED here)
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: BorderRadius.circular(30),
 
             /// ✅ REAL SHADOW (stronger + layered)
             boxShadow: [
@@ -5557,7 +5557,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                 Expanded(
                                   child: Text(
                                     isLoadingLocation
-                                        ? "Fetching location..."
+                                        ? "getting your location..."
                                         : address,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
@@ -5594,7 +5594,7 @@ class _DashboardPageState extends State<DashboardPage> {
                               ),
                             ],
                           ),
-                          child: const Center(
+                          child: Center(
                             child: Text(
                               '₦2800',
                               style: TextStyle(
