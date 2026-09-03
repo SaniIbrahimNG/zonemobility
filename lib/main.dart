@@ -75,7 +75,7 @@ class MyApp extends StatelessWidget {
       // you want
       theme: ThemeData(
         primarySwatch: Colors.deepPurple,
-        textTheme: GoogleFonts.interTextTheme(),
+        textTheme: GoogleFonts.archivoBlackTextTheme(),
       ),
       // A widget which will be started on application startup
       home: const MyHomePage(),
@@ -322,6 +322,291 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  Future<void> _showForgotPasswordDialog() async {
+    final TextEditingController resetEmailController = TextEditingController(
+      text: emailController.text.trim(),
+    );
+
+    final resetFormKey = GlobalKey<FormState>();
+
+    await showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        bool isSending = false;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              backgroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(22),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Form(
+                  key: resetFormKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Zone header
+                      Center(
+                        child: Container(
+                          height: 58,
+                          width: 58,
+                          decoration: BoxDecoration(
+                            color: Colors.black,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: const Center(
+                            child: Text(
+                              'ZONE',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.8,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 18),
+
+                      const Center(
+                        child: Text(
+                          'Reset Password',
+                          style: TextStyle(
+                            color: Colors.black,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      const Center(
+                        child: Text(
+                          'Enter your email and we’ll send you a link to reset your password.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontSize: 13,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 22),
+
+                      TextFormField(
+                        controller: resetEmailController,
+                        keyboardType: TextInputType.emailAddress,
+                        cursorColor: Colors.black,
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontSize: 14,
+                        ),
+                        decoration: InputDecoration(
+                          labelText: 'Email',
+                          labelStyle: const TextStyle(
+                            color: Colors.grey,
+                          ),
+                          floatingLabelStyle: const TextStyle(
+                            color: Colors.grey,
+                          ),
+                          filled: true,
+                          fillColor: Colors.grey.shade100,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                          errorBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                          focusedErrorBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty) {
+                            return 'Please enter your email';
+                          }
+
+                          if (!RegExp(
+                            r'^[^@]+@[^@]+\.[^@]+$',
+                          ).hasMatch(value.trim())) {
+                            return 'Enter a valid email address';
+                          }
+
+                          return null;
+                        },
+                      ),
+
+                      const SizedBox(height: 18),
+
+                      SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: GestureDetector(
+                          onTap: isSending
+                              ? null
+                              : () async {
+                                  if (!resetFormKey.currentState!.validate()) {
+                                    return;
+                                  }
+
+                                  setDialogState(() {
+                                    isSending = true;
+                                  });
+
+                                  try {
+                                    await FirebaseAuth.instance
+                                        .sendPasswordResetEmail(
+                                      email: resetEmailController.text.trim(),
+                                    );
+
+                                    if (dialogContext.mounted) {
+                                      Navigator.pop(dialogContext);
+                                    }
+
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'Password reset link sent. Please check your email.',
+                                          ),
+                                          backgroundColor: Colors.black,
+                                        ),
+                                      );
+                                    }
+                                  } on FirebaseAuthException catch (e) {
+                                    setDialogState(() {
+                                      isSending = false;
+                                    });
+
+                                    String message;
+
+                                    switch (e.code) {
+                                      case 'invalid-email':
+                                        message =
+                                            'Please enter a valid email address.';
+                                        break;
+
+                                      case 'user-not-found':
+                                        message =
+                                            'No account was found with this email.';
+                                        break;
+
+                                      case 'too-many-requests':
+                                        message =
+                                            'Too many requests. Please try again later.';
+                                        break;
+
+                                      case 'network-request-failed':
+                                        message =
+                                            'Network error. Please check your internet connection.';
+                                        break;
+
+                                      default:
+                                        message =
+                                            'Unable to send reset email. Please try again.';
+                                    }
+
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(message),
+                                        backgroundColor: Colors.black,
+                                      ),
+                                    );
+                                  } catch (e) {
+                                    setDialogState(() {
+                                      isSending = false;
+                                    });
+
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Something went wrong. Please try again.',
+                                        ),
+                                        backgroundColor: Colors.black,
+                                      ),
+                                    );
+                                  }
+                                },
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.black,
+                              borderRadius: BorderRadius.circular(30),
+                            ),
+                            child: Center(
+                              child: isSending
+                                  ? const SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2.5,
+                                      ),
+                                    )
+                                  : const Text(
+                                      'SEND RESET LINK',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      Center(
+                        child: TextButton(
+                          onPressed: isSending
+                              ? null
+                              : () {
+                                  Navigator.pop(dialogContext);
+                                },
+                          child: const Text(
+                            'Cancel',
+                            style: TextStyle(
+                              color: Colors.grey,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    resetEmailController.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -341,15 +626,16 @@ class _LoginPageState extends State<LoginPage> {
                       height: 100,
                       width: 100,
                       decoration: BoxDecoration(
-                        color: Colors.purple[50],
+                        color: Colors.black,
                         shape: BoxShape.circle,
                       ),
                       child: const Center(
-                        child: Icon(
-                          Icons.person,
-                          size: 45,
-                          color: Colors.white,
-                        ),
+                        child: Text('Zone',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 24,
+                            )),
                       ),
                     )),
                 SizedBox(height: 15),
@@ -442,11 +728,19 @@ class _LoginPageState extends State<LoginPage> {
                 const SizedBox(height: 10),
                 Row(children: [
                   Spacer(),
-                  Text('Forgot Password',
+                  GestureDetector(
+                    onTap: () {
+                      _showForgotPasswordDialog();
+                    },
+                    child: const Text(
+                      'Reset Password',
                       style: TextStyle(
                         color: Colors.green,
                         fontSize: 12,
-                      ))
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
                 ]),
                 SizedBox(height: 10),
                 GestureDetector(
@@ -471,7 +765,8 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                Row(children: [
+                Center(
+                    child: Row(children: [
                   Spacer(),
                   // SizedBox(height: 70),
                   Text(
@@ -498,7 +793,7 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                     ),
                   ),
-                ]),
+                ])),
               ],
             ),
           ),
@@ -6802,22 +7097,45 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
   String? get providerId => _auth.currentUser?.uid;
 
   // ============================================================
-  // VEHICLES REFERENCE
+  // TOP-LEVEL VEHICLES COLLECTION
   // ============================================================
   //
-  // providers/{providerId}/vehicles/{vehicleId}
+  // vehicles/{vehicleId}
+  //
+  // Each vehicle contains:
+  //
+  // providerId
+  // vehicleId
+  // vehicleImage
+  // vehicleImagePath
+  // driverName
+  // driverCode
+  // vehicleCapacity
+  // boardedPassengers
+  // status
+  // active
+  // departureTime
+  // departureTimeMinutes
+  // routeId
+  // routeFrom
+  // routeTo
+  // routePrice
   //
   CollectionReference<Map<String, dynamic>> get _vehiclesRef {
+    return _firestore.collection('vehicles');
+  }
+
+  // ============================================================
+  // VEHICLE QUERY
+  // ============================================================
+
+  Query<Map<String, dynamic>> get _providerVehiclesQuery {
     final uid = providerId;
 
-    if (uid == null || uid.isEmpty) {
-      return _firestore
-          .collection('providers')
-          .doc('_invalid_provider_')
-          .collection('vehicles');
-    }
-
-    return _firestore.collection('providers').doc(uid).collection('vehicles');
+    return _vehiclesRef.where(
+      'providerId',
+      isEqualTo: uid,
+    );
   }
 
   // ============================================================
@@ -6830,6 +7148,8 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
 
     String? selectedRouteId;
     Map<String, dynamic>? selectedRoute;
+
+    TimeOfDay? selectedDepartureTime;
 
     XFile? selectedImage;
     bool uploading = false;
@@ -6846,9 +7166,9 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
       builder: (modalContext) {
         return StatefulBuilder(
           builder: (context, setModalState) {
-            // ========================================================
-            // PICK IMAGE
-            // ========================================================
+            // ======================================================
+            // PICK VEHICLE IMAGE
+            // ======================================================
 
             Future<void> pickImage() async {
               if (uploading) return;
@@ -6859,17 +7179,26 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                 final image = await picker.pickImage(
                   source: ImageSource.gallery,
                   imageQuality: 80,
+                  maxWidth: 1600,
+                  maxHeight: 1600,
                 );
 
                 if (image != null) {
                   setModalState(() {
                     selectedImage = image;
                   });
+
+                  debugPrint(
+                    "VEHICLE IMAGE SELECTED: ${image.name}",
+                  );
                 }
               } catch (e, stackTrace) {
-                debugPrint("PICK VEHICLE IMAGE ERROR: $e");
                 debugPrint(
-                  "PICK VEHICLE IMAGE STACK TRACE: $stackTrace",
+                  "PICK VEHICLE IMAGE ERROR: $e",
+                );
+
+                debugPrint(
+                  "PICK VEHICLE IMAGE STACK TRACE:\n$stackTrace",
                 );
 
                 _showMessage(
@@ -6878,26 +7207,72 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
               }
             }
 
-            // ========================================================
+            // ======================================================
+            // PICK DEPARTURE TIME
+            // ======================================================
+
+            Future<void> pickDepartureTime() async {
+              if (uploading) return;
+
+              final picked = await showTimePicker(
+                context: context,
+                initialTime: selectedDepartureTime ??
+                    const TimeOfDay(
+                      hour: 6,
+                      minute: 0,
+                    ),
+                helpText: "SELECT DEPARTURE TIME",
+                cancelText: "CANCEL",
+                confirmText: "SELECT",
+              );
+
+              if (picked == null) {
+                return;
+              }
+
+              final totalMinutes = picked.hour * 60 + picked.minute;
+
+              const minimumMinutes = 6 * 60;
+              const maximumMinutes = 18 * 60;
+
+              if (totalMinutes < minimumMinutes ||
+                  totalMinutes > maximumMinutes) {
+                _showMessage(
+                  "Departure time must be between 6:00 AM and 6:00 PM.",
+                );
+                return;
+              }
+
+              setModalState(() {
+                selectedDepartureTime = picked;
+              });
+            }
+
+            // ======================================================
             // SUBMIT VEHICLE
-            // ========================================================
+            // ======================================================
 
             Future<void> submitVehicle() async {
               final uid = providerId;
 
+              // ----------------------------------------------------
+              // AUTH CHECK
+              // ----------------------------------------------------
+
               if (uid == null || uid.isEmpty) {
                 _showMessage(
-                  "You must be logged in.",
+                  "You must be logged in to add a vehicle.",
                 );
                 return;
               }
 
               final driverName = driverController.text.trim();
+
               final capacityText = capacityController.text.trim();
 
-              // ------------------------------------------------------
-              // VALIDATION
-              // ------------------------------------------------------
+              // ----------------------------------------------------
+              // VALIDATE IMAGE
+              // ----------------------------------------------------
 
               if (selectedImage == null) {
                 _showMessage(
@@ -6906,12 +7281,20 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                 return;
               }
 
+              // ----------------------------------------------------
+              // VALIDATE DRIVER
+              // ----------------------------------------------------
+
               if (driverName.isEmpty) {
                 _showMessage(
-                  "Please enter the driver name.",
+                  "Please enter the driver's name.",
                 );
                 return;
               }
+
+              // ----------------------------------------------------
+              // VALIDATE CAPACITY
+              // ----------------------------------------------------
 
               if (capacityText.isEmpty) {
                 _showMessage(
@@ -6929,6 +7312,36 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                 return;
               }
 
+              // ----------------------------------------------------
+              // VALIDATE DEPARTURE TIME
+              // ----------------------------------------------------
+
+              if (selectedDepartureTime == null) {
+                _showMessage(
+                  "Please select a departure time.",
+                );
+                return;
+              }
+
+              final departureHour = selectedDepartureTime!.hour;
+
+              final departureMinute = selectedDepartureTime!.minute;
+
+              final departureTimeMinutes = departureHour * 60 + departureMinute;
+
+              if (departureTimeMinutes < 360 || departureTimeMinutes > 1080) {
+                _showMessage(
+                  "Departure time must be between 6:00 AM and 6:00 PM.",
+                );
+                return;
+              }
+
+              final departureTimeLabel = selectedDepartureTime!.format(context);
+
+              // ----------------------------------------------------
+              // VALIDATE ROUTE
+              // ----------------------------------------------------
+
               if (selectedRouteId == null || selectedRoute == null) {
                 _showMessage(
                   "Please select a route.",
@@ -6936,59 +7349,62 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                 return;
               }
 
-              // ------------------------------------------------------
-              // START UPLOAD
-              // ------------------------------------------------------
-
               setModalState(() {
                 uploading = true;
               });
 
               String? uploadedImagePath;
-              DocumentReference<Map<String, dynamic>>? vehicleRef;
 
               try {
-                // ====================================================
-                // CREATE VEHICLE DOCUMENT REFERENCE
+                // ==================================================
+                // CREATE TOP-LEVEL VEHICLE DOCUMENT
+                // ==================================================
                 //
-                // IMPORTANT:
-                // This creates:
+                // vehicles/{vehicleId}
                 //
-                // providers/{providerId}/vehicles/{vehicleId}
-                //
-                // NOT:
-                //
-                // providers/{randomId}
-                // ====================================================
 
-                vehicleRef = _vehiclesRef.doc();
+                final vehicleRef = _vehiclesRef.doc();
 
                 final vehicleId = vehicleRef.id;
 
                 debugPrint(
                   "==============================================",
                 );
+
                 debugPrint(
                   "ADDING VEHICLE",
                 );
+
                 debugPrint(
                   "Provider ID: $uid",
                 );
+
                 debugPrint(
                   "Vehicle ID: $vehicleId",
                 );
+
                 debugPrint(
                   "Vehicle Path: ${vehicleRef.path}",
                 );
+
+                debugPrint(
+                  "Departure Time: $departureTimeLabel",
+                );
+
+                debugPrint(
+                  "Departure Minutes: $departureTimeMinutes",
+                );
+
                 debugPrint(
                   "==============================================",
                 );
 
-                // ====================================================
+                // ==================================================
                 // STORAGE PATH
+                // ==================================================
                 //
                 // vehicles/{providerId}/{vehicleId}.jpg
-                // ====================================================
+                //
 
                 final storageRef = _storage
                     .ref()
@@ -6999,122 +7415,223 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                 uploadedImagePath = storageRef.fullPath;
 
                 debugPrint(
-                  "Vehicle image path: $uploadedImagePath",
+                  "Storage Path: $uploadedImagePath",
                 );
 
-                // ====================================================
-                // UPLOAD IMAGE
-                // ====================================================
+                // ==================================================
+                // READ IMAGE AS BYTES
+                // ==================================================
+                //
+                // Works on:
+                // - Flutter Web
+                // - Android
+                // - iOS
+                //
 
-                final file = File(selectedImage!.path);
+                final imageBytes = await selectedImage!.readAsBytes();
 
-                if (!await file.exists()) {
+                if (imageBytes.isEmpty) {
                   throw Exception(
-                    "Selected image file no longer exists.",
+                    "Selected image contains no data.",
                   );
                 }
 
-                final uploadTask = await storageRef.putFile(
-                  file,
-                  SettableMetadata(
-                    contentType: 'image/jpeg',
-                    customMetadata: {
-                      'providerId': uid,
-                      'vehicleId': vehicleId,
-                    },
-                  ),
+                debugPrint(
+                  "IMAGE BYTES: ${imageBytes.length}",
+                );
+
+                // ==================================================
+                // UPLOAD IMAGE
+                // ==================================================
+
+                final uploadMetadata = SettableMetadata(
+                  contentType: 'image/jpeg',
+                  customMetadata: {
+                    'providerId': uid,
+                    'vehicleId': vehicleId,
+                  },
+                );
+
+                final uploadTask = await storageRef.putData(
+                  imageBytes,
+                  uploadMetadata,
                 );
 
                 debugPrint(
-                  "IMAGE UPLOAD COMPLETE: ${uploadTask.state}",
+                  "IMAGE UPLOAD COMPLETE: "
+                  "${uploadTask.state}",
                 );
 
-                // ====================================================
+                // ==================================================
                 // GET DOWNLOAD URL
-                // ====================================================
+                // ==================================================
 
                 final imageUrl = await storageRef.getDownloadURL();
 
                 debugPrint(
-                  "Vehicle image URL obtained successfully.",
+                  "IMAGE URL: $imageUrl",
                 );
 
-                // ====================================================
+                // ==================================================
                 // ROUTE DATA
-                // ====================================================
+                // ==================================================
 
-                final routeData = Map<String, dynamic>.from(selectedRoute!);
+                final routeData = Map<String, dynamic>.from(
+                  selectedRoute!,
+                );
+
+                final routeFrom = routeData['from']?.toString() ?? '';
+
+                final routeTo = routeData['to']?.toString() ?? '';
+
+                final routePrice = routeData['price'] ?? 0;
+
+                // ==================================================
+                // DRIVER CODE
+                // ==================================================
 
                 final driverCode =
-                    'DRV-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
+                    'DRV-${DateTime.now().millisecondsSinceEpoch}';
 
-                // ====================================================
+                // ==================================================
                 // VEHICLE DATA
-                // ====================================================
+                // ==================================================
 
                 final vehicleData = {
+                  // ------------------------------------------------
+                  // OWNERSHIP
+                  // ------------------------------------------------
+
                   'providerId': uid,
                   'vehicleId': vehicleId,
 
+                  // ------------------------------------------------
                   // IMAGE
+                  // ------------------------------------------------
+
                   'vehicleImage': imageUrl,
                   'vehicleImagePath': uploadedImagePath,
 
+                  // ------------------------------------------------
                   // DRIVER
+                  // ------------------------------------------------
+
                   'driverName': driverName,
                   'driverCode': driverCode,
 
+                  // ------------------------------------------------
                   // CAPACITY
+                  // ------------------------------------------------
+
                   'vehicleCapacity': capacity,
                   'boardedPassengers': 0,
 
+                  // ------------------------------------------------
+                  // DEPARTURE TIME
+                  // ------------------------------------------------
+                  //
+                  // departureTime:
+                  // Human-readable value, e.g. "8:30 AM"
+                  //
+                  // departureTimeMinutes:
+                  // Numeric value used for Firestore queries.
+                  //
+                  // 6:00 AM = 360
+                  // 12:00 PM = 720
+                  // 6:00 PM = 1080
+                  //
+
+                  'departureTime': departureTimeLabel,
+
+                  'departureTimeMinutes': departureTimeMinutes,
+
+                  // ------------------------------------------------
                   // STATUS
+                  // ------------------------------------------------
+
                   'status': 'offline',
-                  'active': true,
+                  'active': false,
 
+                  // ------------------------------------------------
                   // ROUTE
-                  'routeId': selectedRouteId,
-                  'routeFrom': routeData['from'] ?? '',
-                  'routeTo': routeData['to'] ?? '',
-                  'routePrice': routeData['price'] ?? 0,
+                  // ------------------------------------------------
 
+                  'routeId': selectedRouteId,
+                  'routeFrom': routeFrom,
+                  'routeTo': routeTo,
+                  'routePrice': routePrice,
+
+                  // ------------------------------------------------
                   // TIMESTAMPS
+                  // ------------------------------------------------
+
                   'createdAt': FieldValue.serverTimestamp(),
+
                   'updatedAt': FieldValue.serverTimestamp(),
                 };
 
                 debugPrint(
-                  "Creating vehicle document at:",
+                  "==============================================",
                 );
+
                 debugPrint(
-                  vehicleRef.path,
+                  "CREATING FIRESTORE VEHICLE",
                 );
 
-                // ====================================================
-                // CREATE VEHICLE DOCUMENT
-                // ====================================================
+                debugPrint(
+                  "Path: ${vehicleRef.path}",
+                );
 
-                await vehicleRef.set(vehicleData);
+                debugPrint(
+                  "Provider: $uid",
+                );
+
+                debugPrint(
+                  "Route: $selectedRouteId",
+                );
+
+                debugPrint(
+                  "Departure: $departureTimeLabel",
+                );
+
+                debugPrint(
+                  "Departure Minutes: "
+                  "$departureTimeMinutes",
+                );
 
                 debugPrint(
                   "==============================================",
                 );
+
+                // ==================================================
+                // SAVE VEHICLE
+                // ==================================================
+
+                await vehicleRef.set(
+                  vehicleData,
+                );
+
+                debugPrint(
+                  "==============================================",
+                );
+
                 debugPrint(
                   "VEHICLE CREATED SUCCESSFULLY",
                 );
+
                 debugPrint(
-                  "Firestore path: ${vehicleRef.path}",
+                  "Firestore Path: ${vehicleRef.path}",
                 );
+
                 debugPrint(
                   "==============================================",
                 );
 
                 if (modalContext.mounted) {
-                  Navigator.pop(modalContext);
+                  Navigator.pop(
+                    modalContext,
+                  );
                 }
-
-                driverController.dispose();
-                capacityController.dispose();
 
                 _showMessage(
                   "Vehicle added successfully.",
@@ -7124,37 +7641,42 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                 debugPrint(
                   "==============================================",
                 );
+
                 debugPrint(
-                  "ADD VEHICLE ERROR: $e",
+                  "ADD VEHICLE ERROR",
                 );
+
                 debugPrint(
-                  "ADD VEHICLE STACK TRACE:",
+                  "$e",
                 );
+
+                debugPrint(
+                  "STACK TRACE",
+                );
+
                 debugPrint(
                   "$stackTrace",
                 );
+
                 debugPrint(
                   "==============================================",
                 );
 
-                // ====================================================
-                // CLEAN UP IMAGE IF FIRESTORE CREATION FAILED
-                // ====================================================
+                // ==================================================
+                // CLEAN UP UPLOADED IMAGE
+                // ==================================================
 
                 if (uploadedImagePath != null) {
                   try {
-                    await _storage.ref(uploadedImagePath).delete();
+                    await _storage.ref(uploadedImagePath!).delete();
 
                     debugPrint(
-                      "Uploaded vehicle image cleaned up.",
+                      "Uploaded image cleaned up.",
                     );
-                  } catch (cleanupError, cleanupStackTrace) {
+                  } catch (cleanupError) {
                     debugPrint(
-                      "IMAGE CLEANUP ERROR: $cleanupError",
-                    );
-                    debugPrint(
-                      "IMAGE CLEANUP STACK TRACE: "
-                      "$cleanupStackTrace",
+                      "IMAGE CLEANUP ERROR: "
+                      "$cleanupError",
                     );
                   }
                 }
@@ -7165,27 +7687,54 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                   });
                 }
 
-                String message = "Unable to add vehicle. Please try again.";
+                // ==================================================
+                // FRIENDLY ERROR
+                // ==================================================
 
-                final errorString = e.toString().toLowerCase();
+                final error = e.toString().toLowerCase();
 
-                if (errorString.contains('permission-denied')) {
-                  message = "Permission denied. Please check your provider "
-                      "Firestore rules.";
-                } else if (errorString.contains('unauthorized')) {
-                  message = "Image upload was not authorized. "
-                      "Please check your Storage rules.";
-                } else if (errorString.contains('network')) {
-                  message = "Network error. Please check your connection.";
+                String message = "Unable to add vehicle.";
+
+                if (error.contains(
+                  'permission-denied',
+                )) {
+                  message =
+                      "Permission denied. Check your Firestore rules for the vehicles collection.";
+                } else if (error.contains(
+                  'unauthorized',
+                )) {
+                  message =
+                      "Image upload was not authorized. Check your Firebase Storage rules.";
+                } else if (error.contains(
+                  'object-not-found',
+                )) {
+                  message =
+                      "Firebase Storage could not find the upload location.";
+                } else if (error.contains(
+                  'network',
+                )) {
+                  message =
+                      "Network error. Please check your internet connection.";
+                } else if (error.contains(
+                  'unauthenticated',
+                )) {
+                  message =
+                      "Your login session has expired. Please sign in again.";
+                } else if (error.contains(
+                  'invalid-argument',
+                )) {
+                  message = "Some vehicle information is invalid.";
                 }
 
-                _showMessage(message);
+                _showMessage(
+                  message,
+                );
               }
             }
 
-            // ========================================================
+            // ======================================================
             // MODAL UI
-            // ========================================================
+            // ======================================================
 
             return SafeArea(
               child: Padding(
@@ -7199,9 +7748,9 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // ==================================================
+                      // ============================================
                       // HANDLE
-                      // ==================================================
+                      // ============================================
 
                       Center(
                         child: Container(
@@ -7209,16 +7758,18 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                           height: 5,
                           decoration: BoxDecoration(
                             color: Colors.grey.shade300,
-                            borderRadius: BorderRadius.circular(20),
+                            borderRadius: BorderRadius.circular(
+                              20,
+                            ),
                           ),
                         ),
                       ),
 
                       const SizedBox(height: 22),
 
-                      // ==================================================
+                      // ============================================
                       // HEADER
-                      // ==================================================
+                      // ============================================
 
                       Row(
                         children: [
@@ -7262,16 +7813,12 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
 
                       const SizedBox(height: 25),
 
-                      // ==================================================
+                      // ============================================
                       // VEHICLE IMAGE
-                      // ==================================================
+                      // ============================================
 
-                      const Text(
+                      _fieldLabel(
                         "Vehicle Image",
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
                       ),
 
                       const SizedBox(height: 9),
@@ -7283,7 +7830,9 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                           width: double.infinity,
                           decoration: BoxDecoration(
                             color: Colors.grey.shade50,
-                            borderRadius: BorderRadius.circular(16),
+                            borderRadius: BorderRadius.circular(
+                              16,
+                            ),
                             border: Border.all(
                               color: Colors.grey.shade300,
                             ),
@@ -7296,30 +7845,27 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                                       width: 48,
                                       height: 48,
                                       decoration: BoxDecoration(
-                                        color: Colors.white,
+                                        color: Colors.grey.shade100,
                                         shape: BoxShape.circle,
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color:
-                                                Colors.black.withOpacity(.05),
-                                            blurRadius: 8,
-                                          ),
-                                        ],
                                       ),
                                       child: const Icon(
                                         Icons.add_a_photo_outlined,
-                                        size: 21,
+                                        size: 22,
                                       ),
                                     ),
-                                    const SizedBox(height: 10),
+                                    const SizedBox(
+                                      height: 10,
+                                    ),
                                     const Text(
-                                      "Tap to upload vehicle image",
+                                      "Tap to select vehicle image",
                                       style: TextStyle(
                                         fontSize: 12,
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
-                                    const SizedBox(height: 4),
+                                    const SizedBox(
+                                      height: 4,
+                                    ),
                                     Text(
                                       "JPG or PNG",
                                       style: TextStyle(
@@ -7330,35 +7876,33 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                                   ],
                                 )
                               : ClipRRect(
-                                  borderRadius: BorderRadius.circular(16),
-                                  child: Stack(
-                                    fit: StackFit.expand,
-                                    children: [
-                                      Image.file(
-                                        File(
-                                          selectedImage!.path,
+                                  borderRadius: BorderRadius.circular(
+                                    15,
+                                  ),
+                                  child: FutureBuilder<List<int>>(
+                                    future: selectedImage!.readAsBytes(),
+                                    builder: (
+                                      context,
+                                      snapshot,
+                                    ) {
+                                      if (!snapshot.hasData) {
+                                        return const Center(
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.black,
+                                          ),
+                                        );
+                                      }
+
+                                      return Image.memory(
+                                        Uint8List.fromList(
+                                          snapshot.data!,
                                         ),
+                                        width: double.infinity,
+                                        height: 150,
                                         fit: BoxFit.cover,
-                                      ),
-                                      Positioned(
-                                        right: 10,
-                                        top: 10,
-                                        child: Container(
-                                          padding: const EdgeInsets.all(
-                                            7,
-                                          ),
-                                          decoration: const BoxDecoration(
-                                            color: Colors.black87,
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: const Icon(
-                                            Icons.edit,
-                                            color: Colors.white,
-                                            size: 15,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
+                                      );
+                                    },
                                   ),
                                 ),
                         ),
@@ -7366,17 +7910,20 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
 
                       const SizedBox(height: 20),
 
-                      // ==================================================
+                      // ============================================
                       // DRIVER NAME
-                      // ==================================================
+                      // ============================================
 
-                      _fieldLabel("Driver Name"),
+                      _fieldLabel(
+                        "Driver Name",
+                      ),
 
                       const SizedBox(height: 8),
 
                       TextField(
                         controller: driverController,
                         textCapitalization: TextCapitalization.words,
+                        enabled: !uploading,
                         decoration: _inputDecoration(
                           hint: "Enter driver's name",
                           icon: Icons.person_outline,
@@ -7385,16 +7932,19 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
 
                       const SizedBox(height: 18),
 
-                      // ==================================================
+                      // ============================================
                       // CAPACITY
-                      // ==================================================
+                      // ============================================
 
-                      _fieldLabel("Total Capacity"),
+                      _fieldLabel(
+                        "Total Capacity",
+                      ),
 
                       const SizedBox(height: 8),
 
                       TextField(
                         controller: capacityController,
+                        enabled: !uploading,
                         keyboardType: TextInputType.number,
                         decoration: _inputDecoration(
                           hint: "e.g. 18",
@@ -7404,23 +7954,135 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
 
                       const SizedBox(height: 18),
 
-                      // ==================================================
-                      // ROUTE
-                      // ==================================================
+                      // ============================================
+                      // DEPARTURE TIME
+                      // ============================================
 
-                      _fieldLabel("Assign Route"),
+                      _fieldLabel(
+                        "Departure Time",
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      GestureDetector(
+                        onTap: uploading ? null : pickDepartureTime,
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(
+                              14,
+                            ),
+                            border: Border.all(
+                              color: selectedDepartureTime != null
+                                  ? Colors.black
+                                  : Colors.grey.shade300,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade100,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.schedule_rounded,
+                                  size: 18,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: selectedDepartureTime == null
+                                    ? Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            "Select departure time",
+                                            style: TextStyle(
+                                              color: Colors.grey.shade500,
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                          const SizedBox(
+                                            height: 3,
+                                          ),
+                                          Text(
+                                            "Available from 6:00 AM to 6:00 PM",
+                                            style: TextStyle(
+                                              color: Colors.grey.shade400,
+                                              fontSize: 10,
+                                            ),
+                                          ),
+                                        ],
+                                      )
+                                    : Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            selectedDepartureTime!.format(
+                                              context,
+                                            ),
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          const SizedBox(
+                                            height: 3,
+                                          ),
+                                          Text(
+                                            "Scheduled departure",
+                                            style: TextStyle(
+                                              color: Colors.grey.shade500,
+                                              fontSize: 10,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                              ),
+                              const Icon(
+                                Icons.keyboard_arrow_down_rounded,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 18),
+
+                      // ============================================
+                      // ROUTE
+                      // ============================================
+
+                      _fieldLabel(
+                        "Assign Route",
+                      ),
 
                       const SizedBox(height: 8),
 
                       StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                         stream: _firestore
-                            .collection('routes')
+                            .collection(
+                              'routes',
+                            )
                             .where(
                               'providerId',
                               isEqualTo: providerId,
                             )
                             .snapshots(),
-                        builder: (context, snapshot) {
+                        builder: (
+                          context,
+                          snapshot,
+                        ) {
                           if (snapshot.connectionState ==
                               ConnectionState.waiting) {
                             return Container(
@@ -7477,10 +8139,13 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                                     );
 
                                     if (result != null) {
-                                      setModalState(() {
-                                        selectedRouteId = result['id'];
-                                        selectedRoute = result['data'];
-                                      });
+                                      setModalState(
+                                        () {
+                                          selectedRouteId = result['id'];
+
+                                          selectedRoute = result['data'];
+                                        },
+                                      );
                                     }
                                   },
                             child: Container(
@@ -7491,7 +8156,9 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                               ),
                               decoration: BoxDecoration(
                                 color: Colors.white,
-                                borderRadius: BorderRadius.circular(14),
+                                borderRadius: BorderRadius.circular(
+                                  14,
+                                ),
                                 border: Border.all(
                                   color: selectedRoute != null
                                       ? Colors.black
@@ -7533,9 +8200,7 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                                                   fontWeight: FontWeight.w600,
                                                 ),
                                               ),
-                                              const SizedBox(
-                                                height: 3,
-                                              ),
+                                              const SizedBox(height: 3),
                                               Text(
                                                 "₦${selectedRoute!['price'] ?? 0}",
                                                 style: TextStyle(
@@ -7558,9 +8223,9 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
 
                       const SizedBox(height: 25),
 
-                      // ==================================================
+                      // ============================================
                       // ADD BUTTON
-                      // ==================================================
+                      // ============================================
 
                       SizedBox(
                         width: double.infinity,
@@ -7572,7 +8237,9 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                             disabledBackgroundColor: Colors.grey.shade400,
                             elevation: 0,
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
+                              borderRadius: BorderRadius.circular(
+                                14,
+                              ),
                             ),
                           ),
                           child: uploading
@@ -7628,7 +8295,12 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
       builder: (context) {
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+            padding: const EdgeInsets.fromLTRB(
+              16,
+              12,
+              16,
+              20,
+            ),
             child: Column(
               children: [
                 Container(
@@ -7657,7 +8329,7 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                     "Choose the route this vehicle will operate on.",
                     style: TextStyle(
                       fontSize: 11,
-                      color: Colors.grey.shade500,
+                      color: Colors.grey,
                     ),
                   ),
                 ),
@@ -7667,9 +8339,16 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                     itemCount: routes.length,
                     itemBuilder: (context, index) {
                       final route = routes[index];
+
                       final data = route.data();
 
                       final isSelected = route.id == selectedId;
+
+                      final from = data['from']?.toString() ?? '';
+
+                      final to = data['to']?.toString() ?? '';
+
+                      final price = data['price'] ?? 0;
 
                       return GestureDetector(
                         onTap: () {
@@ -7685,7 +8364,9 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                           margin: const EdgeInsets.only(
                             bottom: 10,
                           ),
-                          padding: const EdgeInsets.all(14),
+                          padding: const EdgeInsets.all(
+                            14,
+                          ),
                           decoration: BoxDecoration(
                             color: isSelected
                                 ? Colors.grey.shade100
@@ -7721,17 +8402,15 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      "${data['from'] ?? ''} → ${data['to'] ?? ''}",
+                                      "$from → $to",
                                       style: const TextStyle(
                                         fontSize: 13,
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
-                                    const SizedBox(
-                                      height: 5,
-                                    ),
+                                    const SizedBox(height: 5),
                                     Text(
-                                      "₦${data['price'] ?? 0}",
+                                      "₦$price",
                                       style: TextStyle(
                                         fontSize: 11,
                                         color: Colors.grey.shade600,
@@ -7781,11 +8460,11 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
     }
 
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      // IMPORTANT:
-      // Read from:
-      // providers/{providerId}/vehicles
-      stream: _vehiclesRef.snapshots(),
-      builder: (context, snapshot) {
+      stream: _providerVehiclesQuery.snapshots(),
+      builder: (
+        context,
+        snapshot,
+      ) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Column(
             children: List.generate(
@@ -7797,13 +8476,14 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
 
         if (snapshot.hasError) {
           debugPrint(
-            "LOAD VEHICLES ERROR: ${snapshot.error}",
+            "LOAD VEHICLES ERROR: "
+            "${snapshot.error}",
           );
 
           return _emptyMessage(
             icon: Icons.error_outline,
             title: "Unable to load vehicles",
-            subtitle: "Please try again later.",
+            subtitle: "Please check your Firestore rules.",
           );
         }
 
@@ -7832,6 +8512,94 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
   }
 
   // ============================================================
+  // TOGGLE VEHICLE STATUS
+  // ============================================================
+
+  Future<void> _toggleVehicleStatus({
+    required String docId,
+    required String currentStatus,
+  }) async {
+    final uid = providerId;
+
+    if (uid == null || uid.isEmpty) {
+      _showMessage(
+        "You must be logged in.",
+      );
+      return;
+    }
+
+    final newStatus =
+        currentStatus.toLowerCase() == 'online' ? 'offline' : 'online';
+
+    try {
+      final vehicleRef = _vehiclesRef.doc(docId);
+
+      // ----------------------------------------------------------
+      // SECURITY CHECK
+      // ----------------------------------------------------------
+
+      final snapshot = await vehicleRef.get();
+
+      if (!snapshot.exists) {
+        _showMessage(
+          "Vehicle no longer exists.",
+        );
+        return;
+      }
+
+      final vehicleData = snapshot.data() ?? {};
+
+      final ownerId = vehicleData['providerId']?.toString();
+
+      if (ownerId != uid) {
+        _showMessage(
+          "You cannot change this vehicle.",
+        );
+        return;
+      }
+
+      // ----------------------------------------------------------
+      // UPDATE STATUS
+      // ----------------------------------------------------------
+
+      await vehicleRef.update({
+        'status': newStatus,
+        'active': newStatus == 'online',
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      _showMessage(
+        newStatus == 'online'
+            ? "Vehicle is now online."
+            : "Vehicle is now offline.",
+        success: true,
+      );
+    } catch (e, stackTrace) {
+      debugPrint(
+        "TOGGLE VEHICLE STATUS ERROR: $e",
+      );
+
+      debugPrint(
+        "STACK TRACE:\n$stackTrace",
+      );
+
+      final error = e.toString().toLowerCase();
+
+      if (error.contains(
+        'permission-denied',
+      )) {
+        _showMessage(
+          "You do not have permission to change this vehicle.",
+        );
+      } else {
+        _showMessage(
+          "Unable to update vehicle status.",
+        );
+      }
+    }
+  }
+
+  // ============================================================
   // VEHICLE CARD
   // ============================================================
 
@@ -7851,6 +8619,8 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
 
     final to = data['routeTo']?.toString() ?? '';
 
+    final departureTime = data['departureTime']?.toString() ?? '';
+
     final status = data['status']?.toString() ?? 'offline';
 
     final capacityValue =
@@ -7862,6 +8632,8 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
     final seatsLeft = capacityValue - boardedValue;
 
     final safeSeats = seatsLeft < 0 ? 0 : seatsLeft;
+
+    final isOnline = status.toLowerCase() == 'online';
 
     return Container(
       width: double.infinity,
@@ -7887,9 +8659,9 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
         children: [
           Row(
             children: [
-              // ======================================================
+              // ================================================
               // IMAGE
-              // ======================================================
+              // ================================================
 
               ClipRRect(
                 borderRadius: BorderRadius.circular(14),
@@ -7899,7 +8671,11 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                         width: 82,
                         height: 82,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) {
+                        errorBuilder: (
+                          _,
+                          __,
+                          ___,
+                        ) {
                           return _vehicleImageFallback();
                         },
                       )
@@ -7907,6 +8683,10 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
               ),
 
               const SizedBox(width: 13),
+
+              // ================================================
+              // DETAILS
+              // ================================================
 
               Expanded(
                 child: Column(
@@ -7923,10 +8703,18 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                             ),
                           ),
                         ),
-                        _statusBadge(status),
+                        _statusBadge(
+                          status,
+                        ),
                       ],
                     ),
+
                     const SizedBox(height: 8),
+
+                    // ------------------------------------------
+                    // CAPACITY
+                    // ------------------------------------------
+
                     Row(
                       children: [
                         Icon(
@@ -7955,7 +8743,13 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                         ),
                       ],
                     ),
+
                     const SizedBox(height: 8),
+
+                    // ------------------------------------------
+                    // ROUTE
+                    // ------------------------------------------
+
                     if (from.isNotEmpty || to.isNotEmpty)
                       Row(
                         children: [
@@ -7978,28 +8772,115 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                           ),
                         ],
                       ),
+
+                    // ------------------------------------------
+                    // DEPARTURE TIME
+                    // ------------------------------------------
+
+                    if (departureTime.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.schedule_rounded,
+                            size: 15,
+                            color: Colors.grey.shade600,
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            "Departure • $departureTime",
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
             ],
           ),
+
           const SizedBox(height: 12),
+
           Divider(
             height: 1,
             color: Colors.grey.shade200,
           ),
+
           const SizedBox(height: 10),
+
+          // ================================================
+          // BOTTOM CONTROLS
+          // ================================================
+
           Row(
             children: [
               Expanded(
-                child: Text(
-                  "Driver • ${data['driverCode'] ?? 'N/A'}",
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Colors.grey.shade500,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Driver • ${data['driverCode'] ?? 'N/A'}",
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.grey.shade500,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      isOnline ? "Vehicle is active" : "Vehicle is offline",
+                      style: TextStyle(
+                        fontSize: 9,
+                        color: isOnline
+                            ? Colors.green.shade700
+                            : Colors.grey.shade500,
+                      ),
+                    ),
+                  ],
                 ),
               ),
+
+              // ================================================
+              // ONLINE/OFFLINE SWITCH
+              // ================================================
+
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    isOnline ? "Online" : "Offline",
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: isOnline
+                          ? Colors.green.shade700
+                          : Colors.grey.shade600,
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  Switch.adaptive(
+                    value: isOnline,
+                    activeColor: Colors.green,
+                    onChanged: (value) {
+                      _toggleVehicleStatus(
+                        docId: docId,
+                        currentStatus: status,
+                      );
+                    },
+                  ),
+                ],
+              ),
+
+              const SizedBox(width: 4),
+
+              // ================================================
+              // OPTIONS
+              // ================================================
+
               GestureDetector(
                 onTap: () {
                   _showVehicleOptions(
@@ -8014,7 +8895,9 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                   ),
                   decoration: BoxDecoration(
                     color: Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(9),
+                    borderRadius: BorderRadius.circular(
+                      9,
+                    ),
                   ),
                   child: const Icon(
                     Icons.more_horiz,
@@ -8030,14 +8913,17 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
   }
 
   // ============================================================
-  // VEHICLE IMAGE FALLBACK
+  // IMAGE FALLBACK
   // ============================================================
 
   Widget _vehicleImageFallback() {
     return Container(
       width: 82,
       height: 82,
-      color: Colors.grey.shade100,
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(14),
+      ),
       child: const Icon(
         Icons.directions_bus_rounded,
         size: 34,
@@ -8050,7 +8936,9 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
   // STATUS BADGE
   // ============================================================
 
-  Widget _statusBadge(String status) {
+  Widget _statusBadge(
+    String status,
+  ) {
     final online = status.toLowerCase() == 'online';
 
     return Container(
@@ -8119,7 +9007,9 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                   icon: Icons.edit_outlined,
                   title: "Edit Vehicle",
                   onTap: () {
-                    Navigator.pop(context);
+                    Navigator.pop(
+                      context,
+                    );
 
                     _showMessage(
                       "Vehicle editing can be added here.",
@@ -8131,7 +9021,9 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                   title: "Remove Vehicle",
                   color: Colors.red,
                   onTap: () {
-                    Navigator.pop(context);
+                    Navigator.pop(
+                      context,
+                    );
 
                     _confirmDeleteVehicle(
                       docId,
@@ -8214,7 +9106,9 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                 context,
                 false,
               ),
-              child: const Text("Cancel"),
+              child: const Text(
+                "Cancel",
+              ),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -8240,39 +9134,76 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
       return;
     }
 
+    final uid = providerId;
+
+    if (uid == null || uid.isEmpty) {
+      _showMessage(
+        "You must be logged in.",
+      );
+      return;
+    }
+
     try {
       // ==========================================================
-      // DELETE FIRESTORE VEHICLE
+      // TOP-LEVEL VEHICLE DOCUMENT
       // ==========================================================
 
       final vehicleRef = _vehiclesRef.doc(docId);
 
-      final vehicleSnapshot = await vehicleRef.get();
+      final snapshot = await vehicleRef.get();
 
-      final vehicleData = vehicleSnapshot.data();
+      if (!snapshot.exists) {
+        _showMessage(
+          "Vehicle no longer exists.",
+        );
+        return;
+      }
+
+      final vehicleData = snapshot.data() ?? {};
+
+      // ==========================================================
+      // SECURITY CHECK
+      // ==========================================================
+
+      final ownerId = vehicleData['providerId']?.toString();
+
+      if (ownerId != uid) {
+        _showMessage(
+          "You cannot remove this vehicle.",
+        );
+        return;
+      }
+
+      // ==========================================================
+      // DELETE FIRESTORE DOCUMENT
+      // ==========================================================
 
       await vehicleRef.delete();
 
+      debugPrint(
+        "VEHICLE DELETED: ${vehicleRef.path}",
+      );
+
       // ==========================================================
-      // DELETE IMAGE FROM STORAGE
+      // DELETE IMAGE
       // ==========================================================
 
-      final imagePath = vehicleData?['vehicleImagePath'];
+      final imagePath = vehicleData['vehicleImagePath'];
 
       if (imagePath != null && imagePath.toString().isNotEmpty) {
         try {
-          await _storage.ref(imagePath.toString()).delete();
+          await _storage
+              .ref(
+                imagePath.toString(),
+              )
+              .delete();
 
           debugPrint(
             "Vehicle image deleted.",
           );
-        } catch (e, stackTrace) {
+        } catch (e) {
           debugPrint(
             "DELETE VEHICLE IMAGE ERROR: $e",
-          );
-          debugPrint(
-            "DELETE VEHICLE IMAGE STACK TRACE: "
-            "$stackTrace",
           );
         }
       }
@@ -8285,14 +9216,24 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
       debugPrint(
         "DELETE VEHICLE ERROR: $e",
       );
+
       debugPrint(
-        "DELETE VEHICLE STACK TRACE: "
-        "$stackTrace",
+        "DELETE VEHICLE STACK TRACE:\n$stackTrace",
       );
 
-      _showMessage(
-        "Unable to remove vehicle.",
-      );
+      final error = e.toString().toLowerCase();
+
+      if (error.contains(
+        'permission-denied',
+      )) {
+        _showMessage(
+          "Permission denied. Check your vehicles Firestore rules.",
+        );
+      } else {
+        _showMessage(
+          "Unable to remove vehicle.",
+        );
+      }
     }
   }
 
@@ -8301,11 +9242,16 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
   // ============================================================
 
   Widget _buildSummaryCard() {
+    if (providerId == null) {
+      return const SizedBox();
+    }
+
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      // IMPORTANT:
-      // Count vehicles, not providers.
-      stream: _vehiclesRef.snapshots(),
-      builder: (context, snapshot) {
+      stream: _providerVehiclesQuery.snapshots(),
+      builder: (
+        context,
+        snapshot,
+      ) {
         final count = snapshot.hasData ? snapshot.data!.docs.length : 0;
 
         return Container(
@@ -8313,10 +9259,14 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
             color: Colors.black,
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(
+              20,
+            ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(.12),
+                color: Colors.black.withOpacity(
+                  .12,
+                ),
                 blurRadius: 16,
                 offset: const Offset(0, 6),
               ),
@@ -8349,9 +9299,7 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                         fontSize: 11,
                       ),
                     ),
-                    const SizedBox(
-                      height: 3,
-                    ),
+                    const SizedBox(height: 3),
                     Text(
                       "$count",
                       style: const TextStyle(
@@ -8372,7 +9320,9 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                   ),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(
+                      12,
+                    ),
                   ),
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
@@ -8382,9 +9332,7 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                         size: 17,
                         color: Colors.black,
                       ),
-                      SizedBox(
-                        width: 5,
-                      ),
+                      SizedBox(width: 5),
                       Text(
                         "Add Vehicle",
                         style: TextStyle(
@@ -8405,10 +9353,12 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
   }
 
   // ============================================================
-  // HELPERS
+  // FIELD LABEL
   // ============================================================
 
-  Widget _fieldLabel(String text) {
+  Widget _fieldLabel(
+    String text,
+  ) {
     return Text(
       text,
       style: const TextStyle(
@@ -8417,6 +9367,10 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
       ),
     );
   }
+
+  // ============================================================
+  // INPUT DECORATION
+  // ============================================================
 
   InputDecoration _inputDecoration({
     required String hint,
@@ -8467,13 +9421,23 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
     );
   }
 
-  Widget _errorBox(String text) {
+  // ============================================================
+  // ERROR BOX
+  // ============================================================
+
+  Widget _errorBox(
+    String text,
+  ) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(
+        14,
+      ),
       decoration: BoxDecoration(
         color: Colors.red.shade50,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(
+          14,
+        ),
       ),
       child: Text(
         text,
@@ -8484,6 +9448,10 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
       ),
     );
   }
+
+  // ============================================================
+  // EMPTY MESSAGE
+  // ============================================================
 
   Widget _emptyMessage({
     required IconData icon,
@@ -8533,19 +9501,27 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
     );
   }
 
+  // ============================================================
+  // SHIMMER
+  // ============================================================
+
   Widget _vehicleShimmer() {
     return Container(
       width: double.infinity,
-      height: 145,
+      height: 160,
       margin: const EdgeInsets.only(
         bottom: 14,
       ),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(
+          18,
+        ),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(
+          12,
+        ),
         child: Row(
           children: [
             Container(
@@ -8569,19 +9545,21 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                     height: 14,
                     color: Colors.grey.shade300,
                   ),
-                  const SizedBox(
-                    height: 10,
-                  ),
+                  const SizedBox(height: 10),
                   Container(
                     width: 100,
                     height: 11,
                     color: Colors.grey.shade300,
                   ),
-                  const SizedBox(
-                    height: 10,
-                  ),
+                  const SizedBox(height: 10),
                   Container(
                     width: 150,
+                    height: 11,
+                    color: Colors.grey.shade300,
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 120,
                     height: 11,
                     color: Colors.grey.shade300,
                   ),
@@ -8604,7 +9582,9 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
   }) {
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(
       SnackBar(
         content: Text(message),
         backgroundColor: success ? Colors.green : Colors.red,
@@ -8618,7 +9598,9 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
   // ============================================================
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+    BuildContext context,
+  ) {
     return Scaffold(
       backgroundColor: Colors.grey[100],
       appBar: AppBar(
@@ -8630,7 +9612,9 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
             left: 10,
           ),
           child: GestureDetector(
-            onTap: () => Navigator.pop(context),
+            onTap: () => Navigator.pop(
+              context,
+            ),
             child: Container(
               width: 25,
               height: 25,
@@ -8662,7 +9646,9 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
       ),
       body: providerId == null
           ? const Center(
-              child: Text("Please sign in."),
+              child: Text(
+                "Please sign in.",
+              ),
             )
           : SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(
@@ -8674,14 +9660,18 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // ==============================================
                   // SUMMARY
+                  // ==============================================
+
                   _buildSummaryCard(),
 
-                  const SizedBox(
-                    height: 28,
-                  ),
+                  const SizedBox(height: 28),
 
+                  // ==============================================
                   // HEADER
+                  // ==============================================
+
                   Row(
                     children: [
                       const Expanded(
@@ -8703,11 +9693,12 @@ class _ManageVehiclesPageState extends State<ManageVehiclesPage> {
                     ],
                   ),
 
-                  const SizedBox(
-                    height: 14,
-                  ),
+                  const SizedBox(height: 14),
 
+                  // ==============================================
                   // VEHICLES
+                  // ==============================================
+
                   _buildVehicles(),
                 ],
               ),
@@ -8764,8 +9755,12 @@ class _TransportPageState extends State<TransportPage> {
     "Sokoto",
     "Taraba",
     "Yobe",
-    "Zamfara"
+    "Zamfara",
   ];
+
+  // ============================================================
+  // SHIMMER HELPERS
+  // ============================================================
 
   Widget _shimmerBox({
     required double width,
@@ -8848,76 +9843,66 @@ class _TransportPageState extends State<TransportPage> {
 
   Widget _ticketCardShimmer() {
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
+      height: 78,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(
+        horizontal: 12,
+        vertical: 10,
+      ),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withOpacity(0.04),
             blurRadius: 8,
             offset: const Offset(0, 3),
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
+          _shimmerBox(
+            width: 42,
+            height: 42,
+            radius: 42,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _shimmerBox(
+                  width: 130,
+                  height: 12,
+                  radius: 5,
+                ),
+                const SizedBox(height: 7),
+                _shimmerBox(
+                  width: 100,
+                  height: 10,
+                  radius: 5,
+                ),
+              ],
+            ),
+          ),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               _shimmerBox(
-                width: 40,
-                height: 40,
-                radius: 30,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _shimmerBox(
-                      width: 150,
-                      height: 13,
-                      radius: 5,
-                    ),
-                    const SizedBox(height: 7),
-                    _shimmerBox(
-                      width: 100,
-                      height: 11,
-                      radius: 5,
-                    ),
-                  ],
-                ),
-              ),
-              _shimmerBox(
-                width: 65,
-                height: 22,
+                width: 58,
+                height: 18,
                 radius: 8,
               ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
+              const SizedBox(height: 6),
               _shimmerBox(
                 width: 70,
-                height: 13,
-                radius: 5,
-              ),
-              _shimmerBox(
-                width: 100,
-                height: 11,
+                height: 10,
                 radius: 5,
               ),
             ],
-          ),
-          const SizedBox(height: 9),
-          _shimmerBox(
-            width: 180,
-            height: 11,
-            radius: 5,
           ),
         ],
       ),
@@ -8988,19 +9973,92 @@ class _TransportPageState extends State<TransportPage> {
     );
   }
 
+  Widget _vehicleCardShimmer() {
+    return Container(
+      width: 350,
+      height: 150,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: Colors.grey.shade200,
+        ),
+      ),
+      child: Row(
+        children: [
+          _shimmerBox(
+            width: 72,
+            height: 72,
+            radius: 72,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _shimmerBox(
+                  width: 120,
+                  height: 14,
+                  radius: 5,
+                ),
+                const SizedBox(height: 9),
+                _shimmerBox(
+                  width: 90,
+                  height: 11,
+                  radius: 5,
+                ),
+                const SizedBox(height: 7),
+                _shimmerBox(
+                  width: 75,
+                  height: 11,
+                  radius: 5,
+                ),
+              ],
+            ),
+          ),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              _shimmerBox(
+                width: 65,
+                height: 18,
+                radius: 7,
+              ),
+              const SizedBox(height: 7),
+              _shimmerBox(
+                width: 55,
+                height: 11,
+                radius: 5,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // BUILD
+  // ============================================================
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[100],
       body: SingleChildScrollView(
-        // padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            /// 🔍 SEARCH BAR
+            // ====================================================
+            // HEADER
+            // ====================================================
+
             Stack(
               children: [
-                /// 🔥 RIPPLED HEADER
                 Container(
                   height: 200,
                   width: double.infinity,
@@ -9016,8 +10074,6 @@ class _TransportPageState extends State<TransportPage> {
                     ],
                   ),
                 ),
-
-                /// ✨ AMBER DOODLES
                 Positioned.fill(
                   child: IgnorePointer(
                     child: CustomPaint(
@@ -9025,14 +10081,21 @@ class _TransportPageState extends State<TransportPage> {
                     ),
                   ),
                 ),
-
                 SafeArea(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+                    padding: const EdgeInsets.fromLTRB(
+                      16,
+                      20,
+                      16,
+                      20,
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        /// 🔙 BACK + TITLE
+                        // ========================================
+                        // BACK + TITLE
+                        // ========================================
+
                         Row(
                           children: [
                             GestureDetector(
@@ -9065,7 +10128,10 @@ class _TransportPageState extends State<TransportPage> {
 
                         const SizedBox(height: 18),
 
-                        /// 🔍 SEARCH CARD
+                        // ========================================
+                        // SEARCH
+                        // ========================================
+
                         Card(
                           color: Colors.transparent,
                           elevation: 5,
@@ -9082,7 +10148,9 @@ class _TransportPageState extends State<TransportPage> {
                               child: TextField(
                                 decoration: InputDecoration(
                                   hintText: "Search providers",
-                                  hintStyle: const TextStyle(fontSize: 13),
+                                  hintStyle: const TextStyle(
+                                    fontSize: 13,
+                                  ),
                                   filled: true,
                                   fillColor: Colors.grey.shade100,
                                   prefixIcon: const Icon(
@@ -9094,15 +10162,21 @@ class _TransportPageState extends State<TransportPage> {
                                     vertical: 8,
                                   ),
                                   border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(10),
+                                    borderRadius: BorderRadius.circular(
+                                      10,
+                                    ),
                                     borderSide: BorderSide.none,
                                   ),
                                   enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(10),
+                                    borderRadius: BorderRadius.circular(
+                                      10,
+                                    ),
                                     borderSide: BorderSide.none,
                                   ),
                                   focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(10),
+                                    borderRadius: BorderRadius.circular(
+                                      10,
+                                    ),
                                     borderSide: const BorderSide(
                                       color: Colors.black,
                                     ),
@@ -9121,12 +10195,21 @@ class _TransportPageState extends State<TransportPage> {
 
             const SizedBox(height: 20),
 
-            /// SERVICE CARDS
+            // ====================================================
+            // MAIN CONTENT
+            // ====================================================
+
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // ==================================================
+                  // SERVICES
+                  // ==================================================
+
                   const Text(
                     "Services",
                     style: TextStyle(
@@ -9134,7 +10217,9 @@ class _TransportPageState extends State<TransportPage> {
                       fontSize: 12,
                     ),
                   ),
-                  SizedBox(height: 10),
+
+                  const SizedBox(height: 10),
+
                   Row(
                     children: [
                       Expanded(
@@ -9170,7 +10255,10 @@ class _TransportPageState extends State<TransportPage> {
 
                   const SizedBox(height: 25),
 
-                  /// 🔥 PROVIDERS
+                  // ==================================================
+                  // PROVIDERS
+                  // ==================================================
+
                   const Text(
                     "Explore Providers",
                     style: TextStyle(
@@ -9183,16 +10271,41 @@ class _TransportPageState extends State<TransportPage> {
 
                   SizedBox(
                     height: 130,
-                    child: StreamBuilder(
+                    child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                       stream: FirebaseFirestore.instance
                           .collection('providers')
                           .snapshots(),
-                      builder: (context, AsyncSnapshot snapshot) {
-                        if (!snapshot.hasData) {
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
                           return _providersShimmer();
                         }
 
-                        final providers = snapshot.data.docs;
+                        if (snapshot.hasError) {
+                          return Center(
+                            child: Text(
+                              "Unable to load providers.",
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          );
+                        }
+
+                        final providers = snapshot.data?.docs ?? [];
+
+                        if (providers.isEmpty) {
+                          return Center(
+                            child: Text(
+                              "No providers available.",
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          );
+                        }
 
                         return ListView.builder(
                           scrollDirection: Axis.horizontal,
@@ -9200,28 +10313,34 @@ class _TransportPageState extends State<TransportPage> {
                           itemBuilder: (context, index) {
                             final p = providers[index];
 
+                            final data = p.data();
+
                             return InkWell(
-                              borderRadius: BorderRadius.circular(12),
-                              onTap: () => _openProviderModal(p),
+                              borderRadius: BorderRadius.circular(
+                                12,
+                              ),
+                              onTap: () => _openProviderModal(
+                                p,
+                              ),
                               child: Container(
                                 width: 300,
-                                margin: const EdgeInsets.only(right: 12),
+                                margin: const EdgeInsets.only(
+                                  right: 12,
+                                ),
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
                                   color: Colors.white,
-                                  borderRadius: BorderRadius.circular(12),
-                                  // border: Border.all(color: Colors.white),
+                                  borderRadius: BorderRadius.circular(
+                                    12,
+                                  ),
                                 ),
                                 child: Row(
                                   children: [
-                                    CircleAvatar(
+                                    _providerImage(
+                                      data['imageUrl'],
                                       radius: 25,
-                                      backgroundImage:
-                                          NetworkImage(p['imageUrl']),
                                     ),
                                     const SizedBox(width: 10),
-
-                                    /// NAME + LOCATION
                                     Expanded(
                                       child: Column(
                                         crossAxisAlignment:
@@ -9230,25 +10349,48 @@ class _TransportPageState extends State<TransportPage> {
                                             MainAxisAlignment.center,
                                         children: [
                                           Text(
-                                            p['name'],
+                                            data['name']?.toString() ??
+                                                'Provider',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
                                             style: const TextStyle(
-                                                fontWeight: FontWeight.bold),
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 13,
+                                            ),
                                           ),
-                                          Text(p['location']),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            data['location']?.toString() ?? '',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.grey.shade600,
+                                            ),
+                                          ),
                                         ],
                                       ),
                                     ),
-
-                                    /// STATE BADGE
                                     Container(
                                       padding: const EdgeInsets.symmetric(
-                                          horizontal: 8, vertical: 4),
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
                                       decoration: BoxDecoration(
                                         color: Colors.green.shade50,
-                                        borderRadius: BorderRadius.circular(8),
+                                        borderRadius: BorderRadius.circular(
+                                          8,
+                                        ),
                                       ),
-                                      child: Text(p['state']),
-                                    )
+                                      child: Text(
+                                        data['state']?.toString() ?? '',
+                                        style: TextStyle(
+                                          fontSize: 9,
+                                          color: Colors.green.shade700,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),
@@ -9258,7 +10400,12 @@ class _TransportPageState extends State<TransportPage> {
                       },
                     ),
                   ),
+
                   const SizedBox(height: 20),
+
+                  // ==================================================
+                  // RECENTS
+                  // ==================================================
 
                   const Text(
                     "Recents",
@@ -9269,195 +10416,73 @@ class _TransportPageState extends State<TransportPage> {
                   ),
 
                   const SizedBox(height: 12),
-                  StreamBuilder<QuerySnapshot>(
+
+                  StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                     stream: FirebaseFirestore.instance
                         .collection('transport_tickets')
-                        .where('userId',
-                            isEqualTo: FirebaseAuth.instance.currentUser?.uid)
-                        // .orderBy('createdAt', descending: true)
+                        .where(
+                          'userId',
+                          isEqualTo: FirebaseAuth.instance.currentUser?.uid,
+                        )
                         .limit(10)
                         .snapshots(),
                     builder: (context, snapshot) {
-                      if (!snapshot.hasData) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
                         return _ticketsShimmer();
                       }
 
-                      final docs = snapshot.data!.docs;
+                      if (snapshot.hasError) {
+                        return Padding(
+                          padding: const EdgeInsets.all(10),
+                          child: Text(
+                            "Unable to load recent tickets.",
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        );
+                      }
+
+                      final docs = snapshot.data?.docs ?? [];
 
                       if (docs.isEmpty) {
                         return const Padding(
                           padding: EdgeInsets.all(10),
-                          child: Text("No recent tickets yet"),
+                          child: Text(
+                            "No recent tickets yet",
+                            style: TextStyle(
+                              fontSize: 12,
+                            ),
+                          ),
                         );
                       }
 
                       return Column(
                         children: docs.map((doc) {
-                          final data = doc.data() as Map<String, dynamic>;
+                          final data = doc.data();
 
-                          final from = data['from'] ?? 'Unknown';
-                          final to = data['to'] ?? 'Unknown';
-                          final price = data['price'] ?? 0;
-                          final provider = data['providerName'] ?? 'Provider';
-                          final location = data['providerLocation'] ?? '';
-                          final status = data['status'] ?? 'pending';
-                          final ticketId = data['ticketId'] ?? '';
-
-                          final departure = data['departure'] as Timestamp?;
-                          final createdAt = data['createdAt'] as Timestamp?;
-
-                          return GestureDetector(
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => TransportTicketPage(
-                                    ticketData: data,
-                                  ),
-                                ),
-                              );
-                            },
-                            child: Container(
-                              margin: const EdgeInsets.only(bottom: 12),
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(14),
-                                // border: Border.all(color: Colors.grey.shade200),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.05),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 3),
-                                  )
-                                ],
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  /// TOP ROW (route + status)
-                                  Row(
-                                    children: [
-                                      Container(
-                                        width: 40,
-                                        height: 40,
-                                        decoration: BoxDecoration(
-                                          color: Colors.black,
-                                          borderRadius:
-                                              BorderRadius.circular(30),
-                                        ),
-                                        child: const Icon(
-                                          Icons.directions_bus,
-                                          color: Colors.white,
-                                          size: 18,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              "$from → $to",
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 13,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              provider,
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: Colors.grey[600],
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 8, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: status == "valid"
-                                              ? Colors.green.withOpacity(0.1)
-                                              : Colors.orange.withOpacity(0.1),
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                        ),
-                                        child: Text(
-                                          status.toUpperCase(),
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.bold,
-                                            color: status == "valid"
-                                                ? Colors.green
-                                                : Colors.orange,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-
-                                  const SizedBox(height: 10),
-
-                                  /// SECOND ROW (details)
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        "₦$price",
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      Text(
-                                        "ID: $ticketId",
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.grey[500],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-
-                                  const SizedBox(height: 6),
-
-                                  /// FOOTER (dates)
-                                  Row(
-                                    children: [
-                                      Icon(Icons.schedule,
-                                          size: 14, color: Colors.grey[600]),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        departure != null
-                                            ? "Dep: ${DateTime.fromMillisecondsSinceEpoch(departure.millisecondsSinceEpoch).toString().split('.')[0]}"
-                                            : "No departure",
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.grey[600],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
+                          return _recentTicketCard(
+                            data,
                           );
                         }).toList(),
                       );
                     },
                   ),
+
+                  const SizedBox(height: 20),
                 ],
               ),
-            )
+            ),
           ],
         ),
       ),
     );
   }
+
+  // ============================================================
+  // SERVICE CARD
+  // ============================================================
 
   Widget _serviceCard({
     required Widget icon,
@@ -9475,13 +10500,12 @@ class _TransportPageState extends State<TransportPage> {
             color: Colors.black.withOpacity(0.06),
             blurRadius: 12,
             offset: const Offset(0, 4),
-          )
+          ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          /// ICON + TITLE
           Container(
             width: 45,
             height: 45,
@@ -9497,23 +10521,15 @@ class _TransportPageState extends State<TransportPage> {
               ),
             ),
           ),
-
-          const SizedBox(width: 12),
-
-          Expanded(
-            child: Text(
-              title,
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 15,
-              ),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 15,
             ),
           ),
-
-          /// ⬇️ spacing pushes description lower
-          const SizedBox(height: 8),
-
-          /// DESCRIPTION
+          const Spacer(),
           Text(
             subtitle,
             style: TextStyle(
@@ -9527,218 +10543,520 @@ class _TransportPageState extends State<TransportPage> {
     );
   }
 
-  void _openProviderModal(dynamic provider) async {
+  // ============================================================
+  // PROVIDER IMAGE
+  // ============================================================
+
+  Widget _providerImage(
+    dynamic imageUrl, {
+    double radius = 28,
+  }) {
+    final url = imageUrl?.toString() ?? '';
+
+    if (url.isEmpty) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: Colors.grey.shade100,
+        child: Icon(
+          Icons.business,
+          size: radius,
+          color: Colors.grey,
+        ),
+      );
+    }
+
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: Colors.grey.shade100,
+      backgroundImage: NetworkImage(url),
+      onBackgroundImageError: (_, __) {},
+      child: null,
+    );
+  }
+
+  // ============================================================
+  // RECENT TICKET CARD
+  // ============================================================
+
+  Widget _recentTicketCard(
+    Map<String, dynamic> data,
+  ) {
+    final from = data['from']?.toString() ?? 'Unknown';
+
+    final to = data['to']?.toString() ?? 'Unknown';
+
+    final status = data['status']?.toString() ?? 'pending';
+
+    final ticketId = data['ticketId']?.toString() ?? '';
+
+    final createdAt = data['createdAt'] as Timestamp?;
+
+    final formattedDate = _formatRecentDate(
+      createdAt,
+    );
+
+    final statusLower = status.toLowerCase();
+
+    final isValid = statusLower == 'valid' ||
+        statusLower == 'confirmed' ||
+        statusLower == 'active';
+
+    final statusColor = isValid
+        ? Colors.green
+        : statusLower == 'cancelled' || statusLower == 'expired'
+            ? Colors.red
+            : Colors.orange;
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => TransportTicketPage(
+              ticketData: data,
+            ),
+          ),
+        );
+      },
+      child: Container(
+        height: 82,
+        margin: const EdgeInsets.only(
+          bottom: 10,
+        ),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
+        ),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(
+            14,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            // ================================================
+            // ICON
+            // ================================================
+
+            Container(
+              width: 43,
+              height: 43,
+              decoration: const BoxDecoration(
+                color: Colors.black,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.directions_bus_rounded,
+                color: Colors.white,
+                size: 19,
+              ),
+            ),
+
+            const SizedBox(width: 10),
+
+            // ================================================
+            // TICKET ID + ROUTE
+            // ================================================
+
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    ticketId.isEmpty ? 'Ticket' : ticketId,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    "$from → $to",
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(width: 10),
+
+            // ================================================
+            // STATUS + DATE
+            // ================================================
+
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: statusColor.withOpacity(
+                      .10,
+                    ),
+                    borderRadius: BorderRadius.circular(
+                      7,
+                    ),
+                  ),
+                  child: Text(
+                    status.toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 8,
+                      fontWeight: FontWeight.bold,
+                      color: statusColor,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  formattedDate,
+                  style: TextStyle(
+                    fontSize: 9.5,
+                    color: Colors.grey.shade500,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // FORMAT RECENT DATE
+  // ============================================================
+
+  String _formatRecentDate(
+    Timestamp? timestamp,
+  ) {
+    if (timestamp == null) {
+      return '';
+    }
+
+    final date = timestamp.toDate();
+
+    return DateFormat(
+      'dd-MM-yy h:mma',
+    ).format(date).toLowerCase();
+  }
+
+  // ============================================================
+  // PROVIDER MODAL
+  // ============================================================
+  //
+  // Flow:
+  //
+  // Provider
+  //    ↓
+  // Routes
+  //    ↓
+  // Vehicle modal
+  //    ↓
+  // Booking
+  //
+
+  Future<void> _openProviderModal(
+    DocumentSnapshot<Map<String, dynamic>> provider,
+  ) async {
     final providerId = provider.id;
 
-    /// 🔥 Fetch ALL routes for this provider
+    final providerData = provider.data() ?? {};
+
     final routesSnap = await FirebaseFirestore.instance
         .collection('routes')
-        .where('providerId', isEqualTo: providerId)
+        .where(
+          'providerId',
+          isEqualTo: providerId,
+        )
         .get();
 
     final routes = routesSnap.docs;
+
+    if (!mounted) return;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(
+            25,
+          ),
+        ),
       ),
       builder: (_) => DraggableScrollableSheet(
         expand: false,
         initialChildSize: 0.7,
         minChildSize: 0.5,
-        maxChildSize: 0.9,
-        builder: (context, controller) => Padding(
-          padding: const EdgeInsets.all(16),
-          child: ListView(
-            controller: controller,
-            children: [
-              /// 🔹 HANDLE
-              Center(
-                child: Container(
-                  width: 50,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(3),
+        maxChildSize: 0.92,
+        builder: (
+          context,
+          controller,
+        ) {
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _modalHandle(),
+
+                const SizedBox(height: 20),
+
+                // ==========================================
+                // PROVIDER
+                // ==========================================
+
+                _providerHeader(
+                  providerData,
+                ),
+
+                const SizedBox(height: 20),
+
+                const Text(
+                  "Routes",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
                   ),
                 ),
-              ),
 
-              const SizedBox(height: 20),
+                const SizedBox(height: 12),
 
-              /// 🔹 PROVIDER CARD
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.06),
-                      blurRadius: 10,
-                    )
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 28,
-                      backgroundImage: NetworkImage(provider['imageUrl'] ?? ''),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            provider['name'] ?? '',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 15,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            provider['location'] ?? '',
+                Expanded(
+                  child: routes.isEmpty
+                      ? Center(
+                          child: Text(
+                            "No routes available",
                             style: TextStyle(
-                              color: Colors.grey.shade600,
                               fontSize: 12,
+                              color: Colors.grey.shade600,
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+                        )
+                      : ListView.builder(
+                          controller: controller,
+                          itemCount: routes.length,
+                          itemBuilder: (
+                            context,
+                            index,
+                          ) {
+                            final route = routes[index];
 
-              const SizedBox(height: 20),
+                            return _routeCard(
+                              route,
+                              onTap: () {
+                                Navigator.pop(
+                                  context,
+                                );
 
-              const Text(
-                "Routes",
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              /// 🔥 ROUTES LIST
-              ...routes.map((r) {
-                final data = r.data() as Map<String, dynamic>;
-
-                return InkWell(
-                  borderRadius: BorderRadius.circular(14),
-                  onTap: () {
-                    Navigator.pop(context);
-
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => TicketBookingPage(
-                          routeData: r,
-                          providerData: provider,
+                                _openVehicleModal(
+                                  providerData: providerData,
+                                  providerId: providerId,
+                                  route: route,
+                                );
+                              },
+                            );
+                          },
                         ),
-                      ),
-                    );
-                  },
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    padding: const EdgeInsets.all(14),
-                    height: 110,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[50],
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.grey.shade200),
-                    ),
-                    child: Row(
-                      children: [
-                        /// 🔥 LEFT SIDE (ROUTE FLOW)
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              /// FROM
-                              Text(
-                                data['from'] ?? '',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-
-                              const SizedBox(height: 6),
-
-                              /// ROUTE ICON
-                              const Icon(
-                                Icons.swap_vert,
-                                size: 18,
-                                color: Colors.black,
-                              ),
-
-                              const SizedBox(height: 6),
-
-                              /// TO
-                              Text(
-                                data['to'] ?? '',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ),
-                        ),
-                        Spacer(),
-
-                        /// 🔥 RIGHT SIDE
-                        Text(
-                          "₦${data['price'] ?? ''}",
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.green,
-                            fontSize: 16,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }).toList(),
-
-              /// 🔥 EMPTY STATE
-              if (routes.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.only(top: 20),
-                  child: Center(
-                    child: Text("No routes available"),
-                  ),
                 ),
-            ],
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ============================================================
+  // PROVIDER HEADER
+  // ============================================================
+
+  Widget _providerHeader(
+    Map<String, dynamic> provider,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(
+          15,
+        ),
+        border: Border.all(
+          color: Colors.grey.shade200,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(.04),
+            blurRadius: 8,
           ),
+        ],
+      ),
+      child: Row(
+        children: [
+          _providerImage(
+            provider['imageUrl'],
+            radius: 28,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  provider['name']?.toString() ?? 'Provider',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  provider['location']?.toString() ?? '',
+                  style: TextStyle(
+                    color: Colors.grey.shade600,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // ROUTE CARD
+  // ============================================================
+
+  Widget _routeCard(
+    DocumentSnapshot<Map<String, dynamic>> route, {
+    required VoidCallback onTap,
+  }) {
+    final data = route.data() ?? {};
+
+    final from = data['from']?.toString() ?? '';
+
+    final to = data['to']?.toString() ?? '';
+
+    final price = data['price'] ?? 0;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(
+          bottom: 12,
+        ),
+        padding: const EdgeInsets.all(
+          14,
+        ),
+        height: 105,
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(
+            14,
+          ),
+          border: Border.all(
+            color: Colors.grey.shade200,
+          ),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    from,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Icon(
+                    Icons.south_rounded,
+                    size: 15,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    to,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              "₦$price",
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.green,
+                fontSize: 15,
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(
+              Icons.arrow_forward_ios_rounded,
+              size: 13,
+              color: Colors.grey,
+            ),
+          ],
         ),
       ),
     );
   }
 
-  /// 🚀 STEP 1 MODAL
+  // ============================================================
+  // MASS TRANSIT MODAL
+  // ============================================================
+
   void _openMassTransitModal() {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(
+            20,
+          ),
+        ),
       ),
       builder: (_) => StatefulBuilder(
-        builder: (context, setState) {
+        builder: (
+          context,
+          modalSetState,
+        ) {
           return Padding(
             padding: EdgeInsets.only(
               left: 16,
@@ -9749,18 +11067,8 @@ class _TransportPageState extends State<TransportPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                /// HANDLE
-                Container(
-                  width: 50,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                ),
-
+                _modalHandle(),
                 const SizedBox(height: 20),
-
                 const Text(
                   "Select Route",
                   style: TextStyle(
@@ -9768,10 +11076,7 @@ class _TransportPageState extends State<TransportPage> {
                     fontSize: 16,
                   ),
                 ),
-
                 const SizedBox(height: 20),
-
-                /// 🔵 FROM BUTTON
                 _stateSelector(
                   label: "From :",
                   value: fromState,
@@ -9780,24 +11085,28 @@ class _TransportPageState extends State<TransportPage> {
                       states,
                       selectedState: fromState,
                     );
+
                     if (result != null) {
-                      setState(() {
-                        fromState = result;
-                        toState = null;
-                      });
+                      modalSetState(
+                        () {
+                          fromState = result;
+
+                          toState = null;
+                        },
+                      );
                     }
                   },
                 ),
-
                 const SizedBox(height: 12),
-
-                /// 🔵 TO BUTTON
                 _stateSelector(
                   label: "To :",
                   value: toState,
                   onTap: () async {
-                    final filtered =
-                        states.where((s) => s != fromState).toList();
+                    final filtered = states
+                        .where(
+                          (s) => s != fromState,
+                        )
+                        .toList();
 
                     final result = await _openStatePicker(
                       filtered,
@@ -9805,34 +11114,47 @@ class _TransportPageState extends State<TransportPage> {
                     );
 
                     if (result != null) {
-                      setState(() {
-                        toState = result;
-                      });
+                      modalSetState(
+                        () {
+                          toState = result;
+                        },
+                      );
                     }
                   },
                 ),
-
                 const SizedBox(height: 20),
-
-                /// SEARCH BUTTON
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.black,
-                      padding: const EdgeInsets.all(14),
+                      padding: const EdgeInsets.all(
+                        14,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(
+                          12,
+                        ),
+                      ),
                     ),
-                    onPressed: () {
-                      Navigator.pop(context);
-                      _openResultsModal();
-                    },
+                    onPressed: fromState == null || toState == null
+                        ? null
+                        : () {
+                            Navigator.pop(
+                              context,
+                            );
+
+                            _openResultsModal();
+                          },
                     child: const Text(
                       "Search Providers",
-                      style: TextStyle(color: Colors.white),
+                      style: TextStyle(
+                        color: Colors.white,
+                      ),
                     ),
                   ),
                 ),
-                SizedBox(height: 10),
+                const SizedBox(height: 10),
               ],
             ),
           );
@@ -9840,6 +11162,929 @@ class _TransportPageState extends State<TransportPage> {
       ),
     );
   }
+
+  // ============================================================
+  // MASS TRANSIT RESULTS
+  // ============================================================
+  //
+  // Search:
+  //
+  // From → To
+  //     ↓
+  // Providers
+  //     ↓
+  // Click provider
+  //     ↓
+  // Vehicles
+  //
+
+  void _openResultsModal() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(25),
+        ),
+      ),
+      builder: (_) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.65,
+        minChildSize: 0.4,
+        maxChildSize: 0.92,
+        builder: (
+          context,
+          scrollController,
+        ) {
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _modalHandle(),
+                const SizedBox(height: 14),
+                Text(
+                  "$fromState → $toState",
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  "Available Providers",
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Expanded(
+                  child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                    stream: FirebaseFirestore.instance
+                        .collection('routes')
+                        .where(
+                          'from',
+                          isEqualTo: fromState,
+                        )
+                        .where(
+                          'to',
+                          isEqualTo: toState,
+                        )
+                        .snapshots(),
+                    builder: (
+                      context,
+                      snapshot,
+                    ) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return _providerResultShimmer();
+                      }
+
+                      if (snapshot.hasError) {
+                        return Center(
+                          child: Text(
+                            "Unable to find providers.",
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        );
+                      }
+
+                      final routes = snapshot.data?.docs ?? [];
+
+                      if (routes.isEmpty) {
+                        return const Center(
+                          child: Text(
+                            "No providers available for this route.",
+                            style: TextStyle(
+                              fontSize: 12,
+                            ),
+                          ),
+                        );
+                      }
+
+                      // --------------------------------------------------
+                      // GROUP ROUTES BY PROVIDER
+                      // --------------------------------------------------
+
+                      final Map<String,
+                              List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+                          providerRoutes = {};
+
+                      for (final route in routes) {
+                        final data = route.data();
+
+                        final providerId = data['providerId']?.toString();
+
+                        if (providerId == null || providerId.isEmpty) {
+                          continue;
+                        }
+
+                        providerRoutes.putIfAbsent(
+                          providerId,
+                          () => [],
+                        );
+
+                        providerRoutes[providerId]!.add(route);
+                      }
+
+                      final providerIds = providerRoutes.keys.toList();
+
+                      if (providerIds.isEmpty) {
+                        return const Center(
+                          child: Text(
+                            "No providers available.",
+                          ),
+                        );
+                      }
+
+                      // --------------------------------------------------
+                      // FIRESTORE WHERE-IN LIMIT
+                      // --------------------------------------------------
+                      //
+                      // Firestore has a limit on the number of values
+                      // allowed in a whereIn query.
+                      //
+                      // We only need the first 30 providers here.
+                      // --------------------------------------------------
+
+                      final idsToFetch = providerIds.take(30).toList();
+
+                      return FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                        future: FirebaseFirestore.instance
+                            .collection('providers')
+                            .where(
+                              FieldPath.documentId,
+                              whereIn: idsToFetch,
+                            )
+                            .get(),
+                        builder: (
+                          context,
+                          providerSnapshot,
+                        ) {
+                          if (providerSnapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return _providerResultShimmer();
+                          }
+
+                          if (providerSnapshot.hasError) {
+                            return Center(
+                              child: Text(
+                                "Unable to load provider information.",
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            );
+                          }
+
+                          final providerDocs =
+                              providerSnapshot.data?.docs ?? [];
+
+                          if (providerDocs.isEmpty) {
+                            return const Center(
+                              child: Text(
+                                "No providers available.",
+                              ),
+                            );
+                          }
+
+                          final Map<String,
+                                  QueryDocumentSnapshot<Map<String, dynamic>>>
+                              providerMap = {
+                            for (final doc in providerDocs) doc.id: doc,
+                          };
+
+                          final availableProviders = providerIds
+                              .where(
+                                (id) => providerMap.containsKey(id),
+                              )
+                              .toList();
+
+                          if (availableProviders.isEmpty) {
+                            return const Center(
+                              child: Text(
+                                "No providers available.",
+                              ),
+                            );
+                          }
+
+                          return ListView.builder(
+                            controller: scrollController,
+                            itemCount: availableProviders.length,
+                            itemBuilder: (
+                              context,
+                              index,
+                            ) {
+                              final providerId = availableProviders[index];
+
+                              final provider = providerMap[providerId]!;
+
+                              final providerData = provider.data();
+
+                              // Get the first matching route for
+                              // this provider.
+                              final providerRoute =
+                                  providerRoutes[providerId]!.first;
+
+                              final routeData = providerRoute.data();
+
+                              return _searchProviderCard(
+                                provider: providerData,
+                                route: routeData,
+                                onTap: () {
+                                  Navigator.pop(context);
+
+                                  // Open the vehicle modal after
+                                  // the provider modal closes.
+                                  WidgetsBinding.instance
+                                      .addPostFrameCallback((_) {
+                                    if (!mounted) return;
+
+                                    _openVehicleModal(
+                                      providerData: providerData,
+                                      providerId: providerId,
+                                      route: providerRoute,
+                                    );
+                                  });
+                                },
+                              );
+                            },
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ============================================================
+  // SEARCH PROVIDER CARD
+  // ============================================================
+
+  Widget _searchProviderCard({
+    required Map<String, dynamic> provider,
+    required Map<String, dynamic> route,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(
+          bottom: 12,
+        ),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 14,
+        ),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(
+            14,
+          ),
+          border: Border.all(
+            color: Colors.grey.shade200,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(.035),
+              blurRadius: 7,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            _providerImage(
+              provider['imageUrl'],
+              radius: 28,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    provider['name']?.toString() ?? 'Provider',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    "${route['from'] ?? ''} → ${route['to'] ?? ''}",
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 6,
+              ),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                borderRadius: BorderRadius.circular(
+                  10,
+                ),
+              ),
+              child: Text(
+                "₦${route['price'] ?? 0}",
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                  color: Colors.green,
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            const Icon(
+              Icons.arrow_forward_ios_rounded,
+              size: 12,
+              color: Colors.grey,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // VEHICLES MODAL
+  // ============================================================
+  //
+  // Query:
+  //
+  // providerId == selected provider
+  // routeId == selected route
+  // status == online
+  //
+  // If no vehicles:
+  //
+  // "No vehicle online right now"
+  // "Try other providers"
+  //
+
+  Future<void> _openVehicleModal({
+    required Map<String, dynamic> providerData,
+    required String providerId,
+    required DocumentSnapshot<Map<String, dynamic>> route,
+  }) async {
+    final routeData = route.data() ?? {};
+
+    final routeId = route.id;
+
+    final from = routeData['from']?.toString() ?? '';
+
+    final to = routeData['to']?.toString() ?? '';
+
+    final price = routeData['price'] ?? 0;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(
+            25,
+          ),
+        ),
+      ),
+      builder: (_) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.65,
+        minChildSize: 0.4,
+        maxChildSize: 0.92,
+        builder: (
+          context,
+          controller,
+        ) {
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _modalHandle(),
+
+                const SizedBox(height: 16),
+
+                // ==============================================
+                // PROVIDER + ROUTE HEADER
+                // ==============================================
+
+                Row(
+                  children: [
+                    _providerImage(
+                      providerData['imageUrl'],
+                      radius: 25,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            providerData['name']?.toString() ?? 'Provider',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            "$from → $to",
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      "₦$price",
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green,
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 20),
+
+                const Text(
+                  "Available Vehicles",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+
+                const SizedBox(height: 5),
+
+                Text(
+                  "Select a vehicle to continue booking.",
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+
+                const SizedBox(height: 14),
+
+                Expanded(
+                  child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                    stream: FirebaseFirestore.instance
+                        .collection('vehicles')
+                        .where(
+                          'providerId',
+                          isEqualTo: providerId,
+                        )
+                        .where(
+                          'routeId',
+                          isEqualTo: routeId,
+                        )
+                        .where(
+                          'status',
+                          isEqualTo: 'online',
+                        )
+                        .snapshots(),
+                    builder: (
+                      context,
+                      snapshot,
+                    ) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return ListView.builder(
+                          controller: controller,
+                          itemCount: 3,
+                          itemBuilder: (
+                            _,
+                            __,
+                          ) =>
+                              _vehicleCardShimmer(),
+                        );
+                      }
+
+                      if (snapshot.hasError) {
+                        debugPrint(
+                          "VEHICLES ERROR: "
+                          "${snapshot.error}",
+                        );
+
+                        return _vehicleEmptyState(
+                          title: "Unable to load vehicles",
+                          subtitle: "Please try again.",
+                          showTryOther: true,
+                        );
+                      }
+
+                      final vehicles = snapshot.data?.docs ?? [];
+
+                      if (vehicles.isEmpty) {
+                        return _vehicleEmptyState(
+                          title: "No vehicle online right now",
+                          subtitle: "Try other providers for this route.",
+                          showTryOther: true,
+                        );
+                      }
+
+                      // Sort by departure time.
+                      final sortedVehicles = [
+                        ...vehicles,
+                      ];
+
+                      sortedVehicles.sort(
+                        (
+                          a,
+                          b,
+                        ) {
+                          final aMinutes = _departureMinutes(
+                            a.data(),
+                          );
+
+                          final bMinutes = _departureMinutes(
+                            b.data(),
+                          );
+
+                          return aMinutes.compareTo(
+                            bMinutes,
+                          );
+                        },
+                      );
+
+                      return ListView.builder(
+                        controller: controller,
+                        itemCount: sortedVehicles.length,
+                        itemBuilder: (
+                          context,
+                          index,
+                        ) {
+                          final vehicle = sortedVehicles[index];
+
+                          return _vehicleCard(
+                            vehicle: vehicle,
+                            onTap: () {
+                              Navigator.pop(
+                                context,
+                              );
+
+                              _openBooking(
+                                route: route,
+                                providerData: providerData,
+                                vehicleData: vehicle.data(),
+                                vehicleId: vehicle.id,
+                              );
+                            },
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ============================================================
+  // VEHICLE CARD
+  // ============================================================
+
+  Widget _vehicleCard({
+    required DocumentSnapshot<Map<String, dynamic>> vehicle,
+    required VoidCallback onTap,
+  }) {
+    final data = vehicle.data() ?? {};
+
+    final imageUrl = data['vehicleImage']?.toString() ?? '';
+
+    final vehicleName = data['vehicleName']?.toString() ??
+        data['vehicleType']?.toString() ??
+        'Vehicle';
+
+    final driverName = data['driverName']?.toString() ?? '';
+
+    final capacity = _intValue(
+      data['vehicleCapacity'],
+    );
+
+    final boarded = _intValue(
+      data['boardedPassengers'],
+    );
+
+    final remaining = (capacity - boarded).clamp(0, capacity);
+
+    final departure = data['departureTime']?.toString() ?? '';
+
+    final departureMinutes = _departureMinutes(
+      data,
+    );
+
+    final remainingText = _departureRemainingText(
+      departureMinutes,
+    );
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        constraints: const BoxConstraints(
+          minHeight: 120,
+          maxWidth: 350,
+        ),
+        margin: const EdgeInsets.only(
+          bottom: 12,
+        ),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
+        ),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(
+            18,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(.04),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            // ================================================
+            // VEHICLE IMAGE
+            // ================================================
+
+            SizedBox(
+              width: 76,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 70,
+                    height: 70,
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.grey.shade100,
+                    ),
+                    child: ClipOval(
+                      child: imageUrl.isNotEmpty
+                          ? Image.network(
+                              imageUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (
+                                _,
+                                __,
+                                ___,
+                              ) {
+                                return _vehiclePlaceholder();
+                              },
+                            )
+                          : _vehiclePlaceholder(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(width: 12),
+
+            // ================================================
+            // VEHICLE DETAILS
+            // ================================================
+
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (driverName.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      driverName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.black,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.event_seat_outlined,
+                        size: 14,
+                        color: Colors.grey.shade600,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        "$remaining seats left",
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                          color:
+                              remaining > 0 ? Colors.grey.shade700 : Colors.red,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.schedule_rounded,
+                        size: 14,
+                        color: Colors.grey.shade600,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        remainingText,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(width: 8),
+
+            // ================================================
+            // DEPARTURE
+            // ================================================
+
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                const SizedBox(height: 5),
+                Text(
+                  departure.isEmpty ? "--" : departure,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // VEHICLE PLACEHOLDER
+  // ============================================================
+
+  Widget _vehiclePlaceholder() {
+    return Container(
+      color: Colors.grey.shade100,
+      child: const Center(
+        child: Icon(
+          Icons.directions_bus_rounded,
+          size: 30,
+          color: Colors.grey,
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // VEHICLE EMPTY STATE
+  // ============================================================
+
+  Widget _vehicleEmptyState({
+    required String title,
+    required String subtitle,
+    bool showTryOther = false,
+  }) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: 20,
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 62,
+              height: 62,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.directions_bus_outlined,
+                size: 28,
+                color: Colors.grey,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.grey.shade600,
+              ),
+            ),
+            if (showTryOther) ...[
+              const SizedBox(height: 14),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(
+                    context,
+                  );
+                },
+                child: const Text(
+                  "Try other providers",
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // OPEN BOOKING
+  // ============================================================
+
+  void _openBooking({
+    required DocumentSnapshot<Map<String, dynamic>> route,
+    required Map<String, dynamic> providerData,
+    required Map<String, dynamic> vehicleData,
+    required String vehicleId,
+  }) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => TicketBookingPage(
+          routeData: route,
+          providerData: {
+            ...providerData,
+            'vehicleId': vehicleId,
+            'selectedVehicle': vehicleData,
+          },
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // STATE SELECTOR
+  // ============================================================
 
   Widget _stateSelector({
     required String label,
@@ -9850,11 +12095,18 @@ class _TransportPageState extends State<TransportPage> {
       onTap: onTap,
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 16,
+        ),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.grey.shade300),
+          borderRadius: BorderRadius.circular(
+            14,
+          ),
+          border: Border.all(
+            color: Colors.grey.shade300,
+          ),
         ),
         child: Row(
           children: [
@@ -9887,6 +12139,10 @@ class _TransportPageState extends State<TransportPage> {
     );
   }
 
+  // ============================================================
+  // STATE PICKER
+  // ============================================================
+
   Future<String?> _openStatePicker(
     List<String> list, {
     String? selectedState,
@@ -9896,282 +12152,222 @@ class _TransportPageState extends State<TransportPage> {
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
-          top: Radius.circular(20),
+          top: Radius.circular(
+            20,
+          ),
         ),
       ),
       builder: (_) {
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: list.length,
-          itemBuilder: (context, index) {
-            final state = list[index];
-            final bool isSelected = state == selectedState;
+        return SafeArea(
+          child: ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: list.length,
+            itemBuilder: (
+              context,
+              index,
+            ) {
+              final state = list[index];
 
-            return Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(14),
-                onTap: () => Navigator.pop(context, state),
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 18,
-                    vertical: 16,
+              final isSelected = state == selectedState;
+
+              return Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(
+                    14,
                   ),
-                  decoration: BoxDecoration(
-                    color: isSelected ? Colors.grey.shade100 : Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: isSelected ? Colors.black : Colors.grey.shade300,
-                      width: isSelected ? 1.4 : 1,
+                  onTap: () => Navigator.pop(
+                    context,
+                    state,
+                  ),
+                  child: Container(
+                    margin: const EdgeInsets.only(
+                      bottom: 10,
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 16,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isSelected ? Colors.grey.shade100 : Colors.white,
+                      borderRadius: BorderRadius.circular(
+                        14,
                       ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          state,
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight:
-                                isSelected ? FontWeight.w600 : FontWeight.w500,
+                      border: Border.all(
+                        color: isSelected ? Colors.black : Colors.grey.shade300,
+                        width: isSelected ? 1.4 : 1,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            state,
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: isSelected
+                                  ? FontWeight.w600
+                                  : FontWeight.w500,
+                            ),
                           ),
                         ),
-                      ),
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        width: 22,
-                        height: 22,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: isSelected
-                                ? Colors.black
-                                : Colors.grey.shade400,
-                            width: 2,
+                        Container(
+                          width: 22,
+                          height: 22,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: isSelected
+                                  ? Colors.black
+                                  : Colors.grey.shade400,
+                              width: 2,
+                            ),
                           ),
-                        ),
-                        child: isSelected
-                            ? Center(
-                                child: Container(
-                                  width: 10,
-                                  height: 10,
-                                  decoration: const BoxDecoration(
-                                    color: Colors.black,
-                                    shape: BoxShape.circle,
+                          child: isSelected
+                              ? Center(
+                                  child: Container(
+                                    width: 10,
+                                    height: 10,
+                                    decoration: const BoxDecoration(
+                                      color: Colors.black,
+                                      shape: BoxShape.circle,
+                                    ),
                                   ),
-                                ),
-                              )
-                            : null,
-                      ),
-                    ],
+                                )
+                              : null,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         );
       },
     );
   }
 
-  void _openResultsModal() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
-      ),
-      builder: (_) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.6,
-        minChildSize: 0.3,
-        maxChildSize: 0.9,
-        builder: (context, scrollController) => Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 50,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(3),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                "$fromState → $toState",
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18,
-                ),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                "Available Providers",
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              Expanded(
-                child: StreamBuilder(
-                  stream: FirebaseFirestore.instance
-                      .collection('routes')
-                      .where('from', isEqualTo: fromState)
-                      .where('to', isEqualTo: toState)
-                      .snapshots(),
-                  builder: (context, AsyncSnapshot snapshot) {
-                    if (!snapshot.hasData) {
-                      return _providerResultShimmer();
-                    }
+  // ============================================================
+  // MODAL HANDLE
+  // ============================================================
 
-                    final routes = snapshot.data.docs;
-
-                    if (routes.isEmpty) {
-                      return const Center(
-                          child: Text("No providers available"));
-                    }
-
-                    final providerIds = routes
-                        .map((r) => r['providerId'] as String)
-                        .toSet()
-                        .toList();
-
-                    return FutureBuilder(
-                      future: FirebaseFirestore.instance
-                          .collection('providers')
-                          .where(FieldPath.documentId, whereIn: providerIds)
-                          .get(),
-                      builder: (context, AsyncSnapshot providersSnap) {
-                        if (!providersSnap.hasData) {
-                          return _providerResultShimmer();
-                        }
-
-                        final providersMap = {
-                          for (var doc in providersSnap.data!.docs) doc.id: doc
-                        };
-
-                        return ListView.builder(
-                          controller: scrollController,
-                          itemCount: routes.length,
-                          itemBuilder: (context, index) {
-                            final r = routes[index];
-                            final provider = providersMap[r['providerId']];
-
-                            if (provider == null) return const SizedBox();
-
-                            return GestureDetector(
-                              onTap: () {
-                                Navigator.pop(context);
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => TicketBookingPage(
-                                      routeData: r,
-                                      providerData: provider,
-                                    ),
-                                  ),
-                                );
-                              },
-                              child: Container(
-                                margin: const EdgeInsets.only(bottom: 12),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 14),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(14),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.05),
-                                      blurRadius: 6,
-                                      offset: const Offset(0, 3),
-                                    )
-                                  ],
-                                  border:
-                                      Border.all(color: Colors.grey.shade200),
-                                ),
-                                child: Row(
-                                  children: [
-                                    CircleAvatar(
-                                      radius: 28,
-                                      backgroundImage:
-                                          NetworkImage(provider['imageUrl']),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          Text(
-                                            provider['name'],
-                                            style: const TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 16),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            "${r['from']} → ${r['to']}",
-                                            style: TextStyle(
-                                                color: Colors.grey.shade600,
-                                                fontSize: 14),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 10, vertical: 6),
-                                      decoration: BoxDecoration(
-                                        color: Colors.green.shade50,
-                                        borderRadius: BorderRadius.circular(12),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color:
-                                                Colors.green.withOpacity(0.1),
-                                            blurRadius: 4,
-                                            offset: const Offset(0, 2),
-                                          ),
-                                        ],
-                                      ),
-                                      child: Text(
-                                        "₦${r['price']}",
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 14,
-                                          color: Colors.green,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        );
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
+  Widget _modalHandle() {
+    return Center(
+      child: Container(
+        width: 50,
+        height: 5,
+        decoration: BoxDecoration(
+          color: Colors.grey.shade300,
+          borderRadius: BorderRadius.circular(
+            20,
           ),
         ),
       ),
     );
+  }
+
+  // ============================================================
+  // INTEGER HELPER
+  // ============================================================
+
+  int _intValue(
+    dynamic value,
+  ) {
+    if (value is int) {
+      return value;
+    }
+
+    if (value is double) {
+      return value.toInt();
+    }
+
+    return int.tryParse(
+          value?.toString() ?? '',
+        ) ??
+        0;
+  }
+
+  // ============================================================
+  // DEPARTURE MINUTES
+  // ============================================================
+
+  int _departureMinutes(
+    Map<String, dynamic> data,
+  ) {
+    final stored = data['departureTimeMinutes'];
+
+    if (stored != null) {
+      return _intValue(stored);
+    }
+
+    // Fallback for older vehicle
+    // documents which may only have
+    // departureTime.
+
+    final label = data['departureTime']?.toString() ?? '';
+
+    if (label.isEmpty) {
+      return 9999;
+    }
+
+    try {
+      final parsed = DateFormat(
+        'h:mm a',
+      ).parse(
+        label.toUpperCase(),
+      );
+
+      return parsed.hour * 60 + parsed.minute;
+    } catch (_) {
+      try {
+        final parsed = DateFormat(
+          'h a',
+        ).parse(
+          label.toUpperCase(),
+        );
+
+        return parsed.hour * 60 + parsed.minute;
+      } catch (_) {
+        return 9999;
+      }
+    }
+  }
+
+  // ============================================================
+  // DEPARTURE REMAINING
+  // ============================================================
+
+  String _departureRemainingText(
+    int departureMinutes,
+  ) {
+    if (departureMinutes == 9999) {
+      return "Departure time unavailable";
+    }
+
+    final now = TimeOfDay.now();
+
+    final nowMinutes = now.hour * 60 + now.minute;
+
+    final difference = departureMinutes - nowMinutes;
+
+    if (difference <= 0) {
+      return "Departing soon";
+    }
+
+    final hours = difference ~/ 60;
+
+    final minutes = difference % 60;
+
+    if (hours > 0) {
+      if (minutes > 0) {
+        return "$hours hr $minutes min";
+      }
+
+      return "$hours hr away";
+    }
+
+    return "$minutes min away";
   }
 }
 
