@@ -11887,15 +11887,119 @@ class _TransportPageState extends State<TransportPage> {
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: _serviceCard(
-                          icon: Image.asset(
-                            'assets/images/plane.png',
-                            width: 26,
-                            height: 26,
-                            fit: BoxFit.contain,
+                        child: GestureDetector(
+                          onTap: () {
+                            showModalBottomSheet(
+                              context: context,
+                              backgroundColor: Colors.transparent,
+                              builder: (context) {
+                                return Container(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(24, 28, 24, 32),
+                                  decoration: const BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.vertical(
+                                      top: Radius.circular(28),
+                                    ),
+                                  ),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      // Drag handle
+                                      Container(
+                                        width: 42,
+                                        height: 4,
+                                        margin:
+                                            const EdgeInsets.only(bottom: 28),
+                                        decoration: BoxDecoration(
+                                          color: Colors.grey.shade300,
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                        ),
+                                      ),
+
+                                      // Hourglass icon
+                                      Container(
+                                        width: 64,
+                                        height: 64,
+                                        decoration: BoxDecoration(
+                                          color: Colors.amber.withOpacity(0.12),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(
+                                          Icons.hourglass_empty,
+                                          color: Colors.amber,
+                                          size: 32,
+                                        ),
+                                      ),
+
+                                      const SizedBox(height: 18),
+
+                                      const Text(
+                                        "Flights coming soon...",
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.black,
+                                        ),
+                                      ),
+
+                                      const SizedBox(height: 10),
+
+                                      Text(
+                                        "We're working on bringing flight bookings to Zone. Stay tuned!",
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: Colors.grey.shade600,
+                                          height: 1.5,
+                                        ),
+                                      ),
+
+                                      const SizedBox(height: 24),
+
+                                      SizedBox(
+                                        width: double.infinity,
+                                        child: ElevatedButton(
+                                          onPressed: () =>
+                                              Navigator.pop(context),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.black,
+                                            foregroundColor: Colors.white,
+                                            elevation: 0,
+                                            padding: const EdgeInsets.symmetric(
+                                                vertical: 14),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(14),
+                                            ),
+                                          ),
+                                          child: const Text(
+                                            "Okay",
+                                            style: TextStyle(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                          child: _serviceCard(
+                            icon: Image.asset(
+                              'assets/images/plane.png',
+                              width: 26,
+                              height: 26,
+                              fit: BoxFit.contain,
+                            ),
+                            title: "Flights",
+                            subtitle: "Book flight tickets.",
                           ),
-                          title: "Flights",
-                          subtitle: "Book flight tickets.",
                         ),
                       ),
                     ],
@@ -14348,64 +14452,176 @@ class _TicketBookingPageState extends State<TicketBookingPage> {
   Future<DocumentSnapshot> _saveTicket(
     String reference,
   ) async {
-    final user = FirebaseAuth.instance.currentUser!;
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      throw Exception("User not logged in.");
+    }
+
+    // ------------------------------------------------------------
+    // Convert either DocumentSnapshot or Map into a normal Map
+    // ------------------------------------------------------------
+
+    Map<String, dynamic> getData(dynamic value) {
+      if (value is DocumentSnapshot) {
+        final data = value.data();
+
+        if (data is Map<String, dynamic>) {
+          return data;
+        }
+
+        if (data is Map) {
+          return Map<String, dynamic>.from(data);
+        }
+
+        return {};
+      }
+
+      if (value is Map) {
+        return Map<String, dynamic>.from(value);
+      }
+
+      return {};
+    }
+
+    // ------------------------------------------------------------
+    // Safely get a document ID.
+    //
+    // Supports:
+    // DocumentSnapshot.id
+    // Map["id"]
+    // Map["documentId"]
+    // Map["vehicleId"]
+    // ------------------------------------------------------------
+
+    String getId(
+      dynamic value, {
+      String? fallbackField,
+    }) {
+      if (value is DocumentSnapshot) {
+        return value.id;
+      }
+
+      if (value is Map) {
+        final map = Map<String, dynamic>.from(value);
+
+        final id = map["id"];
+
+        if (id != null && id.toString().trim().isNotEmpty) {
+          return id.toString();
+        }
+
+        final documentId = map["documentId"];
+
+        if (documentId != null && documentId.toString().trim().isNotEmpty) {
+          return documentId.toString();
+        }
+
+        if (fallbackField != null) {
+          final fallback = map[fallbackField];
+
+          if (fallback != null && fallback.toString().trim().isNotEmpty) {
+            return fallback.toString();
+          }
+        }
+      }
+
+      return "";
+    }
+
+    // ------------------------------------------------------------
+    // Extract data from the three objects
+    // ------------------------------------------------------------
+
+    final provider = getData(widget.providerData);
+    final route = getData(widget.routeData);
+    final vehicle = getData(widget.vehicleData);
+
+    // ------------------------------------------------------------
+    // IDs
+    // ------------------------------------------------------------
+
+    final providerId = getId(widget.providerData);
+
+    final routeId = getId(widget.routeData);
+
+    final vehicleId = getId(
+      widget.vehicleData,
+      fallbackField: "vehicleId",
+    );
+
+    // ------------------------------------------------------------
+    // Vehicle provider ID
+    //
+    // This is important because vehicles now live in their own
+    // collection and contain providerId.
+    // ------------------------------------------------------------
+
+    final vehicleProviderId = vehicle["providerId"]?.toString() ?? "";
+
+    // ------------------------------------------------------------
+    // Vehicle fields
+    // ------------------------------------------------------------
+
+    final vehicleNameValue = vehicle["driverName"] ??
+        vehicle["name"] ??
+        vehicle["vehicle"] ??
+        vehicle["vehicleName"] ??
+        "Vehicle";
+
+    final vehicleImageValue = vehicle["vehicleImage"] ??
+        vehicle["imageUrl"] ??
+        vehicle["image"] ??
+        "";
+
+    final departureTimeValue = vehicle["departureTime"] ?? "";
+
+    // ------------------------------------------------------------
+    // Create ticket
+    // ------------------------------------------------------------
 
     final docRef =
         await FirebaseFirestore.instance.collection("transport_tickets").add({
       "ticketId": "TR${Random().nextInt(90000) + 10000}",
 
-      // ========================================================
       // PROVIDER
-      // ========================================================
+      "providerId": providerId,
+      "providerName": provider["name"]?.toString() ?? "",
+      "providerLocation": provider["location"]?.toString() ?? "",
+      "providerImage": provider["imageUrl"]?.toString() ?? "",
 
-      "providerId": widget.providerData.id,
-
-      "providerName": widget.providerData['name'],
-
-      "providerLocation": widget.providerData['location'],
-
-      "providerImage": widget.providerData['imageUrl'],
-
-      // ========================================================
       // ROUTE
-      // ========================================================
+      "from": route["from"]?.toString() ?? "",
+      "to": route["to"]?.toString() ?? "",
+      "routeId": routeId,
 
-      "from": widget.routeData['from'],
-
-      "to": widget.routeData['to'],
-
-      "routeId": widget.routeData.id,
-
-      // ========================================================
       // VEHICLE
-      // ========================================================
+      "vehicleId": vehicleId,
+      "vehicleName": vehicleNameValue.toString(),
+      "vehicleImage": vehicleImageValue.toString(),
+      "departureTime": departureTimeValue.toString(),
+      "vehicleProviderId": vehicleProviderId,
 
-      "vehicleId": widget.vehicleData.id,
-
-      "vehicleName": vehicleName,
-
-      "vehicleImage": vehicleImageUrl,
-
-      "departureTime": vehicleDepartureTime,
-
-      "vehicleProviderId": widget.vehicleData['providerId'],
-
-      // ========================================================
-      // TICKET
-      // ========================================================
-
+      // BOOKING
       "ticketCount": ticketCount,
-
       "price": totalPrice,
 
+      // STATUS
       "status": "valid",
 
+      // USER
       "userId": user.uid,
 
-      "createdAt": FieldValue.serverTimestamp(),
-
+      // PAYMENT
       "paymentReference": reference,
+
+      // TIMESTAMP
+      "createdAt": FieldValue.serverTimestamp(),
     });
+
+    // ------------------------------------------------------------
+    // Return the newly created ticket document
+    // ------------------------------------------------------------
 
     return await docRef.get();
   }
@@ -15283,7 +15499,7 @@ class _TransportTicketPageState extends State<TransportTicketPage> {
         height: 58,
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(30),
         ),
         child: const Icon(
           Icons.directions_bus,
@@ -15744,12 +15960,7 @@ class _TransportTicketPageState extends State<TransportTicketPage> {
                                 0.06,
                               ),
                               borderRadius: BorderRadius.circular(
-                                14,
-                              ),
-                              border: Border.all(
-                                color: Colors.white.withOpacity(
-                                  0.08,
-                                ),
+                                20,
                               ),
                             ),
                             child: Row(
@@ -15797,6 +16008,16 @@ class _TransportTicketPageState extends State<TransportTicketPage> {
                                               Icons.access_time,
                                               color: Colors.white70,
                                               size: 14,
+                                            ),
+                                            const SizedBox(
+                                              width: 5,
+                                            ),
+                                            Text(
+                                              'Departure Time :',
+                                              style: const TextStyle(
+                                                color: Colors.white70,
+                                                fontSize: 12,
+                                              ),
                                             ),
                                             const SizedBox(
                                               width: 5,
@@ -22577,14 +22798,18 @@ class _UserOrdersListPageState extends State<UserOrdersListPage> {
     switch (status.toLowerCase()) {
       case 'pending':
         return Colors.orange;
+
       case 'processing':
       case 'accepted':
       case 'picked_up':
         return Colors.blue;
+
       case 'completed':
         return Colors.green;
+
       case 'cancelled':
         return Colors.red;
+
       default:
         return Colors.grey;
     }
@@ -22593,6 +22818,203 @@ class _UserOrdersListPageState extends State<UserOrdersListPage> {
   bool isOngoing(String status) {
     return status != "completed";
   }
+
+  // ============================================================
+  // ORDER TYPE DETECTION
+  // ============================================================
+
+// ============================================================
+// GET ORDER TYPE FROM VENDOR
+// ============================================================
+
+  Future<String> _getOrderType(
+    Map<String, dynamic> order,
+    List<Map<String, dynamic>> items,
+  ) async {
+    try {
+      String vendorId = "";
+
+      // ----------------------------------------------------------
+      // FIRST: Use vendorIds from the order
+      // ----------------------------------------------------------
+
+      final vendorIds = order['vendorIds'];
+
+      if (vendorIds is List && vendorIds.isNotEmpty) {
+        final firstVendorId = vendorIds.first;
+
+        if (firstVendorId != null) {
+          vendorId = firstVendorId.toString().trim();
+        }
+      }
+
+      // ----------------------------------------------------------
+      // FALLBACK: Get vendorId from the first item
+      // ----------------------------------------------------------
+
+      if (vendorId.isEmpty) {
+        for (final item in items) {
+          final itemVendorId = item['vendorId'];
+
+          if (itemVendorId != null &&
+              itemVendorId.toString().trim().isNotEmpty) {
+            vendorId = itemVendorId.toString().trim();
+
+            break;
+          }
+        }
+      }
+
+      // ----------------------------------------------------------
+      // If there is no vendor ID, we cannot determine the type
+      // ----------------------------------------------------------
+
+      if (vendorId.isEmpty) {
+        return "unknown";
+      }
+
+      // ----------------------------------------------------------
+      // GET VENDOR
+      // ----------------------------------------------------------
+
+      final vendorDoc = await FirebaseFirestore.instance
+          .collection("Vendors")
+          .doc(vendorId)
+          .get();
+
+      if (!vendorDoc.exists) {
+        return "unknown";
+      }
+
+      final vendorData = vendorDoc.data();
+
+      if (vendorData == null) {
+        return "unknown";
+      }
+
+      // ----------------------------------------------------------
+      // GET VENDOR CATEGORY
+      // ----------------------------------------------------------
+
+      final category = vendorData['category']?.toString().trim().toLowerCase();
+
+      if (category == null || category.isEmpty) {
+        return "unknown";
+      }
+
+      // ----------------------------------------------------------
+      // FOOD
+      // Vendors category = "Food Vendor"
+      // ----------------------------------------------------------
+
+      if (category == "food vendor" || category.contains("food")) {
+        return "food";
+      }
+
+      // ----------------------------------------------------------
+      // GROCERY
+      // Vendors category = "Grocery Vendor"
+      // ----------------------------------------------------------
+
+      if (category == "grocery vendor" || category.contains("grocery")) {
+        return "grocery";
+      }
+
+      // ----------------------------------------------------------
+      // PHARMACY
+      // Vendors category = "Pharmacy"
+      // ----------------------------------------------------------
+
+      if (category == "pharmacy" || category.contains("pharmacy")) {
+        return "pharmacy";
+      }
+
+      // ----------------------------------------------------------
+      // UNKNOWN
+      // ----------------------------------------------------------
+
+      return "unknown";
+    } catch (e) {
+      debugPrint(
+        "Error detecting vendor order type: $e",
+      );
+
+      return "unknown";
+    }
+  }
+
+// ============================================================
+// ORDER ICON
+// ============================================================
+
+  Widget _buildOrderIcon(
+    String orderType,
+    String status,
+  ) {
+    IconData icon;
+    Color iconColor;
+
+    switch (orderType) {
+      // ----------------------------------------------------------
+      // FOOD
+      // ----------------------------------------------------------
+
+      case "food":
+        icon = Icons.restaurant;
+        iconColor = Colors.green;
+        break;
+
+      // ----------------------------------------------------------
+      // GROCERY
+      // ----------------------------------------------------------
+
+      case "grocery":
+        icon = Icons.shopping_cart;
+        iconColor = Colors.amber.shade700;
+        break;
+
+      // ----------------------------------------------------------
+      // PHARMACY
+      // ----------------------------------------------------------
+
+      case "pharmacy":
+        icon = Icons.local_pharmacy;
+        iconColor = Colors.green;
+        break;
+
+      // ----------------------------------------------------------
+      // UNKNOWN / UNAVAILABLE
+      // ----------------------------------------------------------
+
+      default:
+        icon = Icons.inbox;
+
+        iconColor = status.toLowerCase() == "completed"
+            ? Colors.green
+            : Colors.amber.shade700;
+
+        break;
+    }
+
+    return Container(
+      width: 52,
+      height: 52,
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        shape: BoxShape.circle,
+      ),
+      alignment: Alignment.center,
+      child: Icon(
+        icon,
+        color: iconColor,
+        size: 24,
+      ),
+    );
+  }
+
+  // ============================================================
+  // SEGMENT ITEM
+  // ============================================================
 
   Widget _segmentItem({
     required String label,
@@ -22608,10 +23030,16 @@ class _UserOrdersListPageState extends State<UserOrdersListPage> {
             _selectedTab = value;
           });
         },
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(
+            vertical: 10,
+          ),
           decoration: BoxDecoration(
-            color: isSelected ? Colors.white : Colors.black,
+            // Selected = white.
+            // Deselected = same as parent background.
+            color: isSelected ? Colors.white : Colors.transparent,
+
             borderRadius: BorderRadius.circular(20),
           ),
           alignment: Alignment.center,
@@ -22628,15 +23056,20 @@ class _UserOrdersListPageState extends State<UserOrdersListPage> {
               ),
               const SizedBox(width: 6),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 7,
+                  vertical: 3,
+                ),
                 decoration: BoxDecoration(
-                  color: isSelected ? Colors.black : Colors.white,
+                  color: isSelected
+                      ? Colors.black
+                      : Colors.white.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
                   count.toString(),
                   style: TextStyle(
-                    color: isSelected ? Colors.white : Colors.black,
+                    color: isSelected ? Colors.white : Colors.white,
                     fontSize: 11,
                     fontWeight: FontWeight.bold,
                   ),
@@ -22649,11 +23082,23 @@ class _UserOrdersListPageState extends State<UserOrdersListPage> {
     );
   }
 
+  // ============================================================
+  // SKELETON
+  // ============================================================
+
   Widget buildSkeletonLoader() {
-    return const Center(child: CircularProgressIndicator());
+    return const Center(
+      child: CircularProgressIndicator(),
+    );
   }
 
-  String _formatDateTime(dynamic timestamp) {
+  // ============================================================
+  // DATE FORMAT
+  // ============================================================
+
+  String _formatDateTime(
+    dynamic timestamp,
+  ) {
     if (timestamp == null) return "";
 
     DateTime date;
@@ -22665,18 +23110,29 @@ class _UserOrdersListPageState extends State<UserOrdersListPage> {
     }
 
     final formattedDate = "${date.day}/${date.month}/${date.year}";
+
     final formattedTime =
         "${date.hour}:${date.minute.toString().padLeft(2, '0')}";
 
     return "$formattedDate • $formattedTime";
   }
 
+  // ============================================================
+  // BUILD
+  // ============================================================
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+    BuildContext context,
+  ) {
     final user = FirebaseAuth.instance.currentUser;
 
     if (user == null) {
-      return const Center(child: Text("User not logged in"));
+      return const Center(
+        child: Text(
+          "User not logged in",
+        ),
+      );
     }
 
     return Scaffold(
@@ -22684,9 +23140,15 @@ class _UserOrdersListPageState extends State<UserOrdersListPage> {
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('orders')
-            .where('userId', isEqualTo: user.uid)
+            .where(
+              'userId',
+              isEqualTo: user.uid,
+            )
             .snapshots(),
-        builder: (context, snapshot) {
+        builder: (
+          context,
+          snapshot,
+        ) {
           if (!snapshot.hasData) {
             return buildSkeletonLoader();
           }
@@ -22694,19 +23156,28 @@ class _UserOrdersListPageState extends State<UserOrdersListPage> {
           final allOrders = snapshot.data!.docs;
 
           if (allOrders.isEmpty) {
-            return const Center(child: Text("You have no orders yet"));
+            return const Center(
+              child: Text(
+                "You have no orders yet",
+              ),
+            );
           }
 
-          /// 🔥 SPLIT ORDERS
+          // ====================================================
+          // SPLIT ORDERS
+          // ====================================================
+
           final ongoingOrders = allOrders.where((doc) {
             final status =
                 (doc['status'] ?? 'pending').toString().toLowerCase();
+
             return isOngoing(status);
           }).toList();
 
           final completedOrders = allOrders.where((doc) {
             final status =
                 (doc['status'] ?? 'pending').toString().toLowerCase();
+
             return status == "completed";
           }).toList();
 
@@ -22714,28 +23185,40 @@ class _UserOrdersListPageState extends State<UserOrdersListPage> {
               _selectedTab == "ongoing" ? ongoingOrders : completedOrders;
 
           return ListView(
-            // padding: const EdgeInsets.zero,
             children: [
               Stack(
                 children: [
-                  /// 🔥 RIPPLED HEADER
+                  // ==========================================
+                  // RIPPLED HEADER
+                  // ==========================================
+
                   Container(
                     height: 200,
                     width: double.infinity,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF181818),
+                      color: const Color(
+                        0xFF181818,
+                      ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.15),
+                          color: Colors.black.withOpacity(
+                            0.15,
+                          ),
                           blurRadius: 20,
                           spreadRadius: 2,
-                          offset: const Offset(0, 8),
+                          offset: const Offset(
+                            0,
+                            8,
+                          ),
                         ),
                       ],
                     ),
                   ),
 
-                  /// ✨ AMBER DOODLES
+                  // ==========================================
+                  // AMBER DOODLES
+                  // ==========================================
+
                   Positioned.fill(
                     child: IgnorePointer(
                       child: CustomPaint(
@@ -22747,7 +23230,12 @@ class _UserOrdersListPageState extends State<UserOrdersListPage> {
                   SafeArea(
                     bottom: false,
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+                      padding: const EdgeInsets.fromLTRB(
+                        16,
+                        20,
+                        16,
+                        24,
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -22755,17 +23243,31 @@ class _UserOrdersListPageState extends State<UserOrdersListPage> {
                             "Orders",
                             style: TextStyle(
                               color: Colors.white,
-                              fontSize: 20,
+                              fontSize: 22,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          const SizedBox(height: 24),
+
+                          const SizedBox(
+                            height: 24,
+                          ),
+
+                          // ====================================
+                          // SEGMENTED CONTROL
+                          // ====================================
+
                           Container(
                             decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(.12),
-                              borderRadius: BorderRadius.circular(25),
+                              color: Colors.white.withOpacity(
+                                .12,
+                              ),
+                              borderRadius: BorderRadius.circular(
+                                25,
+                              ),
                             ),
-                            padding: const EdgeInsets.all(4),
+                            padding: const EdgeInsets.all(
+                              4,
+                            ),
                             child: Row(
                               children: [
                                 _segmentItem(
@@ -22773,6 +23275,13 @@ class _UserOrdersListPageState extends State<UserOrdersListPage> {
                                   value: "ongoing",
                                   count: ongoingOrders.length,
                                 ),
+
+                                // EXTRA SPACE BETWEEN
+                                // ONGOING AND COMPLETED
+                                const SizedBox(
+                                  width: 8,
+                                ),
+
                                 _segmentItem(
                                   label: "Completed",
                                   value: "completed",
@@ -22788,157 +23297,220 @@ class _UserOrdersListPageState extends State<UserOrdersListPage> {
                 ],
               ),
 
-              const SizedBox(height: 20),
+              const SizedBox(
+                height: 20,
+              ),
 
-              /// 🔥 LIST
-              ...ordersToShow.map((doc) {
-                final order = doc.data() as Map<String, dynamic>? ?? {};
+              // =================================================
+              // ORDERS LIST
+              // =================================================
 
-                final status = (order['status'] ?? 'pending').toString();
+              ...ordersToShow.map(
+                (doc) {
+                  final order = doc.data() as Map<String, dynamic>? ?? {};
 
-                /// ITEMS
-                List<Map<String, dynamic>> items = [];
-                final itemsData = order['items'];
+                  final status = (order['status'] ?? 'pending').toString();
 
-                if (itemsData is List) {
-                  items = List<Map<String, dynamic>>.from(itemsData);
-                }
+                  // =============================================
+                  // ITEMS
+                  // =============================================
 
-                double totalPrice = 0;
-                for (var item in items) {
-                  final price = item['price'] ?? 0;
-                  final qty = item['qty'] ?? 1;
-                  totalPrice +=
-                      (price as num).toDouble() * (qty as num).toDouble();
-                }
+                  List<Map<String, dynamic>> items = [];
 
-                final statusColor = getStatusColor(status);
+                  final itemsData = order['items'];
 
-                return GestureDetector(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => UserOrdersPage(orderId: doc.id),
+                  if (itemsData is List) {
+                    items = itemsData
+                        .whereType<Map>()
+                        .map<Map<String, dynamic>>(
+                          (item) => Map<String, dynamic>.from(
+                            item,
+                          ),
+                        )
+                        .toList();
+                  }
+
+                  // =============================================
+                  // TOTAL PRICE
+                  // =============================================
+
+                  final grandTotal = order['grandTotal'];
+
+                  double totalPrice = 0;
+
+                  if (grandTotal is num) {
+                    totalPrice = grandTotal.toDouble();
+                  } else if (grandTotal != null) {
+                    totalPrice = double.tryParse(grandTotal.toString()) ?? 0;
+                  }
+                  final statusColor = getStatusColor(
+                    status,
+                  );
+
+                  // =============================================
+                  // ORDER TYPE
+                  // =============================================
+
+                  final orderType = _getOrderType(
+                    order,
+                    items,
+                  );
+
+                  return GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => UserOrdersPage(
+                            orderId: doc.id,
+                          ),
+                        ),
+                      );
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
                       ),
-                    );
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.all(4),
-                    child: Card(
-                      color: Colors.white,
-                      margin: const EdgeInsets.symmetric(vertical: 8),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      elevation: 2,
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            /// 🔹 LEFT COLUMN
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
+                      child: Card(
+                        color: Colors.white,
+                        margin: const EdgeInsets.symmetric(
+                          vertical: 8,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(
+                            30,
+                          ),
+                        ),
+                        elevation: 2,
+                        child: Padding(
+                          padding: const EdgeInsets.all(
+                            14,
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              // =================================
+                              // ORDER TYPE ICON
+                              // =================================
+
+                              FutureBuilder<String>(
+                                future: _getOrderType(
+                                  order,
+                                  items,
+                                ),
+                                builder: (
+                                  context,
+                                  snapshot,
+                                ) {
+                                  final orderType = snapshot.data ?? "unknown";
+
+                                  return _buildOrderIcon(
+                                    orderType,
+                                    status,
+                                  );
+                                },
+                              ),
+
+                              const SizedBox(
+                                width: 14,
+                              ),
+
+                              // =================================
+                              // ORDER ID + PRICE
+                              // =================================
+
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const SizedBox(
-                                      width: 60,
-                                      child: Text(
-                                        "Order id :",
-                                        style: TextStyle(fontSize: 11),
-                                      ),
-                                    ),
                                     Text(
-                                      doc.id.substring(0, 6),
+                                      doc.id.length > 6
+                                          ? doc.id.substring(
+                                              0,
+                                              6,
+                                            )
+                                          : doc.id,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
                                         fontWeight: FontWeight.bold,
+                                        fontSize: 14,
                                       ),
                                     ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
                                     const SizedBox(
-                                      width: 60,
-                                      child: Text(
-                                        "Items :",
-                                        style: TextStyle(fontSize: 11),
-                                      ),
-                                    ),
-                                    Text(
-                                      "${items.length}",
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    const SizedBox(
-                                      width: 60,
-                                      child: Text(
-                                        "Price :",
-                                        style: TextStyle(fontSize: 11),
-                                      ),
+                                      height: 6,
                                     ),
                                     Text(
                                       "₦${totalPrice.toStringAsFixed(0)}",
                                       style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
                                       ),
                                     ),
                                   ],
                                 ),
-                              ],
-                            ),
+                              ),
 
-                            const Spacer(),
+                              const SizedBox(
+                                width: 12,
+                              ),
 
-                            /// 🔹 RIGHT COLUMN (STATUS + DATE)
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: statusColor.withOpacity(0.15),
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: Text(
-                                    status.toUpperCase(),
-                                    style: TextStyle(
-                                      color: statusColor,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 10,
+                              // =================================
+                              // STATUS + DATE
+                              // =================================
+
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: statusColor.withOpacity(
+                                        0.15,
+                                      ),
+                                      borderRadius: BorderRadius.circular(
+                                        20,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      status.toLowerCase(),
+                                      style: TextStyle(
+                                        color: statusColor,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 10,
+                                      ),
                                     ),
                                   ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  _formatDateTime(order['createdAt']),
-                                  textAlign: TextAlign.right,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.grey[600],
+
+                                  // MORE SPACE BETWEEN
+                                  // STATUS AND DATE
+                                  const SizedBox(
+                                    height: 11,
                                   ),
-                                ),
-                              ],
-                            ),
-                          ],
+
+                                  Text(
+                                    _formatDateTime(
+                                      order['createdAt'],
+                                    ),
+                                    textAlign: TextAlign.right,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                );
-              }),
+                  );
+                },
+              ),
             ],
           );
         },
