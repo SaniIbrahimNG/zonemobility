@@ -806,7 +806,17 @@ class _HomePageState extends State<HomePage> {
   GoogleMapController? _mapController;
 
   Set<Marker> _markers = {};
+// ============================================================
+// ROUTE STATE
+// ============================================================
 
+  Set<Polyline> _polylines = {};
+
+  List<LatLng> _routePoints = [];
+
+  bool _isLoadingRoute = false;
+
+  Timer? _routeAnimationTimer;
   String pickupAddress = '';
 
   bool _mapReady = false;
@@ -862,6 +872,7 @@ class _HomePageState extends State<HomePage> {
     _pickupDebounce?.cancel();
     _destinationDebounce?.cancel();
 
+    _routeAnimationTimer?.cancel();
     _pickupController.removeListener(_onPickupChanged);
     _destinationController.removeListener(_onDestinationChanged);
 
@@ -1378,6 +1389,305 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ============================================================
+// GET ROAD ROUTE FROM PICKUP TO DESTINATION
+// ============================================================
+
+  Future<List<LatLng>> _getRoutePoints(
+    LatLng pickup,
+    LatLng destination,
+  ) async {
+    try {
+      final response = await http.post(
+        Uri.parse(
+          "https://routes.googleapis.com/directions/v2:computeRoutes",
+        ),
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": _googlePlacesApiKey,
+          "X-Goog-FieldMask":
+              "routes.polyline.encodedPolyline,routes.distanceMeters,routes.duration",
+        },
+        body: jsonEncode({
+          "origin": {
+            "location": {
+              "latLng": {
+                "latitude": pickup.latitude,
+                "longitude": pickup.longitude,
+              },
+            },
+          },
+          "destination": {
+            "location": {
+              "latLng": {
+                "latitude": destination.latitude,
+                "longitude": destination.longitude,
+              },
+            },
+          },
+          "travelMode": "DRIVE",
+          "routingPreference": "TRAFFIC_AWARE",
+          "computeAlternativeRoutes": false,
+          "languageCode": "en",
+          "units": "METRIC",
+        }),
+      );
+
+      if (response.statusCode != 200) {
+        debugPrint(
+          "Routes API error: "
+          "${response.statusCode} ${response.body}",
+        );
+
+        return [];
+      }
+
+      final Map<String, dynamic> data = jsonDecode(response.body);
+
+      final routes = data["routes"];
+
+      if (routes == null || routes.isEmpty) {
+        debugPrint("No route found.");
+        return [];
+      }
+
+      final String encodedPolyline =
+          routes[0]["polyline"]?["encodedPolyline"]?.toString() ?? "";
+
+      if (encodedPolyline.isEmpty) {
+        debugPrint("Route polyline is empty.");
+        return [];
+      }
+
+      return _decodePolyline(encodedPolyline);
+    } catch (e) {
+      debugPrint(
+        "Error getting route: $e",
+      );
+
+      return [];
+    }
+  }
+
+// ============================================================
+// DECODE GOOGLE ENCODED POLYLINE
+// ============================================================
+
+  List<LatLng> _decodePolyline(String encoded) {
+    final List<LatLng> points = [];
+
+    int index = 0;
+    int lat = 0;
+    int lng = 0;
+
+    while (index < encoded.length) {
+      int shift = 0;
+      int result = 0;
+
+      while (true) {
+        final int byte = encoded.codeUnitAt(index++) - 63;
+
+        result |= (byte & 0x1f) << shift;
+        shift += 5;
+
+        if (byte < 0x20) break;
+      }
+
+      final int deltaLat = (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
+
+      lat += deltaLat;
+
+      shift = 0;
+      result = 0;
+
+      while (true) {
+        final int byte = encoded.codeUnitAt(index++) - 63;
+
+        result |= (byte & 0x1f) << shift;
+        shift += 5;
+
+        if (byte < 0x20) break;
+      }
+
+      final int deltaLng = (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
+
+      lng += deltaLng;
+
+      points.add(
+        LatLng(
+          lat / 1e5,
+          lng / 1e5,
+        ),
+      );
+    }
+
+    return points;
+  }
+
+// ============================================================
+// ANIMATE ROUTE FROM PICKUP TO DESTINATION
+// ============================================================
+
+  Future<void> _drawAnimatedRoute() async {
+    if (pickupLocation == null || destinationLocation == null) {
+      return;
+    }
+
+    final LatLng pickup = pickupLocation!;
+    final LatLng destination = destinationLocation!;
+
+    _routeAnimationTimer?.cancel();
+
+    if (!mounted) return;
+
+    setState(() {
+      _isLoadingRoute = true;
+      _routePoints = [];
+      _polylines = {};
+    });
+
+    final List<LatLng> points = await _getRoutePoints(
+      pickup,
+      destination,
+    );
+
+    if (!mounted) return;
+
+    if (points.isEmpty) {
+      setState(() {
+        _isLoadingRoute = false;
+      });
+
+      return;
+    }
+
+    _routePoints = points;
+
+    setState(() {
+      _isLoadingRoute = false;
+    });
+
+    // ----------------------------------------------------------
+    // FIT BOTH LOCATIONS ON SCREEN
+    // ----------------------------------------------------------
+
+    await _fitRouteOnMap();
+
+    // ----------------------------------------------------------
+    // ANIMATE THE LINE
+    // ----------------------------------------------------------
+
+    int visiblePoints = 1;
+
+    setState(() {
+      _polylines = {
+        Polyline(
+          polylineId: const PolylineId("ride_route"),
+          points: _routePoints.take(visiblePoints).toList(),
+          color: Colors.black,
+          width: 5,
+          jointType: JointType.round,
+          startCap: Cap.roundCap,
+          endCap: Cap.roundCap,
+        ),
+      };
+    });
+
+    _routeAnimationTimer = Timer.periodic(
+      const Duration(milliseconds: 25),
+      (timer) {
+        if (!mounted) {
+          timer.cancel();
+          return;
+        }
+
+        if (visiblePoints >= _routePoints.length) {
+          timer.cancel();
+          return;
+        }
+
+        // Draw several points at once so long routes
+        // animate smoothly without taking too long.
+        visiblePoints += math.max(
+          1,
+          (_routePoints.length / 80).ceil(),
+        );
+
+        if (visiblePoints > _routePoints.length) {
+          visiblePoints = _routePoints.length;
+        }
+
+        setState(() {
+          _polylines = {
+            Polyline(
+              polylineId: const PolylineId("ride_route"),
+              points: _routePoints.take(visiblePoints).toList(),
+              color: Colors.black,
+              width: 5,
+              jointType: JointType.round,
+              startCap: Cap.roundCap,
+              endCap: Cap.roundCap,
+            ),
+          };
+        });
+      },
+    );
+  }
+
+// ============================================================
+// FIT PICKUP + DESTINATION + ROUTE ON MAP
+// ============================================================
+
+  Future<void> _fitRouteOnMap() async {
+    if (_mapController == null ||
+        pickupLocation == null ||
+        destinationLocation == null) {
+      return;
+    }
+
+    final double southWestLat = math.min(
+      pickupLocation!.latitude,
+      destinationLocation!.latitude,
+    );
+
+    final double southWestLng = math.min(
+      pickupLocation!.longitude,
+      destinationLocation!.longitude,
+    );
+
+    final double northEastLat = math.max(
+      pickupLocation!.latitude,
+      destinationLocation!.latitude,
+    );
+
+    final double northEastLng = math.max(
+      pickupLocation!.longitude,
+      destinationLocation!.longitude,
+    );
+
+    try {
+      await _mapController!.animateCamera(
+        CameraUpdate.newLatLngBounds(
+          LatLngBounds(
+            southwest: LatLng(
+              southWestLat,
+              southWestLng,
+            ),
+            northeast: LatLng(
+              northEastLat,
+              northEastLng,
+            ),
+          ),
+          80,
+        ),
+      );
+    } catch (e) {
+      debugPrint(
+        "Error fitting route on map: $e",
+      );
+    }
+  }
+
+  // ============================================================
   // SELECT AUTOCOMPLETE RESULT
   // ============================================================
 
@@ -1438,8 +1748,10 @@ class _HomePageState extends State<HomePage> {
       _markers = updatedMarkers;
     });
 
-    // Move map to selected place.
-    if (_mapController != null) {
+// Draw the road route from pickup to destination.
+    if (!isPickup && pickupLocation != null && destinationLocation != null) {
+      await _drawAnimatedRoute();
+    } else if (_mapController != null) {
       await _mapController!.animateCamera(
         CameraUpdate.newCameraPosition(
           CameraPosition(
@@ -1741,6 +2053,7 @@ class _HomePageState extends State<HomePage> {
                       compassEnabled: true,
                       mapToolbarEnabled: false,
                       markers: _markers,
+                      polylines: _polylines,
                       onMapCreated: _onMapCreated,
                     ),
 
@@ -2123,48 +2436,200 @@ class _FoodShopBanner extends StatelessWidget {
   }
 }
 
+const String kGooglePlacesApiKey = 'AIzaSyAxmD8Gvtn1KGomBFy3pWXRFgvw0c4a-48';
+
 class VendorOnboardingPage extends StatefulWidget {
-  const VendorOnboardingPage({super.key});
+  const VendorOnboardingPage({
+    super.key,
+  });
 
   @override
   State<VendorOnboardingPage> createState() => _VendorOnboardingPageState();
 }
 
+// ============================================================
+// STATE
+// ============================================================
+
 class _VendorOnboardingPageState extends State<VendorOnboardingPage> {
   final _formKey = GlobalKey<FormState>();
+
   final currentUserId = FirebaseAuth.instance.currentUser!.uid;
 
-  XFile? _profileImage;
   final ImagePicker _picker = ImagePicker();
 
+  XFile? _profileImage;
+
   final TextEditingController _businessNameController = TextEditingController();
-  String? _selectedCategory;
-  final TextEditingController _hoursController = TextEditingController();
-  final TextEditingController _storeLocationController =
-      TextEditingController();
+
   final TextEditingController _accountNumberController =
       TextEditingController();
-  String? _selectedBank;
+
   final TextEditingController _accountNameController = TextEditingController();
+
+  // ==========================================================
+  // CATEGORY
+  // ==========================================================
+
+  String? _selectedCategory;
 
   final List<String> _categories = [
     'Food Vendor',
     'Grocery Vendor',
-    'Pharmacy'
+    'Pharmacy',
   ];
+
+  // ==========================================================
+  // BANK
+  // ==========================================================
+
+  String? _selectedBank;
+
   final List<String> _banks = [
     'Access Bank',
     'GT Bank',
     'UBA',
     'Zenith',
-    'First Bank'
+    'First Bank',
   ];
+
+  // ==========================================================
+  // LOCATION
+  // ==========================================================
+
+  String? _selectedState;
+
+  String? _selectedCity;
+
+  List<String> _states = [];
+
+  List<String> _cities = [];
+
+  bool _loadingStates = true;
+
+  bool _loadingCities = false;
+
+  // Exact map coordinates selected by the vendor.
+  //
+  // IMPORTANT:
+  // This object now contains ONLY latitude and longitude.
+  // The vendor-entered store address is kept separately in
+  // _storeAddressController.
+  Map<String, dynamic>? _selectedStoreLocation;
+
+  // Vendor's actual store address.
+  //
+  // This is intentionally separate from Google Places search.
+  final TextEditingController _storeAddressController = TextEditingController();
+
+  // ==========================================================
+  // OPERATING HOURS
+  // ==========================================================
+
+  final List<String> _weekDays = [
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
+  ];
+
+  final Map<String, bool> _dayEnabled = {
+    'Monday': false,
+    'Tuesday': false,
+    'Wednesday': false,
+    'Thursday': false,
+    'Friday': false,
+    'Saturday': false,
+    'Sunday': false,
+  };
+
+  final Map<String, TimeOfDay?> _openingTimes = {
+    'Monday': null,
+    'Tuesday': null,
+    'Wednesday': null,
+    'Thursday': null,
+    'Friday': null,
+    'Saturday': null,
+    'Sunday': null,
+  };
+
+  final Map<String, TimeOfDay?> _closingTimes = {
+    'Monday': null,
+    'Tuesday': null,
+    'Wednesday': null,
+    'Thursday': null,
+    'Friday': null,
+    'Saturday': null,
+    'Sunday': null,
+  };
+
+  // ==========================================================
+  // LOADING
+  // ==========================================================
 
   bool _isLoading = false;
 
-  // ---------------- IMAGE PICKER ----------------
+  // ==========================================================
+  // INIT
+  // ==========================================================
+
+  @override
+  void initState() {
+    super.initState();
+
+    _loadStates();
+  }
+
+  Future<void> _loadStates() async {
+    try {
+      final states = await LocationService.getStates();
+
+      if (!mounted) return;
+
+      setState(() {
+        _states = states;
+        _loadingStates = false;
+      });
+    } catch (e) {
+      debugPrint(
+        'VENDOR LOCATION STATES ERROR: $e',
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _states = [];
+        _loadingStates = false;
+      });
+    }
+  }
+
+  // ==========================================================
+  // DISPOSE
+  // ==========================================================
+
+  @override
+  void dispose() {
+    _businessNameController.dispose();
+    _accountNumberController.dispose();
+    _accountNameController.dispose();
+    _storeAddressController.dispose();
+
+    super.dispose();
+  }
+
+  // ==========================================================
+  // IMAGE PICKER
+  // ==========================================================
+
   Future<void> _pickImage() async {
-    final pickedFile = await _picker.pickImage(source: ImageSource.gallery);
+    final pickedFile = await _picker.pickImage(
+      source: ImageSource.gallery,
+    );
+
     if (pickedFile != null) {
       setState(() {
         _profileImage = pickedFile;
@@ -2172,94 +2637,817 @@ class _VendorOnboardingPageState extends State<VendorOnboardingPage> {
     }
   }
 
-  // ---------------- UPLOAD IMAGE TO FIREBASE STORAGE ----------------
-  Future<String?> _uploadProfileImage(XFile imageFile) async {
+  // ==========================================================
+  // UPLOAD IMAGE
+  // ==========================================================
+
+  Future<String?> _uploadProfileImage(
+    XFile imageFile,
+  ) async {
     try {
       final fileName = 'vendors/${DateTime.now().millisecondsSinceEpoch}.png';
+
       final ref = FirebaseStorage.instance.ref().child(fileName);
 
       if (kIsWeb) {
         final bytes = await imageFile.readAsBytes();
+
         await ref.putData(bytes);
       } else {
-        await ref.putFile(File(imageFile.path));
+        await ref.putFile(
+          File(imageFile.path),
+        );
       }
 
-      final url = await ref.getDownloadURL();
-      return url;
+      return await ref.getDownloadURL();
     } catch (e, stack) {
-      print("UPLOAD ERROR → $e");
-      print(stack);
+      debugPrint(
+        'UPLOAD ERROR → $e',
+      );
+
+      debugPrint(
+        stack.toString(),
+      );
+
       return null;
     }
   }
 
-  // ---------------- SAVE TO FIRESTORE ----------------
-  Future<void> _submitVendor() async {
-    if (!_formKey.currentState!.validate()) return;
-    if (_selectedCategory == null || _selectedBank == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please select category and bank")),
+  // ==========================================================
+  // STATE CHANGED
+  // ==========================================================
+
+  Future<void> _onStateChanged(
+    String? state,
+  ) async {
+    if (state == null) return;
+
+    setState(() {
+      _selectedState = state;
+      _selectedCity = null;
+
+      _cities = [];
+
+      _selectedStoreLocation = null;
+
+      // Clear the manually entered address because the state
+      // has changed.
+      _storeAddressController.clear();
+
+      _loadingCities = true;
+    });
+
+    try {
+      final cities = await LocationService.getLocations(state);
+
+      if (!mounted) return;
+
+      setState(() {
+        _cities = cities;
+        _loadingCities = false;
+      });
+    } catch (e) {
+      debugPrint(
+        'VENDOR LOCATION CITIES ERROR: $e',
       );
-      return;
+
+      if (!mounted) return;
+
+      setState(() {
+        _cities = [];
+        _loadingCities = false;
+      });
     }
-    if (_profileImage == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please upload a profile image")),
+  }
+
+  // ==========================================================
+  // CITY CHANGED
+  // ==========================================================
+
+  void _onCityChanged(
+    String? city,
+  ) {
+    setState(() {
+      _selectedCity = city;
+
+      _selectedStoreLocation = null;
+
+      // A store address belongs to the selected city, so clear
+      // it whenever the city changes.
+      _storeAddressController.clear();
+    });
+  }
+
+  // ==========================================================
+  // GOOGLE PLACES AUTOCOMPLETE
+  //
+  // Google is ONLY being used to help the vendor find an area
+  // on the map.
+  //
+  // The returned Google address is NEVER saved.
+  // ==========================================================
+
+  Future<List<Map<String, dynamic>>> _fetchPlaceSuggestions(
+    String query,
+  ) async {
+    if (query.trim().length < 3) {
+      return [];
+    }
+
+    if (_selectedState == null || _selectedCity == null) {
+      return [];
+    }
+
+    final String encodedQuery = Uri.encodeComponent(
+      '$query, $_selectedCity, $_selectedState, Nigeria',
+    );
+
+    final Uri url = Uri.parse(
+      'https://maps.googleapis.com/maps/api/place/autocomplete/json'
+      '?input=$encodedQuery'
+      '&components=country:ng'
+      '&language=en'
+      '&key=$kGooglePlacesApiKey',
+    );
+
+    final response = await http.get(url);
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Places request failed: ${response.statusCode}',
       );
+    }
+
+    final Map<String, dynamic> data = json.decode(
+      response.body,
+    );
+
+    final String status = data['status']?.toString() ?? '';
+
+    if (status != 'OK' && status != 'ZERO_RESULTS') {
+      throw Exception(
+        'Places API status: $status',
+      );
+    }
+
+    final List<dynamic> predictions = data['predictions'] ?? [];
+
+    return predictions.map<Map<String, dynamic>>(
+      (prediction) {
+        final structured =
+            prediction['structured_formatting'] as Map<String, dynamic>?;
+
+        return {
+          'placeId': prediction['place_id']?.toString() ?? '',
+          'description': prediction['description']?.toString() ?? '',
+          'mainText': structured?['main_text']?.toString() ??
+              prediction['description']?.toString() ??
+              '',
+          'secondaryText': structured?['secondary_text']?.toString() ?? '',
+        };
+      },
+    ).toList();
+  }
+
+  // ==========================================================
+  // GOOGLE PLACE DETAILS
+  //
+  // This returns coordinates only for our location flow.
+  //
+  // formattedAddress is intentionally returned only internally
+  // so the map helper can ignore it. It is NEVER saved.
+  // ==========================================================
+
+  Future<Map<String, dynamic>?> _getPlaceDetails(
+    String placeId,
+  ) async {
+    if (placeId.trim().isEmpty) {
+      return null;
+    }
+
+    final Uri url = Uri.parse(
+      'https://maps.googleapis.com/maps/api/place/details/json'
+      '?place_id=${Uri.encodeComponent(placeId)}'
+      '&fields=place_id,name,formatted_address,geometry'
+      '&language=en'
+      '&key=$kGooglePlacesApiKey',
+    );
+
+    final response = await http.get(url);
+
+    if (response.statusCode != 200) {
+      return null;
+    }
+
+    final Map<String, dynamic> data = json.decode(
+      response.body,
+    );
+
+    if (data['status'] != 'OK') {
+      debugPrint(
+        'PLACE DETAILS STATUS: ${data['status']}',
+      );
+
+      return null;
+    }
+
+    final result = data['result'] as Map<String, dynamic>?;
+
+    if (result == null) {
+      return null;
+    }
+
+    final geometry = result['geometry'] as Map<String, dynamic>?;
+
+    final location = geometry?['location'] as Map<String, dynamic>?;
+
+    final latitude = (location?['lat'] as num?)?.toDouble();
+
+    final longitude = (location?['lng'] as num?)?.toDouble();
+
+    if (latitude == null || longitude == null) {
+      return null;
+    }
+
+    return {
+      'placeId': result['place_id']?.toString() ?? placeId,
+      'name': result['name']?.toString() ?? '',
+      'formattedAddress': result['formatted_address']?.toString() ?? '',
+      'latitude': latitude,
+      'longitude': longitude,
+    };
+  }
+
+  // ==========================================================
+  // RESOLVE SELECTED CITY COORDINATES
+  //
+  // The local JSON gives us state/city names but not coordinates.
+  //
+  // We therefore use Google only to find the geographical center
+  // of the selected city.
+  //
+  // IMPORTANT:
+  // Nothing returned here is saved as an address.
+  // ==========================================================
+
+  Future<LatLng?> _resolveSelectedCityCoordinates() async {
+    if (_selectedState == null || _selectedCity == null) {
+      return null;
+    }
+
+    try {
+      final encodedQuery = Uri.encodeComponent(
+        '$_selectedCity, $_selectedState, Nigeria',
+      );
+
+      final Uri url = Uri.parse(
+        'https://maps.googleapis.com/maps/api/place/autocomplete/json'
+        '?input=$encodedQuery'
+        '&components=country:ng'
+        '&language=en'
+        '&key=$kGooglePlacesApiKey',
+      );
+
+      final response = await http.get(url);
+
+      if (response.statusCode != 200) {
+        return null;
+      }
+
+      final Map<String, dynamic> data = json.decode(response.body);
+
+      if (data['status'] != 'OK') {
+        return null;
+      }
+
+      final List<dynamic> predictions = data['predictions'] ?? [];
+
+      if (predictions.isEmpty) {
+        return null;
+      }
+
+      String? selectedPlaceId;
+
+      // Prefer a result whose main text matches the selected city.
+      for (final prediction in predictions) {
+        final structured =
+            prediction['structured_formatting'] as Map<String, dynamic>?;
+
+        final mainText =
+            structured?['main_text']?.toString().trim().toLowerCase() ?? '';
+
+        if (mainText == _selectedCity!.trim().toLowerCase()) {
+          selectedPlaceId = prediction['place_id']?.toString();
+
+          break;
+        }
+      }
+
+      selectedPlaceId ??= predictions.first['place_id']?.toString();
+
+      if (selectedPlaceId == null || selectedPlaceId!.isEmpty) {
+        return null;
+      }
+
+      final details = await _getPlaceDetails(selectedPlaceId);
+
+      if (details == null) {
+        return null;
+      }
+
+      final latitude = (details['latitude'] as num?)?.toDouble();
+
+      final longitude = (details['longitude'] as num?)?.toDouble();
+
+      if (latitude == null || longitude == null) {
+        return null;
+      }
+
+      return LatLng(
+        latitude,
+        longitude,
+      );
+    } catch (e) {
+      debugPrint(
+        'CITY COORDINATES ERROR: $e',
+      );
+
+      return null;
+    }
+  }
+
+  // ==========================================================
+  // LOCATION PICKER
+  // ==========================================================
+
+  Future<void> _openLocationPicker() async {
+    if (_selectedState == null) {
+      _showMessage(
+        'Please select your state first.',
+      );
+
       return;
     }
 
-    setState(() => _isLoading = true);
-    try {
-      final imageUrl = await _uploadProfileImage(_profileImage!);
-      if (imageUrl == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Failed to upload image")),
+    if (_selectedCity == null) {
+      _showMessage(
+        'Please select your city/location first.',
+      );
+
+      return;
+    }
+
+    final result = await Navigator.push<Map<String, dynamic>>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => _VendorManualMapPage(
+          state: _selectedState!,
+          city: _selectedCity!,
+          initialLatitude:
+              (_selectedStoreLocation?['latitude'] as num?)?.toDouble(),
+          initialLongitude:
+              (_selectedStoreLocation?['longitude'] as num?)?.toDouble(),
+          fetchSuggestions: _fetchPlaceSuggestions,
+          getPlaceDetails: _getPlaceDetails,
+          resolveCityCoordinates: _resolveSelectedCityCoordinates,
+        ),
+      ),
+    );
+
+    if (result == null || !mounted) {
+      return;
+    }
+
+    final latitude = (result['latitude'] as num?)?.toDouble();
+
+    final longitude = (result['longitude'] as num?)?.toDouble();
+
+    if (latitude == null || longitude == null) {
+      _showMessage(
+        'The selected map location is invalid.',
+      );
+
+      return;
+    }
+
+    setState(() {
+      // ONLY coordinates are stored here.
+      //
+      // The store address remains in
+      // _storeAddressController.
+      _selectedStoreLocation = {
+        'latitude': latitude,
+        'longitude': longitude,
+      };
+    });
+  }
+
+  // ==========================================================
+  // OPERATING HOURS
+  // ==========================================================
+
+  Future<void> _selectOpeningTime(
+    String day,
+  ) async {
+    final selected = await showTimePicker(
+      context: context,
+      initialTime: _openingTimes[day] ??
+          const TimeOfDay(
+            hour: 8,
+            minute: 0,
+          ),
+    );
+
+    if (selected == null) return;
+
+    setState(() {
+      _openingTimes[day] = selected;
+
+      _dayEnabled[day] = true;
+    });
+  }
+
+  Future<void> _selectClosingTime(
+    String day,
+  ) async {
+    final selected = await showTimePicker(
+      context: context,
+      initialTime: _closingTimes[day] ??
+          const TimeOfDay(
+            hour: 18,
+            minute: 0,
+          ),
+    );
+
+    if (selected == null) return;
+
+    setState(() {
+      _closingTimes[day] = selected;
+
+      _dayEnabled[day] = true;
+    });
+  }
+
+  // ==========================================================
+  // TIME HELPERS
+  // ==========================================================
+
+  String _formatTime(
+    TimeOfDay? time,
+  ) {
+    if (time == null) {
+      return 'Select time';
+    }
+
+    return time.format(context);
+  }
+
+  int _timeToMinutes(
+    TimeOfDay time,
+  ) {
+    return time.hour * 60 + time.minute;
+  }
+
+  // ==========================================================
+  // OPERATING HOURS VALIDATION
+  // ==========================================================
+
+  bool _validateOperatingHours() {
+    bool hasAtLeastOneDay = false;
+
+    for (final day in _weekDays) {
+      if (!_dayEnabled[day]!) {
+        continue;
+      }
+
+      hasAtLeastOneDay = true;
+
+      final opening = _openingTimes[day];
+
+      final closing = _closingTimes[day];
+
+      if (opening == null || closing == null) {
+        _showMessage(
+          'Please select both opening and closing time for $day.',
         );
-        setState(() => _isLoading = false);
+
+        return false;
+      }
+
+      if (_timeToMinutes(closing) <= _timeToMinutes(opening)) {
+        _showMessage(
+          'Closing time must be later than opening time on $day.',
+        );
+
+        return false;
+      }
+    }
+
+    if (!hasAtLeastOneDay) {
+      _showMessage(
+        'Please select at least one operating day.',
+      );
+
+      return false;
+    }
+
+    return true;
+  }
+
+  // ==========================================================
+  // BUILD OPERATING HOURS DATA
+  // ==========================================================
+
+  Map<String, dynamic> _buildOperatingHours() {
+    final Map<String, dynamic> hours = {};
+
+    for (final day in _weekDays) {
+      final bool enabled = _dayEnabled[day] ?? false;
+
+      final opening = _openingTimes[day];
+
+      final closing = _closingTimes[day];
+
+      hours[day] = {
+        'enabled': enabled,
+        'openingTime': enabled && opening != null
+            ? _formatTimeForFirestore(opening)
+            : null,
+        'closingTime': enabled && closing != null
+            ? _formatTimeForFirestore(closing)
+            : null,
+      };
+    }
+
+    return hours;
+  }
+
+  String _formatTimeForFirestore(
+    TimeOfDay time,
+  ) {
+    final hour = time.hour.toString().padLeft(2, '0');
+
+    final minute = time.minute.toString().padLeft(2, '0');
+
+    return '$hour:$minute';
+  }
+
+  // ==========================================================
+  // VENDOR ID
+  // ==========================================================
+
+  Future<String> _generateUniqueVendorId() async {
+    final random = math.Random();
+
+    final vendors = FirebaseFirestore.instance.collection('Vendors');
+
+    for (int attempt = 0; attempt < 50; attempt++) {
+      final number = random.nextInt(100000);
+
+      final vendorId = 'VN${number.toString().padLeft(5, '0')}';
+
+      final existing = await vendors
+          .where(
+            'vendorId',
+            isEqualTo: vendorId,
+          )
+          .limit(1)
+          .get();
+
+      if (existing.docs.isEmpty) {
+        return vendorId;
+      }
+    }
+
+    throw Exception(
+      'Unable to generate a unique vendor ID. Please try again.',
+    );
+  }
+
+  // ==========================================================
+  // SUBMIT VENDOR
+  // ==========================================================
+
+  Future<void> _submitVendor() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    if (_selectedCategory == null) {
+      _showMessage(
+        'Please select a category.',
+      );
+
+      return;
+    }
+
+    if (_selectedBank == null) {
+      _showMessage(
+        'Please select a bank.',
+      );
+
+      return;
+    }
+
+    if (_profileImage == null) {
+      _showMessage(
+        'Please upload a profile image.',
+      );
+
+      return;
+    }
+
+    if (!_validateOperatingHours()) {
+      return;
+    }
+
+    if (_selectedState == null) {
+      _showMessage(
+        'Please select your store state.',
+      );
+
+      return;
+    }
+
+    if (_selectedCity == null) {
+      _showMessage(
+        'Please select your store city/location.',
+      );
+
+      return;
+    }
+
+    // ========================================================
+    // STORE ADDRESS
+    // ========================================================
+
+    final address = _storeAddressController.text.trim();
+
+    if (address.isEmpty) {
+      _showMessage(
+        'Please enter your actual store address.',
+      );
+
+      return;
+    }
+
+    // ========================================================
+    // EXACT MAP LOCATION
+    // ========================================================
+
+    if (_selectedStoreLocation == null) {
+      _showMessage(
+        'Please select your exact store location on the map.',
+      );
+
+      return;
+    }
+
+    final latitude = (_selectedStoreLocation!['latitude'] as num?)?.toDouble();
+
+    final longitude =
+        (_selectedStoreLocation!['longitude'] as num?)?.toDouble();
+
+    if (latitude == null || longitude == null) {
+      _showMessage(
+        'Your exact store location is incomplete. Please select it again.',
+      );
+
+      return;
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // ========================================================
+      // UPLOAD IMAGE
+      // ========================================================
+
+      final imageUrl = await _uploadProfileImage(
+        _profileImage!,
+      );
+
+      if (imageUrl == null) {
+        _showMessage(
+          'Failed to upload profile image.',
+        );
+
         return;
       }
 
+      // ========================================================
+      // CURRENT USER
+      // ========================================================
+
       final user = FirebaseAuth.instance.currentUser!;
-      await FirebaseFirestore.instance
-          .collection('Vendors')
-          .doc(user.uid) // <-- Use UID as document ID
-          .set({
+
+      // ========================================================
+      // GENERATE UNIQUE VENDOR ID
+      // ========================================================
+
+      final vendorId = await _generateUniqueVendorId();
+
+      // ========================================================
+      // LOCATION DATA
+      //
+      // IMPORTANT:
+      //
+      // address = typed by vendor
+      // latitude/longitude = selected on map
+      //
+      // Google formattedAddress is NOT stored.
+      // Google placeId is NOT stored.
+      // Google source is NOT stored.
+      // ========================================================
+
+      final storeLocation = {
+        'state': _selectedState,
+        'city': _selectedCity,
+        'address': address,
+        'latitude': latitude,
+        'longitude': longitude,
+      };
+
+      // ========================================================
+      // OPERATING HOURS
+      // ========================================================
+
+      final operatingHours = _buildOperatingHours();
+
+      // ========================================================
+      // FIRESTORE
+      // ========================================================
+
+      await FirebaseFirestore.instance.collection('Vendors').doc(user.uid).set({
+        'vendorId': vendorId,
+        'uid': user.uid,
         'businessName': _businessNameController.text.trim(),
         'category': _selectedCategory,
-        'hours': _hoursController.text.trim(),
-        'storeLocation': _storeLocationController.text.trim(),
+        'operatingHours': operatingHours,
+        'storeLocation': storeLocation,
         'accountNumber': _accountNumberController.text.trim(),
         'bank': _selectedBank,
         'accountName': _accountNameController.text.trim(),
         'profileImageUrl': imageUrl,
-        'status': 'pending', // Vendor status
+        'status': 'pending',
         'createdAt': Timestamp.now(),
-        'uid': user.uid,
       });
 
-      // Navigate to Vendor Dashboard
+      // ========================================================
+      // SUCCESS
+      // ========================================================
+
+      if (!mounted) return;
+
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-            builder: (context) => VendorDashboardPage(vendorId: currentUserId)),
+          builder: (context) => VendorDashboardPage(
+            vendorId: currentUserId,
+          ),
+        ),
       );
     } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("Error: $e")));
+      debugPrint(
+        'VENDOR REGISTRATION ERROR: $e',
+      );
+
+      if (!mounted) return;
+
+      _showMessage(
+        'Error creating vendor: $e',
+      );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
-  // ---------------- CHECK IF USER IS VENDOR ----------------
-  static Future<void> checkVendorStatus(BuildContext context) async {
+  // ==========================================================
+  // CHECK IF USER IS VENDOR
+  // ==========================================================
+
+  static Future<void> checkVendorStatus(
+    BuildContext context,
+  ) async {
     final user = FirebaseAuth.instance.currentUser;
+
     if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("You must be logged in")),
+        const SnackBar(
+          content: Text(
+            'You must be logged in',
+          ),
+        ),
       );
+
       return;
     }
 
@@ -2272,19 +3460,714 @@ class _VendorOnboardingPageState extends State<VendorOnboardingPage> {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (context) => VendorDashboardPage(vendorId: user.uid),
+          builder: (context) => VendorDashboardPage(
+            vendorId: user.uid,
+          ),
         ),
       );
     } else {
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (context) => const VendorOnboardingPage()),
+        MaterialPageRoute(
+          builder: (context) => const VendorOnboardingPage(),
+        ),
       );
     }
   }
 
+  // ==========================================================
+  // MESSAGE
+  // ==========================================================
+
+  void _showMessage(
+    String message,
+  ) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+      ),
+    );
+  }
+
+  // ==========================================================
+  // COMMON INPUT DECORATION
+  // ==========================================================
+
+  InputDecoration _inputDecoration(
+    String hint,
+  ) {
+    return InputDecoration(
+      hintText: hint,
+      filled: true,
+      fillColor: Colors.grey.shade50,
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: 14,
+        vertical: 14,
+      ),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(
+          color: Colors.black,
+        ),
+      ),
+    );
+  }
+
+  // ==========================================================
+  // OPERATING HOURS CARD
+  // ==========================================================
+
+  Widget _buildOperatingHoursCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: Colors.grey.shade200,
+        ),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.black,
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: const Icon(
+                  Icons.access_time,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 11),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Operating hours',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    SizedBox(height: 3),
+                    Text(
+                      'Select the days and times your store operates.',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 15),
+          ..._weekDays.map(
+            (day) {
+              final enabled = _dayEnabled[day] ?? false;
+
+              return Container(
+                margin: const EdgeInsets.only(
+                  bottom: 8,
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 9,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(11),
+                  border: Border.all(
+                    color: enabled ? Colors.black : Colors.grey.shade200,
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        SizedBox(
+                          width: 85,
+                          child: Text(
+                            day,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        Switch(
+                          value: enabled,
+                          activeColor: Colors.black,
+                          onChanged: (value) {
+                            setState(() {
+                              _dayEnabled[day] = value;
+
+                              if (!value) {
+                                _openingTimes[day] = null;
+
+                                _closingTimes[day] = null;
+                              }
+                            });
+                          },
+                        ),
+                        const Spacer(),
+                        if (!enabled)
+                          Text(
+                            'Closed',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade500,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                      ],
+                    ),
+                    if (enabled)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => _selectOpeningTime(
+                                day,
+                              ),
+                              child: _timeSelector(
+                                icon: Icons.login,
+                                label: 'Opens',
+                                value: _formatTime(
+                                  _openingTimes[day],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(
+                            width: 8,
+                          ),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => _selectClosingTime(
+                                day,
+                              ),
+                              child: _timeSelector(
+                                icon: Icons.logout,
+                                label: 'Closes',
+                                value: _formatTime(
+                                  _closingTimes[day],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _timeSelector({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 9,
+        vertical: 9,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            size: 15,
+            color: Colors.grey.shade700,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 9,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==========================================================
+  // LOCATION CARD
+  // ==========================================================
+
+  Widget _buildLocationCard() {
+    final location = _selectedStoreLocation;
+
+    final hasCoordinates = location != null &&
+        location['latitude'] != null &&
+        location['longitude'] != null;
+
+    final storeAddress = _storeAddressController.text.trim();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: Colors.grey.shade200,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.black,
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: const Icon(
+                  Icons.location_on_outlined,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 11),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Store location',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    SizedBox(height: 3),
+                    Text(
+                      'Enter your address and select the exact location on the map.',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 15),
+
+          // ====================================================
+          // STATE + CITY
+          // ====================================================
+
+          Row(
+            children: [
+              Expanded(
+                child: _locationDropdown(
+                  label: 'State',
+                  value: _selectedState,
+                  hint: _loadingStates ? 'Loading states...' : 'Select state',
+                  items: _states,
+                  enabled: !_loadingStates,
+                  onChanged: _onStateChanged,
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: _locationDropdown(
+                  label: 'City',
+                  value: _selectedCity,
+                  hint: _selectedState == null
+                      ? 'Select state'
+                      : _loadingCities
+                          ? 'Loading...'
+                          : 'Select city',
+                  items: _cities,
+                  enabled: _selectedState != null && !_loadingCities,
+                  onChanged: _onCityChanged,
+                ),
+              ),
+            ],
+          ),
+
+          // ====================================================
+          // STORE ADDRESS
+          // ====================================================
+
+          if (_selectedState != null && _selectedCity != null) ...[
+            const SizedBox(height: 14),
+
+            const Text(
+              'Store address',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+
+            const SizedBox(height: 5),
+
+            TextFormField(
+              controller: _storeAddressController,
+              maxLines: 2,
+              textInputAction: TextInputAction.done,
+              decoration: InputDecoration(
+                hintText: 'Enter the actual address of your store',
+                hintStyle: const TextStyle(
+                  fontSize: 11,
+                ),
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: const EdgeInsets.all(12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(
+                    color: Colors.grey.shade200,
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(
+                    color: Colors.grey.shade200,
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(
+                    color: Colors.black,
+                  ),
+                ),
+              ),
+              validator: (value) {
+                if (_selectedState != null &&
+                    _selectedCity != null &&
+                    (value == null || value.trim().isEmpty)) {
+                  return 'Enter your store address';
+                }
+
+                return null;
+              },
+              onChanged: (_) {
+                setState(() {});
+              },
+            ),
+
+            const SizedBox(height: 8),
+
+            // ==================================================
+            // IMPORTANT GOOGLE EXPLANATION
+            // ==================================================
+
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(
+                  0.05,
+                ),
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    size: 16,
+                    color: Colors.blue.shade700,
+                  ),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      'Your typed store address is what will be saved. Google search is only used to help position the map.',
+                      style: TextStyle(
+                        fontSize: 10,
+                        height: 1.4,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // ==================================================
+            // MAP BUTTON
+            // ==================================================
+
+            GestureDetector(
+              onTap: _openLocationPicker,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(13),
+                decoration: BoxDecoration(
+                  color: Colors.black,
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(
+                          0.12,
+                        ),
+                        borderRadius: BorderRadius.circular(
+                          10,
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.map_outlined,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 11),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Select exact location on map',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          SizedBox(height: 3),
+                          Text(
+                            'Search an area, tap the map or drag the pin to your store',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(
+                      Icons.arrow_forward_ios,
+                      color: Colors.white54,
+                      size: 14,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+
+          // ====================================================
+          // SELECTED LOCATION
+          // ====================================================
+
+          if (hasCoordinates)
+            Container(
+              margin: const EdgeInsets.only(
+                top: 10,
+              ),
+              padding: const EdgeInsets.all(11),
+              decoration: BoxDecoration(
+                color: Colors.green.withOpacity(
+                  0.07,
+                ),
+                borderRadius: BorderRadius.circular(11),
+                border: Border.all(
+                  color: Colors.green.withOpacity(
+                    0.2,
+                  ),
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.check_circle,
+                    color: Colors.green,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Exact store location selected',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.green,
+                          ),
+                        ),
+                        const SizedBox(
+                          height: 4,
+                        ),
+                        if (storeAddress.isNotEmpty)
+                          Text(
+                            storeAddress,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        const SizedBox(
+                          height: 4,
+                        ),
+                        Text(
+                          'Coordinates: ${location!['latitude']}, ${location['longitude']}',
+                          style: TextStyle(
+                            fontSize: 9,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                        const SizedBox(
+                          height: 4,
+                        ),
+                        Text(
+                          'Tap the map again if you want to adjust the pin.',
+                          style: TextStyle(
+                            fontSize: 9,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _locationDropdown({
+    required String label,
+    required String? value,
+    required String hint,
+    required List<String> items,
+    required bool enabled,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 5),
+        DropdownButtonFormField<String>(
+          value: value,
+          isExpanded: true,
+          items: items
+              .map(
+                (item) => DropdownMenuItem<String>(
+                  value: item,
+                  child: Text(
+                    item,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              )
+              .toList(),
+          onChanged: enabled ? onChanged : null,
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: const TextStyle(
+              fontSize: 11,
+            ),
+            filled: true,
+            fillColor: Colors.white,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 10,
+              vertical: 12,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide(
+                color: Colors.grey.shade200,
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide(
+                color: Colors.grey.shade200,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ==========================================================
+  // BUILD
+  // ==========================================================
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+    BuildContext context,
+  ) {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -2294,227 +4177,1169 @@ class _VendorOnboardingPageState extends State<VendorOnboardingPage> {
             key: _formKey,
             child: Column(
               children: [
-                // Back Button + Title
+                // ==================================================
+                // HEADER
+                // ==================================================
+
                 Row(
                   children: [
                     GestureDetector(
-                      onTap: () => Navigator.pop(context),
-                      child: const Icon(Icons.arrow_back_ios),
+                      onTap: () => Navigator.pop(
+                        context,
+                      ),
+                      child: const Icon(
+                        Icons.arrow_back_ios,
+                        size: 20,
+                      ),
                     ),
                     const Spacer(),
                     const Text(
-                      "Vendor Onboarding",
-                      style:
-                          TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                      'Vendor Onboarding',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                    const Spacer(flex: 2),
+                    const Spacer(
+                      flex: 2,
+                    ),
                   ],
                 ),
-                const SizedBox(height: 24),
 
-                // Profile Image Upload
+                const SizedBox(
+                  height: 24,
+                ),
+
+                // ==================================================
+                // PROFILE IMAGE
+                // ==================================================
+
                 GestureDetector(
                   onTap: _pickImage,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  child: Column(
                     children: [
                       Container(
-                        width: 80,
-                        height: 80,
+                        width: 88,
+                        height: 88,
                         decoration: BoxDecoration(
-                          color: Colors.grey[300],
+                          color: Colors.grey.shade300,
                           shape: BoxShape.circle,
                           image: _profileImage != null
                               ? DecorationImage(
                                   image: kIsWeb
-                                      ? NetworkImage(_profileImage!.path)
-                                      : FileImage(File(_profileImage!.path))
-                                          as ImageProvider,
+                                      ? NetworkImage(
+                                          _profileImage!.path,
+                                        )
+                                      : FileImage(
+                                          File(
+                                            _profileImage!.path,
+                                          ),
+                                        ) as ImageProvider,
                                   fit: BoxFit.cover,
                                 )
                               : null,
                         ),
                         child: _profileImage == null
-                            ? const Icon(Icons.person,
-                                size: 40, color: Colors.white)
+                            ? const Icon(
+                                Icons.person,
+                                size: 42,
+                                color: Colors.white,
+                              )
                             : null,
                       ),
-                      const SizedBox(width: 12),
-                      const Text(
-                        "Upload Profile Image",
-                        style: TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.w500),
-                      )
+                      const SizedBox(
+                        height: 9,
+                      ),
+                      Text(
+                        _profileImage == null
+                            ? 'Upload Profile Image'
+                            : 'Change Profile Image',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 24),
 
-                // Business Name
+                const SizedBox(
+                  height: 24,
+                ),
+
+                // ==================================================
+                // BUSINESS NAME
+                // ==================================================
+
                 TextFormField(
                   controller: _businessNameController,
-                  decoration: InputDecoration(
-                    hintText: "Business Name",
-                    fillColor: Colors.white,
-                    filled: true,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
+                  decoration: _inputDecoration(
+                    'Business Name',
                   ),
-                  validator: (val) =>
-                      val == null || val.isEmpty ? "Enter business name" : null,
-                ),
-                const SizedBox(height: 16),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Enter business name';
+                    }
 
-                // Category Dropdown
+                    return null;
+                  },
+                ),
+
+                const SizedBox(
+                  height: 16,
+                ),
+
+                // ==================================================
+                // CATEGORY
+                // ==================================================
+
                 DropdownButtonFormField<String>(
                   value: _selectedCategory,
                   items: _categories
-                      .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                      .map(
+                        (category) => DropdownMenuItem(
+                          value: category,
+                          child: Text(
+                            category,
+                          ),
+                        ),
+                      )
                       .toList(),
-                  onChanged: (val) {
+                  onChanged: (value) {
                     setState(() {
-                      _selectedCategory = val;
+                      _selectedCategory = value;
                     });
                   },
-                  decoration: InputDecoration(
-                    hintText: "Select Category",
-                    fillColor: Colors.white,
-                    filled: true,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
+                  decoration: _inputDecoration(
+                    'Select Category',
                   ),
-                  validator: (val) => val == null ? "Select a category" : null,
+                  validator: (value) =>
+                      value == null ? 'Select a category' : null,
                 ),
-                const SizedBox(height: 16),
 
-                // Opening and Closing Hours
-                TextFormField(
-                  controller: _hoursController,
-                  decoration: InputDecoration(
-                    hintText: "Opening & Closing Hours (e.g. 8AM - 6PM)",
-                    fillColor: Colors.white,
-                    filled: true,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                  validator: (val) =>
-                      val == null || val.isEmpty ? "Enter working hours" : null,
+                const SizedBox(
+                  height: 20,
                 ),
-                const SizedBox(height: 16),
 
-                // Store Location
-                TextFormField(
-                  controller: _storeLocationController,
-                  decoration: InputDecoration(
-                    hintText: "Store Location",
-                    fillColor: Colors.white,
-                    filled: true,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                  validator: (val) => val == null || val.isEmpty
-                      ? "Enter store location"
-                      : null,
+                // ==================================================
+                // OPERATING HOURS
+                // ==================================================
+
+                _buildOperatingHoursCard(),
+
+                const SizedBox(
+                  height: 20,
                 ),
-                const SizedBox(height: 16),
 
-                // Account Number
+                // ==================================================
+                // STORE LOCATION
+                // ==================================================
+
+                _buildLocationCard(),
+
+                const SizedBox(
+                  height: 20,
+                ),
+
+                // ==================================================
+                // ACCOUNT NUMBER
+                // ==================================================
+
                 TextFormField(
                   controller: _accountNumberController,
                   keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    hintText: "Account Number",
-                    fillColor: Colors.white,
-                    filled: true,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
+                  decoration: _inputDecoration(
+                    'Account Number',
                   ),
-                  validator: (val) => val == null || val.isEmpty
-                      ? "Enter account number"
-                      : null,
-                ),
-                const SizedBox(height: 16),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Enter account number';
+                    }
 
-                // Bank Dropdown
+                    return null;
+                  },
+                ),
+
+                const SizedBox(
+                  height: 16,
+                ),
+
+                // ==================================================
+                // BANK
+                // ==================================================
+
                 DropdownButtonFormField<String>(
                   value: _selectedBank,
                   items: _banks
-                      .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                      .map(
+                        (bank) => DropdownMenuItem(
+                          value: bank,
+                          child: Text(
+                            bank,
+                          ),
+                        ),
+                      )
                       .toList(),
-                  onChanged: (val) {
+                  onChanged: (value) {
                     setState(() {
-                      _selectedBank = val;
+                      _selectedBank = value;
                     });
                   },
-                  decoration: InputDecoration(
-                    hintText: "Select Bank",
-                    fillColor: Colors.white,
-                    filled: true,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
+                  decoration: _inputDecoration(
+                    'Select Bank',
                   ),
-                  validator: (val) => val == null ? "Select a bank" : null,
+                  validator: (value) => value == null ? 'Select a bank' : null,
                 ),
-                const SizedBox(height: 16),
 
-                // Account Name
+                const SizedBox(
+                  height: 16,
+                ),
+
+                // ==================================================
+                // ACCOUNT NAME
+                // ==================================================
+
                 TextFormField(
                   controller: _accountNameController,
-                  decoration: InputDecoration(
-                    hintText: "Account Name",
-                    fillColor: Colors.white,
-                    filled: true,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
+                  decoration: _inputDecoration(
+                    'Account Name',
                   ),
-                  validator: (val) =>
-                      val == null || val.isEmpty ? "Enter account name" : null,
-                ),
-                const SizedBox(height: 24),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Enter account name';
+                    }
 
-                // Submit Button
+                    return null;
+                  },
+                ),
+
+                const SizedBox(
+                  height: 24,
+                ),
+
+                // ==================================================
+                // SUBMIT
+                // ==================================================
+
                 SizedBox(
                   width: double.infinity,
-                  height: 50,
+                  height: 52,
                   child: ElevatedButton(
                     onPressed: _isLoading ? null : _submitVendor,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.black,
+                      disabledBackgroundColor: Colors.grey.shade300,
+                      elevation: 0,
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
+                        borderRadius: BorderRadius.circular(
+                          13,
+                        ),
+                      ),
                     ),
                     child: _isLoading
-                        ? const CircularProgressIndicator(
-                            color: Colors.white,
+                        ? const SizedBox(
+                            width: 21,
+                            height: 21,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
                           )
                         : const Text(
-                            "Get Onboard",
+                            'Get Onboard',
                             style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white),
+                              fontSize: 17,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
                           ),
                   ),
                 ),
-                const SizedBox(height: 24),
+
+                const SizedBox(
+                  height: 24,
+                ),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// VENDOR MAP LOCATION PAGE
+//
+// This replaces the old location picker + reverse-geocoding flow.
+//
+// Google Places is ONLY used to:
+// 1. Help the vendor search for an area.
+// 2. Move the map/pin to that area's coordinates.
+//
+// It does NOT provide the address that gets saved.
+// ============================================================================
+
+class _VendorManualMapPage extends StatefulWidget {
+  final double? initialLatitude;
+  final double? initialLongitude;
+
+  final String state;
+  final String city;
+
+  final Future<List<Map<String, dynamic>>> Function(
+    String query,
+  ) fetchSuggestions;
+
+  final Future<Map<String, dynamic>?> Function(
+    String placeId,
+  ) getPlaceDetails;
+
+  final Future<LatLng?> Function() resolveCityCoordinates;
+
+  const _VendorManualMapPage({
+    required this.initialLatitude,
+    required this.initialLongitude,
+    required this.state,
+    required this.city,
+    required this.fetchSuggestions,
+    required this.getPlaceDetails,
+    required this.resolveCityCoordinates,
+  });
+
+  @override
+  State<_VendorManualMapPage> createState() => _VendorManualMapPageState();
+}
+
+// ============================================================================
+// MAP STATE
+// ============================================================================
+
+class _VendorManualMapPageState extends State<_VendorManualMapPage> {
+  GoogleMapController? _mapController;
+
+  final TextEditingController _searchController = TextEditingController();
+
+  Timer? _searchDebounce;
+
+  List<Map<String, dynamic>> _suggestions = [];
+
+  LatLng? _selectedPosition;
+
+  LatLng? _cityCenter;
+
+  bool _loadingCity = false;
+
+  bool _loadingSuggestions = false;
+
+  bool _loadingPlaceDetails = false;
+
+  static const LatLng _nigeriaCenter = LatLng(
+    9.0820,
+    8.6753,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+
+    // If we already have coordinates from a
+    // previous selection, use them.
+    if (widget.initialLatitude != null && widget.initialLongitude != null) {
+      _selectedPosition = LatLng(
+        widget.initialLatitude!,
+        widget.initialLongitude!,
+      );
+    }
+
+    // Resolve the selected city so the map
+    // initially opens around that city.
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) {
+        _initializeMap();
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.dispose();
+
+    super.dispose();
+  }
+
+  // ==========================================================
+  // INITIALIZE MAP
+  // ==========================================================
+
+  Future<void> _initializeMap() async {
+    if (_selectedPosition != null) {
+      _moveCamera(
+        _selectedPosition!,
+        zoom: 17,
+      );
+
+      return;
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _loadingCity = true;
+    });
+
+    try {
+      final cityCoordinates = await widget.resolveCityCoordinates();
+
+      if (!mounted) return;
+
+      if (cityCoordinates != null) {
+        _cityCenter = cityCoordinates;
+
+        await _moveCamera(
+          cityCoordinates,
+          zoom: 13,
+        );
+      }
+    } catch (e) {
+      debugPrint(
+        'MAP CITY INITIALIZATION ERROR: $e',
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loadingCity = false;
+        });
+      }
+    }
+  }
+
+  // ==========================================================
+  // MOVE CAMERA
+  // ==========================================================
+
+  Future<void> _moveCamera(
+    LatLng position, {
+    double zoom = 15,
+  }) async {
+    final controller = _mapController;
+
+    if (controller == null) {
+      return;
+    }
+
+    try {
+      await controller.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(
+            target: position,
+            zoom: zoom,
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint(
+        'MAP CAMERA ERROR: $e',
+      );
+    }
+  }
+
+  // ==========================================================
+  // SEARCH CHANGE
+  // ==========================================================
+
+  void _onSearchChanged(
+    String value,
+  ) {
+    _searchDebounce?.cancel();
+
+    final query = value.trim();
+
+    if (query.length < 3) {
+      setState(() {
+        _suggestions = [];
+        _loadingSuggestions = false;
+      });
+
+      return;
+    }
+
+    _searchDebounce = Timer(
+      const Duration(
+        milliseconds: 400,
+      ),
+      () async {
+        if (!mounted) return;
+
+        setState(() {
+          _loadingSuggestions = true;
+        });
+
+        try {
+          final results = await widget.fetchSuggestions(
+            query,
+          );
+
+          if (!mounted) return;
+
+          setState(() {
+            _suggestions = results;
+            _loadingSuggestions = false;
+          });
+        } catch (e) {
+          debugPrint(
+            'VENDOR MAP SEARCH ERROR: $e',
+          );
+
+          if (!mounted) return;
+
+          setState(() {
+            _suggestions = [];
+            _loadingSuggestions = false;
+          });
+        }
+      },
+    );
+  }
+
+  // ==========================================================
+  // SELECT GOOGLE SEARCH RESULT
+  //
+  // IMPORTANT:
+  //
+  // We DO NOT save formattedAddress.
+  //
+  // We ONLY use Google's coordinates to move
+  // the map and pin.
+  // ==========================================================
+
+  Future<void> _selectSuggestion(
+    Map<String, dynamic> suggestion,
+  ) async {
+    final placeId = suggestion['placeId']?.toString() ?? '';
+
+    if (placeId.isEmpty) {
+      return;
+    }
+
+    FocusScope.of(context).unfocus();
+
+    _searchDebounce?.cancel();
+
+    setState(() {
+      _suggestions = [];
+      _loadingPlaceDetails = true;
+    });
+
+    try {
+      final details = await widget.getPlaceDetails(
+        placeId,
+      );
+
+      if (!mounted) return;
+
+      final latitude = (details?['latitude'] as num?)?.toDouble();
+
+      final longitude = (details?['longitude'] as num?)?.toDouble();
+
+      if (latitude == null || longitude == null) {
+        setState(() {
+          _loadingPlaceDetails = false;
+        });
+
+        _showMessage(
+          'Unable to locate this area on the map.',
+        );
+
+        return;
+      }
+
+      final position = LatLng(
+        latitude,
+        longitude,
+      );
+
+      // The Google result is ONLY used
+      // as a coordinate helper.
+      //
+      // It does not become the saved
+      // store address.
+      setState(() {
+        _selectedPosition = position;
+        _loadingPlaceDetails = false;
+      });
+
+      await _moveCamera(
+        position,
+        zoom: 17,
+      );
+    } catch (e) {
+      debugPrint(
+        'VENDOR MAP PLACE DETAILS ERROR: $e',
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _loadingPlaceDetails = false;
+      });
+
+      _showMessage(
+        'Unable to locate this area.',
+      );
+    }
+  }
+
+  // ==========================================================
+  // MAP TAP
+  // ==========================================================
+
+  void _selectPosition(
+    LatLng position,
+  ) {
+    setState(() {
+      _selectedPosition = position;
+    });
+  }
+
+  // ==========================================================
+  // MARKER DRAG
+  // ==========================================================
+
+  void _onMarkerDragEnd(
+    LatLng position,
+  ) {
+    setState(() {
+      _selectedPosition = position;
+    });
+  }
+
+  // ==========================================================
+  // CONFIRM
+  // ==========================================================
+
+  void _confirm() {
+    if (_selectedPosition == null) {
+      _showMessage(
+        'Tap the map or search for an area to select your store location.',
+      );
+
+      return;
+    }
+
+    Navigator.pop(
+      context,
+      {
+        'latitude': _selectedPosition!.latitude,
+        'longitude': _selectedPosition!.longitude,
+      },
+    );
+  }
+
+  // ==========================================================
+  // MESSAGE
+  // ==========================================================
+
+  void _showMessage(
+    String message,
+  ) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+      ),
+    );
+  }
+
+  // ==========================================================
+  // BUILD
+  // ==========================================================
+
+  @override
+  Widget build(
+    BuildContext context,
+  ) {
+    final initialPosition = _selectedPosition ?? _cityCenter ?? _nigeriaCenter;
+
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
+        elevation: 0,
+        title: const Text(
+          'Select Store Location',
+          style: TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+      body: Stack(
+        children: [
+          // ========================================================
+          // MAP
+          // ========================================================
+
+          GoogleMap(
+            initialCameraPosition: CameraPosition(
+              target: initialPosition,
+              zoom: _selectedPosition != null ? 17 : 5.5,
+            ),
+            myLocationButtonEnabled: false,
+            zoomControlsEnabled: false,
+            compassEnabled: true,
+            mapToolbarEnabled: false,
+            onMapCreated: (controller) {
+              _mapController = controller;
+
+              // If city coordinates
+              // have already been resolved,
+              // center on them.
+              if (_selectedPosition != null) {
+                _moveCamera(
+                  _selectedPosition!,
+                  zoom: 17,
+                );
+              } else if (_cityCenter != null) {
+                _moveCamera(
+                  _cityCenter!,
+                  zoom: 13,
+                );
+              }
+            },
+            onTap: _selectPosition,
+            markers: _selectedPosition == null
+                ? {}
+                : {
+                    Marker(
+                      markerId: const MarkerId(
+                        'vendor_store',
+                      ),
+                      position: _selectedPosition!,
+                      draggable: true,
+                      onDragEnd: _onMarkerDragEnd,
+                    ),
+                  },
+          ),
+
+          // ========================================================
+          // TOP SEARCH AREA
+          // ========================================================
+
+          Positioned(
+            top: 12,
+            left: 12,
+            right: 12,
+            child: Column(
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(
+                      13,
+                    ),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Colors.black12,
+                        blurRadius: 14,
+                        offset: Offset(
+                          0,
+                          4,
+                        ),
+                      ),
+                    ],
+                  ),
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: _onSearchChanged,
+                    textInputAction: TextInputAction.search,
+                    decoration: InputDecoration(
+                      hintText: 'Search an area to help locate your store',
+                      hintStyle: const TextStyle(
+                        fontSize: 11,
+                      ),
+                      prefixIcon: const Icon(
+                        Icons.search,
+                        size: 20,
+                      ),
+                      suffixIcon: _loadingSuggestions || _loadingPlaceDetails
+                          ? const Padding(
+                              padding: EdgeInsets.all(
+                                12,
+                              ),
+                              child: SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            )
+                          : null,
+                      filled: true,
+                      fillColor: Colors.white,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 14,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(
+                          13,
+                        ),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ),
+
+                // ====================================================
+                // SEARCH SUGGESTIONS
+                // ====================================================
+
+                if (_suggestions.isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(
+                      top: 6,
+                    ),
+                    constraints: const BoxConstraints(
+                      maxHeight: 280,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(
+                        12,
+                      ),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Colors.black12,
+                          blurRadius: 14,
+                          offset: Offset(
+                            0,
+                            4,
+                          ),
+                        ),
+                      ],
+                    ),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      padding: EdgeInsets.zero,
+                      itemCount: _suggestions.length,
+                      separatorBuilder: (_, __) => Divider(
+                        height: 1,
+                        color: Colors.grey.shade200,
+                      ),
+                      itemBuilder: (context, index) {
+                        final suggestion = _suggestions[index];
+
+                        return InkWell(
+                          onTap: () => _selectSuggestion(
+                            suggestion,
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 11,
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  width: 34,
+                                  height: 34,
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade100,
+                                    borderRadius: BorderRadius.circular(
+                                      9,
+                                    ),
+                                  ),
+                                  child: const Icon(
+                                    Icons.location_on_outlined,
+                                    size: 18,
+                                  ),
+                                ),
+                                const SizedBox(
+                                  width: 10,
+                                ),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        suggestion['mainText']?.toString() ??
+                                            '',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(
+                                        height: 3,
+                                      ),
+                                      Text(
+                                        suggestion['secondaryText']
+                                                ?.toString() ??
+                                            '',
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+
+          // ========================================================
+          // INSTRUCTION
+          // ========================================================
+
+          Positioned(
+            left: 12,
+            right: 12,
+            bottom: 140,
+            child: IgnorePointer(
+              child: Container(
+                padding: const EdgeInsets.all(
+                  11,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(
+                    12,
+                  ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black12,
+                      blurRadius: 12,
+                      offset: Offset(
+                        0,
+                        4,
+                      ),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.location_on,
+                      size: 19,
+                    ),
+                    const SizedBox(
+                      width: 8,
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Position your store pin exactly',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(
+                            height: 3,
+                          ),
+                          Text(
+                            'Search to move the map, tap the map, or drag the pin to the exact store location.',
+                            style: TextStyle(
+                              fontSize: 9,
+                              height: 1.35,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          const SizedBox(
+                            height: 3,
+                          ),
+                          Text(
+                            '${widget.city}, ${widget.state}',
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // ========================================================
+          // CITY LOADING
+          // ========================================================
+
+          if (_loadingCity)
+            Positioned(
+              top: 82,
+              right: 14,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(
+                    20,
+                  ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black12,
+                      blurRadius: 10,
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(
+                      width: 13,
+                      height: 13,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                      ),
+                    ),
+                    const SizedBox(
+                      width: 7,
+                    ),
+                    Text(
+                      'Locating city...',
+                      style: TextStyle(
+                        fontSize: 9,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // ========================================================
+          // SELECTED COORDINATES
+          // ========================================================
+
+          if (_selectedPosition != null)
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: 78,
+              child: Container(
+                padding: const EdgeInsets.all(
+                  10,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(
+                    11,
+                  ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black12,
+                      blurRadius: 10,
+                      offset: Offset(
+                        0,
+                        3,
+                      ),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.check_circle,
+                      color: Colors.green,
+                      size: 18,
+                    ),
+                    const SizedBox(
+                      width: 8,
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Exact map location selected',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.green,
+                            ),
+                          ),
+                          const SizedBox(
+                            height: 3,
+                          ),
+                          Text(
+                            '${_selectedPosition!.latitude.toStringAsFixed(6)}, ${_selectedPosition!.longitude.toStringAsFixed(6)}',
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // ========================================================
+          // CONFIRM BUTTON
+          // ========================================================
+
+          Positioned(
+            left: 12,
+            right: 12,
+            bottom: 14,
+            child: SizedBox(
+              height: 52,
+              child: ElevatedButton(
+                onPressed: _selectedPosition == null ? null : _confirm,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.black,
+                  disabledBackgroundColor: Colors.grey.shade400,
+                  foregroundColor: Colors.white,
+                  elevation: 2,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(
+                      13,
+                    ),
+                  ),
+                ),
+                child: const Text(
+                  'Confirm Store Location',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -3082,8 +5907,11 @@ class AddProductPage extends StatefulWidget {
   final String vendorId;
   final bool isFoodVendor;
 
-  const AddProductPage(
-      {required this.vendorId, required this.isFoodVendor, super.key});
+  const AddProductPage({
+    required this.vendorId,
+    required this.isFoodVendor,
+    super.key,
+  });
 
   @override
   State<AddProductPage> createState() => _AddProductPageState();
@@ -3092,7 +5920,8 @@ class AddProductPage extends StatefulWidget {
 class _AddProductPageState extends State<AddProductPage> {
   File? _imageFile;
   Uint8List? _imageBytes;
-  final picker = ImagePicker();
+
+  final ImagePicker picker = ImagePicker();
 
   final TextEditingController nameController = TextEditingController();
   final TextEditingController priceController = TextEditingController();
@@ -3100,10 +5929,10 @@ class _AddProductPageState extends State<AddProductPage> {
 
   bool loading = false;
 
-  /// NEW: fallback asset
+  /// Selected fallback image asset.
   String? fallbackAsset;
 
-  /// ADD YOUR ICON PATHS HERE
+  /// Food fallback icons.
   final List<String> foodIcons = [
     "assets/images/bibimbap.png",
     "assets/images/coke.png",
@@ -3115,7 +5944,10 @@ class _AddProductPageState extends State<AddProductPage> {
     "assets/images/shawarma.png",
   ];
 
-  // Food-specific fields
+  // ------------------------------------------------------------
+  // FOOD FIELDS
+  // ------------------------------------------------------------
+
   String? selectedCategory;
 
   final List<String> foodCategories = [
@@ -3126,88 +5958,151 @@ class _AddProductPageState extends State<AddProductPage> {
     'Shawarma',
     'Pizza',
     'Small Chops',
-    'Pastries'
+    'Pastries',
   ];
 
   List<Map<String, dynamic>> addons = [];
   List<Map<String, dynamic>> sides = [];
 
-  // ---------------- PICK IMAGE ----------------
+  // ------------------------------------------------------------
+  // PICK IMAGE
+  // ------------------------------------------------------------
 
-  Future pickImage() async {
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+  Future<void> pickImage() async {
+    try {
+      final pickedFile = await picker.pickImage(
+        source: ImageSource.gallery,
+      );
 
-    if (pickedFile != null) {
+      if (pickedFile == null) return;
+
       if (kIsWeb) {
         final bytes = await pickedFile.readAsBytes();
 
+        if (!mounted) return;
+
         setState(() {
           _imageBytes = bytes;
+          fallbackAsset = null;
         });
       } else {
+        if (!mounted) return;
+
         setState(() {
           _imageFile = File(pickedFile.path);
+          fallbackAsset = null;
         });
       }
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Unable to select image: $e"),
+        ),
+      );
     }
   }
 
-  // ---------------- SELECT FALLBACK ICON ----------------
+  // ------------------------------------------------------------
+  // SELECT FALLBACK ICON
+  // ------------------------------------------------------------
 
   void selectFallbackIcon() {
     showModalBottomSheet(
       context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(25),
+        ),
+      ),
       builder: (_) {
-        return GridView.builder(
-          padding: const EdgeInsets.all(15),
-          itemCount: foodIcons.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
-          ),
-          itemBuilder: (_, index) {
-            final icon = foodIcons[index];
-
-            return GestureDetector(
-              onTap: () {
-                setState(() {
-                  fallbackAsset = icon;
-                });
-
-                Navigator.pop(context);
-              },
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                      color: fallbackAsset == icon
-                          ? Colors.deepPurple
-                          : Colors.grey.shade300),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: Image.asset(icon),
-                ),
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(15),
+            child: GridView.builder(
+              shrinkWrap: true,
+              padding: const EdgeInsets.all(5),
+              itemCount: foodIcons.length,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
               ),
-            );
-          },
+              itemBuilder: (_, index) {
+                final icon = foodIcons[index];
+
+                return GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      fallbackAsset = icon;
+
+                      // If fallback image is selected, remove
+                      // uploaded image so only one is used.
+                      _imageFile = null;
+                      _imageBytes = null;
+                    });
+
+                    Navigator.pop(context);
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: fallbackAsset == icon
+                            ? Colors.deepPurple
+                            : Colors.grey.shade300,
+                        width: fallbackAsset == icon ? 2 : 1,
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Image.asset(
+                        icon,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
         );
       },
     );
   }
 
-  // ---------------- ADD PRODUCT ----------------
+  // ------------------------------------------------------------
+  // ADD PRODUCT
+  // ------------------------------------------------------------
 
-  Future addProduct() async {
-    if (nameController.text.isEmpty ||
-        priceController.text.isEmpty ||
-        descController.text.isEmpty ||
-        (_imageFile == null && _imageBytes == null) ||
+  Future<void> addProduct() async {
+    if (nameController.text.trim().isEmpty ||
+        priceController.text.trim().isEmpty ||
+        descController.text.trim().isEmpty ||
+        (_imageFile == null && _imageBytes == null && fallbackAsset == null) ||
         (widget.isFoodVendor && selectedCategory == null)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text("Please fill all fields and add an image")),
+          content: Text(
+            "Please fill all fields and add an image",
+          ),
+        ),
+      );
+
+      return;
+    }
+
+    final double? parsedPrice = double.tryParse(
+      priceController.text.trim(),
+    );
+
+    if (parsedPrice == null || parsedPrice < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Please enter a valid product price"),
+        ),
       );
 
       return;
@@ -3218,120 +6113,210 @@ class _AddProductPageState extends State<AddProductPage> {
     });
 
     try {
-      String fileName = DateTime.now().millisecondsSinceEpoch.toString();
+      // ----------------------------------------------------------
+      // IMPORTANT:
+      //
+      // widget.vendorId is the Firebase Authentication UID.
+      //
+      // Vendors/{UID}
+      //
+      // contains:
+      //
+      // vendorId: "VN58321"
+      //
+      // This generated vendor number is what shopping pages use
+      // to fetch the vendor's products.
+      // ----------------------------------------------------------
 
-      final ref =
-          FirebaseStorage.instance.ref().child("products/$fileName.jpg");
+      final String firebaseVendorId = widget.vendorId;
 
-      String imageUrl;
+      final DocumentSnapshot<Map<String, dynamic>> vendorDoc =
+          await FirebaseFirestore.instance
+              .collection("Vendors")
+              .doc(firebaseVendorId)
+              .get();
 
-      if (kIsWeb) {
-        await ref.putData(_imageBytes!);
+      if (!vendorDoc.exists) {
+        throw Exception(
+          "Vendor profile not found. Please complete your vendor profile first.",
+        );
+      }
 
-        imageUrl = await ref.getDownloadURL();
-      } else {
-        await ref.putFile(_imageFile!);
+      final Map<String, dynamic>? vendorData = vendorDoc.data();
+
+      final String? generatedVendorId =
+          vendorData?["vendorId"]?.toString().trim();
+
+      if (generatedVendorId == null || generatedVendorId.isEmpty) {
+        throw Exception(
+          "Vendor ID number not found in your vendor profile.",
+        );
+      }
+
+      // ----------------------------------------------------------
+      // IMAGE
+      // ----------------------------------------------------------
+
+      String imageUrl = "";
+
+      // Upload image only when the vendor selected an actual image.
+      if (_imageBytes != null || _imageFile != null) {
+        final String fileName = "${DateTime.now().millisecondsSinceEpoch}.jpg";
+
+        final Reference ref =
+            FirebaseStorage.instance.ref().child("products/$fileName");
+
+        if (kIsWeb) {
+          if (_imageBytes == null) {
+            throw Exception("Selected image data is unavailable.");
+          }
+
+          await ref.putData(_imageBytes!);
+        } else {
+          if (_imageFile == null) {
+            throw Exception("Selected image file is unavailable.");
+          }
+
+          await ref.putFile(_imageFile!);
+        }
 
         imageUrl = await ref.getDownloadURL();
       }
 
+      // ----------------------------------------------------------
+      // SAVE PRODUCT
+      // ----------------------------------------------------------
+
       await FirebaseFirestore.instance.collection("products").add({
-        "vendorId": widget.vendorId,
+        // Firebase Auth UID.
+        //
+        // KEEPING THIS FIELD IS IMPORTANT because your existing
+        // vendor-side product management can still use it.
+        "vendorId": firebaseVendorId,
 
-        "name": nameController.text,
+        // Generated public/vendor number.
+        //
+        // Example:
+        // VN58321
+        //
+        // ShoppingSectionPage now uses this field.
+        "vendorIdNo": generatedVendorId,
 
-        "price": double.tryParse(priceController.text) ?? 0,
+        "name": nameController.text.trim(),
 
-        "description": descController.text,
+        "price": parsedPrice,
 
+        "description": descController.text.trim(),
+
+        // Uploaded image URL.
         "image": imageUrl,
 
-        /// NEW FIELD
+        // Local fallback image.
         "fallbackAsset": fallbackAsset ?? "assets/images/food.png",
 
         "createdAt": Timestamp.now(),
 
+        // Food-specific information.
         "category": widget.isFoodVendor ? selectedCategory : null,
 
-        "addons": widget.isFoodVendor ? addons : [],
+        "addons":
+            widget.isFoodVendor ? List<Map<String, dynamic>>.from(addons) : [],
 
-        "sides": widget.isFoodVendor ? sides : [],
+        "sides":
+            widget.isFoodVendor ? List<Map<String, dynamic>>.from(sides) : [],
       });
+
+      if (!mounted) return;
 
       setState(() {
         loading = false;
       });
 
-      showDialog(
+      await showDialog(
         context: context,
-        builder: (context) => AlertDialog(
-          title: const Text("Success"),
-          content: const Text("Product added successfully"),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-
-                Navigator.pop(context);
-              },
-              child: const Text("OK"),
-            )
-          ],
-        ),
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: const Text("Success"),
+            content: const Text(
+              "Product added successfully",
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                  Navigator.pop(context);
+                },
+                child: const Text("OK"),
+              ),
+            ],
+          );
+        },
       );
     } catch (e) {
+      if (!mounted) return;
+
       setState(() {
         loading = false;
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error adding product: $e")),
+        SnackBar(
+          content: Text(
+            "Error adding product: $e",
+          ),
+        ),
       );
     }
   }
 
-  // ---------------- UI ----------------
+  // ------------------------------------------------------------
+  // BUILD
+  // ------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
     ImageProvider? preview;
 
-    if (_imageBytes != null)
+    if (kIsWeb && _imageBytes != null) {
       preview = MemoryImage(_imageBytes!);
-    else if (_imageFile != null)
+    } else if (!kIsWeb && _imageFile != null) {
       preview = FileImage(_imageFile!);
-    else if (fallbackAsset != null) preview = AssetImage(fallbackAsset!);
+    } else if (fallbackAsset != null) {
+      preview = AssetImage(fallbackAsset!);
+    }
 
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
-        scrolledUnderElevation: 0,
-
+        centerTitle: false,
         leading: Padding(
-          padding: const EdgeInsets.only(left: 10),
+          padding: const EdgeInsets.only(
+            left: 10,
+          ),
           child: GestureDetector(
-            onTap: () => Navigator.pop(context),
+            onTap: () {
+              Navigator.pop(context);
+            },
             child: Container(
-              width: 25,
-              height: 25,
+              margin: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.grey[100], // ✅ grey 50 look
+                color: Colors.grey.shade100,
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
-                Icons.arrow_back_ios,
-                size: 14,
-                color: Colors.black,
+              child: const Center(
+                child: Icon(
+                  Icons.arrow_back_ios,
+                  size: 14,
+                  color: Colors.black,
+                ),
               ),
             ),
           ),
         ),
-
         title: const Padding(
-          padding: EdgeInsets.only(left: 8), // ✅ spacing from icon
+          padding: EdgeInsets.only(left: 8),
           child: Text(
             '',
             style: TextStyle(
@@ -3348,15 +6333,20 @@ class _AddProductPageState extends State<AddProductPage> {
             children: [
               const SizedBox(height: 30),
 
-              /// IMAGE PREVIEW
+              // ------------------------------------------------
+              // IMAGE PREVIEW
+              // ------------------------------------------------
 
               CircleAvatar(
                 radius: 55,
                 backgroundColor: Colors.grey.shade300,
                 backgroundImage: preview,
                 child: preview == null
-                    ? Icon(Icons.add_photo_alternate,
-                        size: 35, color: Colors.grey[600])
+                    ? Icon(
+                        Icons.add_photo_alternate,
+                        size: 35,
+                        color: Colors.grey[600],
+                      )
                     : null,
               ),
 
@@ -3366,11 +6356,11 @@ class _AddProductPageState extends State<AddProductPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   IconButton(
-                    onPressed: pickImage,
+                    onPressed: loading ? null : pickImage,
                     icon: const Icon(Icons.image),
                   ),
                   IconButton(
-                    onPressed: selectFallbackIcon,
+                    onPressed: loading ? null : selectFallbackIcon,
                     icon: const Icon(Icons.fastfood),
                   ),
                 ],
@@ -3380,24 +6370,52 @@ class _AddProductPageState extends State<AddProductPage> {
 
               const SizedBox(height: 20),
 
-              buildInputField(nameController, "Product Name"),
+              // ------------------------------------------------
+              // PRODUCT NAME
+              // ------------------------------------------------
+
+              buildInputField(
+                nameController,
+                "Product Name",
+              ),
 
               labelText("Product Name"),
 
-              buildInputField(priceController, "Product Price",
-                  keyboardType: TextInputType.number),
+              // ------------------------------------------------
+              // PRICE
+              // ------------------------------------------------
+
+              buildInputField(
+                priceController,
+                "Product Price",
+                keyboardType: TextInputType.number,
+              ),
 
               labelText("Price"),
 
-              buildInputField(descController, "Product Description",
-                  height: 100, maxLines: 4),
+              // ------------------------------------------------
+              // DESCRIPTION
+              // ------------------------------------------------
+
+              buildInputField(
+                descController,
+                "Product Description",
+                height: 100,
+                maxLines: 4,
+              ),
 
               labelText("Description"),
+
+              // ------------------------------------------------
+              // FOOD-SPECIFIC FIELDS
+              // ------------------------------------------------
 
               if (widget.isFoodVendor) ...[
                 const SizedBox(height: 20),
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                  ),
                   child: DropdownButtonFormField<String>(
                     decoration: InputDecoration(
                       labelText: "Select Food Category",
@@ -3407,23 +6425,39 @@ class _AddProductPageState extends State<AddProductPage> {
                     ),
                     value: selectedCategory,
                     items: foodCategories
-                        .map((cat) =>
-                            DropdownMenuItem(value: cat, child: Text(cat)))
+                        .map(
+                          (cat) => DropdownMenuItem(
+                            value: cat,
+                            child: Text(cat),
+                          ),
+                        )
                         .toList(),
-                    onChanged: (val) {
-                      setState(() {
-                        selectedCategory = val;
-                      });
-                    },
+                    onChanged: loading
+                        ? null
+                        : (val) {
+                            setState(() {
+                              selectedCategory = val;
+                            });
+                          },
                   ),
                 ),
                 const SizedBox(height: 20),
-                addonSideSection("Addons", addons),
+                addonSideSection(
+                  "Addons",
+                  addons,
+                ),
                 const SizedBox(height: 10),
-                addonSideSection("Sides", sides),
+                addonSideSection(
+                  "Sides",
+                  sides,
+                ),
               ],
 
               const SizedBox(height: 40),
+
+              // ------------------------------------------------
+              // ADD PRODUCT BUTTON
+              // ------------------------------------------------
 
               SizedBox(
                 width: 250,
@@ -3431,14 +6465,27 @@ class _AddProductPageState extends State<AddProductPage> {
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.deepPurple,
+                    disabledBackgroundColor: Colors.grey.shade400,
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
                   onPressed: loading ? null : addProduct,
                   child: loading
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text("Add Product",
-                          style: TextStyle(color: Colors.white)),
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text(
+                          "Add Product",
+                          style: TextStyle(
+                            color: Colors.white,
+                          ),
+                        ),
                 ),
               ),
 
@@ -3450,96 +6497,163 @@ class _AddProductPageState extends State<AddProductPage> {
     );
   }
 
-  // KEEPING ALL YOUR ORIGINAL METHODS BELOW UNCHANGED
+  // ------------------------------------------------------------
+  // ADDONS / SIDES SECTION
+  // ------------------------------------------------------------
 
-  Widget addonSideSection(String title, List<Map<String, dynamic>> list) {
+  Widget addonSideSection(
+    String title,
+    List<Map<String, dynamic>> list,
+  ) {
     final TextEditingController nameController = TextEditingController();
+
     final TextEditingController priceController = TextEditingController();
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.symmetric(
+        horizontal: 20,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text(
+            title,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+
           const SizedBox(height: 5),
-          ...list.asMap().entries.map((entry) {
-            int idx = entry.key;
-            Map<String, dynamic> item = entry.value;
 
-            return ListTile(
-              title: Text("${item['name']}"),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text("₦${item['price']}"),
-                  IconButton(
-                    icon: const Icon(Icons.edit, color: Colors.orange),
-                    onPressed: () {
-                      nameController.text = item['name'];
-                      priceController.text = item['price'].toString();
+          ...list.asMap().entries.map(
+            (entry) {
+              final int idx = entry.key;
+              final Map<String, dynamic> item = entry.value;
 
-                      showDialog(
-                          context: context,
-                          builder: (_) => AlertDialog(
-                                title: Text("Edit $title"),
-                                content: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    TextField(
-                                      controller: nameController,
-                                      decoration: InputDecoration(
-                                          hintText: "$title Name"),
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  "${item['name']}",
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      "₦${item['price']}",
+                    ),
+
+                    // EDIT
+                    IconButton(
+                      icon: const Icon(
+                        Icons.edit,
+                        color: Colors.orange,
+                      ),
+                      onPressed: loading
+                          ? null
+                          : () {
+                              nameController.text = item['name'].toString();
+
+                              priceController.text = item['price'].toString();
+
+                              showDialog(
+                                context: context,
+                                builder: (_) => AlertDialog(
+                                  title: Text(
+                                    "Edit $title",
+                                  ),
+                                  content: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      TextField(
+                                        controller: nameController,
+                                        decoration: InputDecoration(
+                                          hintText: "$title Name",
+                                        ),
+                                      ),
+                                      TextField(
+                                        controller: priceController,
+                                        keyboardType: TextInputType.number,
+                                        decoration: InputDecoration(
+                                          hintText: "$title Price",
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(
+                                        context,
+                                      ),
+                                      child: const Text(
+                                        "Cancel",
+                                      ),
                                     ),
-                                    TextField(
-                                      controller: priceController,
-                                      keyboardType: TextInputType.number,
-                                      decoration: InputDecoration(
-                                          hintText: "$title Price"),
+                                    ElevatedButton(
+                                      onPressed: () {
+                                        if (nameController.text
+                                                .trim()
+                                                .isEmpty ||
+                                            priceController.text
+                                                .trim()
+                                                .isEmpty) {
+                                          return;
+                                        }
+
+                                        setState(() {
+                                          list[idx] = {
+                                            "name": nameController.text.trim(),
+                                            "price": double.tryParse(
+                                                  priceController.text.trim(),
+                                                ) ??
+                                                0,
+                                          };
+                                        });
+
+                                        Navigator.pop(
+                                          context,
+                                        );
+                                      },
+                                      child: const Text(
+                                        "Save",
+                                      ),
                                     ),
                                   ],
                                 ),
-                                actions: [
-                                  TextButton(
-                                      onPressed: () => Navigator.pop(context),
-                                      child: const Text("Cancel")),
-                                  ElevatedButton(
-                                    onPressed: () {
-                                      if (nameController.text.isEmpty ||
-                                          priceController.text.isEmpty) return;
-                                      setState(() {
-                                        list[idx] = {
-                                          "name": nameController.text,
-                                          "price": double.tryParse(
-                                                  priceController.text) ??
-                                              0
-                                        };
-                                      });
-                                      Navigator.pop(context);
-                                    },
-                                    child: const Text("Save"),
-                                  )
-                                ],
-                              ));
-                    },
-                  ),
-                  IconButton(
-                      onPressed: () {
-                        setState(() {
-                          list.removeAt(idx);
-                        });
-                      },
-                      icon: const Icon(Icons.delete, color: Colors.red)),
-                ],
-              ),
-            );
-          }),
+                              );
+                            },
+                    ),
+
+                    // DELETE
+                    IconButton(
+                      onPressed: loading
+                          ? null
+                          : () {
+                              setState(() {
+                                list.removeAt(
+                                  idx,
+                                );
+                              });
+                            },
+                      icon: const Icon(
+                        Icons.delete,
+                        color: Colors.red,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+
+          // ADD NEW ADDON/SIDE
           Row(
             children: [
               Expanded(
                 child: TextField(
                   controller: nameController,
-                  decoration: InputDecoration(hintText: "$title Name"),
+                  decoration: InputDecoration(
+                    hintText: "$title Name",
+                  ),
                 ),
               ),
               const SizedBox(width: 10),
@@ -3547,42 +6661,70 @@ class _AddProductPageState extends State<AddProductPage> {
                 child: TextField(
                   controller: priceController,
                   keyboardType: TextInputType.number,
-                  decoration: InputDecoration(hintText: "$title Price"),
+                  decoration: InputDecoration(
+                    hintText: "$title Price",
+                  ),
                 ),
               ),
               IconButton(
-                  onPressed: () {
-                    if (nameController.text.isEmpty ||
-                        priceController.text.isEmpty) return;
-                    setState(() {
-                      list.add({
-                        "name": nameController.text,
-                        "price": double.tryParse(priceController.text) ?? 0
-                      });
-                      nameController.clear();
-                      priceController.clear();
-                    });
-                  },
-                  icon: const Icon(Icons.add, color: Colors.green))
+                onPressed: loading
+                    ? null
+                    : () {
+                        if (nameController.text.trim().isEmpty ||
+                            priceController.text.trim().isEmpty) {
+                          return;
+                        }
+
+                        setState(() {
+                          list.add({
+                            "name": nameController.text.trim(),
+                            "price": double.tryParse(
+                                  priceController.text.trim(),
+                                ) ??
+                                0,
+                          });
+
+                          nameController.clear();
+                          priceController.clear();
+                        });
+                      },
+                icon: const Icon(
+                  Icons.add,
+                  color: Colors.green,
+                ),
+              ),
             ],
-          )
+          ),
         ],
       ),
     );
   }
 
-  Widget buildInputField(TextEditingController controller, String hint,
-      {double height = 40,
-      int maxLines = 1,
-      TextInputType keyboardType = TextInputType.text}) {
+  // ------------------------------------------------------------
+  // INPUT FIELD
+  // ------------------------------------------------------------
+
+  Widget buildInputField(
+    TextEditingController controller,
+    String hint, {
+    double height = 40,
+    int maxLines = 1,
+    TextInputType keyboardType = TextInputType.text,
+  }) {
     return Container(
       width: 350,
       height: height,
-      margin: const EdgeInsets.only(top: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+      margin: const EdgeInsets.only(
+        top: 10,
+      ),
+      padding: const EdgeInsets.symmetric(
+        horizontal: 10,
+      ),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.grey.shade400),
+        border: Border.all(
+          color: Colors.grey.shade400,
+        ),
       ),
       child: TextField(
         controller: controller,
@@ -3596,14 +6738,39 @@ class _AddProductPageState extends State<AddProductPage> {
     );
   }
 
+  // ------------------------------------------------------------
+  // LABEL
+  // ------------------------------------------------------------
+
   Widget labelText(String text) {
     return Padding(
-      padding: const EdgeInsets.only(top: 5, left: 10),
+      padding: const EdgeInsets.only(
+        top: 5,
+        left: 10,
+      ),
       child: Align(
         alignment: Alignment.centerLeft,
-        child: Text(text, style: const TextStyle(fontSize: 13)),
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontSize: 13,
+          ),
+        ),
       ),
     );
+  }
+
+  // ------------------------------------------------------------
+  // DISPOSE
+  // ------------------------------------------------------------
+
+  @override
+  void dispose() {
+    nameController.dispose();
+    priceController.dispose();
+    descController.dispose();
+
+    super.dispose();
   }
 }
 
@@ -19772,6 +22939,10 @@ class _ShoppingSectionPageState extends State<ShoppingSectionPage>
   // ============================================================
 
   List<Map<String, dynamic>> _shoppingVendors = [];
+  bool _isLoadingShoppingVendors = true;
+  String? _userCity;
+  String? _locationError;
+  Timer? _vendorStatusTimer;
 
   String? selectedVendorId;
 
@@ -19805,6 +22976,11 @@ class _ShoppingSectionPageState extends State<ShoppingSectionPage>
     });
 
     _fetchShoppingVendors();
+
+    // Keep open/closed product availability in sync while this page remains open.
+    _vendorStatusTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -19812,6 +22988,7 @@ class _ShoppingSectionPageState extends State<ShoppingSectionPage>
     _searchController.dispose();
     _animationController.dispose();
     _overlayEntry?.remove();
+    _vendorStatusTimer?.cancel();
     super.dispose();
   }
 
@@ -19852,36 +23029,264 @@ class _ShoppingSectionPageState extends State<ShoppingSectionPage>
   // ============================================================
 
   Future<void> _fetchShoppingVendors() async {
-    try {
-      final snapshot =
-          await FirebaseFirestore.instance.collection('Vendors').where(
-        'category',
-        whereIn: [
-          'Grocery Vendor',
-          'Pharmacy',
-        ],
-      ).get();
+    if (mounted) {
+      setState(() {
+        _isLoadingShoppingVendors = true;
+        _locationError = null;
+      });
+    }
 
-      if (!mounted) return;
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        if (!mounted) return;
+        setState(() {
+          _shoppingVendors = [];
+          _userCity = null;
+          _isLoadingShoppingVendors = false;
+          _locationError = 'Please sign in to view vendors near you.';
+        });
+        return;
+      }
+
+      // The user's current address is the source of truth for this page.
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+
+      final userData = userDoc.data() ?? <String, dynamic>{};
+      final currentAddress = userData['currentAddress'];
+      final city = currentAddress is Map
+          ? (currentAddress['city'] ?? '').toString().trim()
+          : '';
+
+      if (city.isEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _shoppingVendors = [];
+          _userCity = null;
+          _isLoadingShoppingVendors = false;
+          _locationError = 'Set your current location to see vendors near you.';
+        });
+        return;
+      }
+
+      _userCity = city;
+
+      // Query by the actual vendor location structure. Category is filtered
+      // locally so this only needs the city index and avoids a compound query.
+      final snapshot = await FirebaseFirestore.instance
+          .collection('Vendors')
+          .where('storeLocation.city', isEqualTo: city)
+          .get();
 
       final vendors = snapshot.docs.map((doc) {
         final data = doc.data();
+        final storeLocation = data['storeLocation'];
+        final locationMap = storeLocation is Map
+            ? Map<String, dynamic>.from(storeLocation)
+            : <String, dynamic>{};
 
         return <String, dynamic>{
           ...data,
           'id': doc.id,
-          'vendorId': doc.id,
+          // Firebase UID remains available as id/uid, while vendorId is the
+          // public generated vendor number used by products.vendorIdNo.
+          'uid': (data['uid'] ?? doc.id).toString(),
+          'vendorId': (data['vendorId'] ?? '').toString(),
+          'state': (data['state'] ?? locationMap['state'] ?? '').toString(),
+          'city': (data['city'] ?? locationMap['city'] ?? '').toString(),
+          'address':
+              (data['address'] ?? locationMap['address'] ?? '').toString(),
         };
+      }).where((vendor) {
+        final category =
+            (vendor['category'] ?? '').toString().trim().toLowerCase();
+        return category == 'grocery vendor' ||
+            category == 'grocery' ||
+            category == 'pharmacy';
+      }).where((vendor) {
+        return (vendor['vendorId'] ?? '').toString().trim().isNotEmpty;
       }).toList();
 
+      if (!mounted) return;
       setState(() {
         _shoppingVendors = vendors;
+        _isLoadingShoppingVendors = false;
       });
     } catch (e) {
-      debugPrint(
-        "Error fetching shopping vendors: $e",
-      );
+      debugPrint('Error fetching shopping vendors: $e');
+      if (!mounted) return;
+      setState(() {
+        _shoppingVendors = [];
+        _isLoadingShoppingVendors = false;
+        _locationError = 'Unable to load vendors right now.';
+      });
     }
+  }
+
+  String _vendorCity(Map<String, dynamic> vendor) {
+    final direct = (vendor['city'] ?? '').toString().trim();
+    if (direct.isNotEmpty) return direct;
+    final location = vendor['storeLocation'];
+    if (location is Map) return (location['city'] ?? '').toString().trim();
+    return '';
+  }
+
+  String _vendorAddress(Map<String, dynamic> vendor) {
+    final direct = (vendor['address'] ?? '').toString().trim();
+    if (direct.isNotEmpty) return direct;
+    final location = vendor['storeLocation'];
+    if (location is Map) return (location['address'] ?? '').toString().trim();
+    return '';
+  }
+
+  Map<String, dynamic> _vendorHours(Map<String, dynamic> vendor) {
+    final raw = vendor['operatingHours'];
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    return <String, dynamic>{};
+  }
+
+  bool _isVendorOpen(Map<String, dynamic> vendor, [DateTime? now]) {
+    final hours = _vendorHours(vendor);
+    if (hours.isEmpty) return false;
+
+    final current = now ?? DateTime.now();
+    const dayNames = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ];
+    final today = hours[dayNames[current.weekday - 1]];
+    if (today is! Map) return false;
+
+    final enabled = today['enabled'] == true;
+    final opening = (today['openingTime'] ?? '').toString();
+    final closing = (today['closingTime'] ?? '').toString();
+    if (!enabled || opening.isEmpty || closing.isEmpty) return false;
+
+    final openMinutes = _timeToMinutes(opening);
+    final closeMinutes = _timeToMinutes(closing);
+    if (openMinutes == null || closeMinutes == null) return false;
+
+    final currentMinutes = current.hour * 60 + current.minute;
+
+    // Supports both normal schedules and overnight schedules.
+    if (closeMinutes > openMinutes) {
+      return currentMinutes >= openMinutes && currentMinutes < closeMinutes;
+    }
+    if (closeMinutes < openMinutes) {
+      return currentMinutes >= openMinutes || currentMinutes < closeMinutes;
+    }
+
+    // Equal opening/closing times are treated as closed rather than 24 hours.
+    return false;
+  }
+
+  int? _timeToMinutes(String value) {
+    final parts = value.split(':');
+    if (parts.length != 2) return null;
+    final hour = int.tryParse(parts[0]);
+    final minute = int.tryParse(parts[1]);
+    if (hour == null ||
+        minute == null ||
+        hour < 0 ||
+        hour > 23 ||
+        minute < 0 ||
+        minute > 59) {
+      return null;
+    }
+    return hour * 60 + minute;
+  }
+
+  String _operatingStatusText(Map<String, dynamic> vendor) {
+    if (_isVendorOpen(vendor)) return 'Open now';
+    return 'Closed now';
+  }
+
+  String _operatingHoursText(Map<String, dynamic> vendor) {
+    final hours = _vendorHours(vendor);
+    final now = DateTime.now();
+    const dayNames = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ];
+    final today = hours[dayNames[now.weekday - 1]];
+    if (today is! Map || today['enabled'] != true) return 'Closed today';
+    final open = (today['openingTime'] ?? '').toString();
+    final close = (today['closingTime'] ?? '').toString();
+    if (open.isEmpty || close.isEmpty) return 'Closed today';
+    return '$open – $close';
+  }
+
+  Future<bool> _confirmDifferentVendor({
+    required Map<String, dynamic> product,
+    required Map<String, dynamic> vendor,
+  }) async {
+    final productVendorIdNo = (product['vendorIdNo'] ?? '').toString().trim();
+    final existingVendorIds = <String>{};
+    for (final item in _productDetails.values) {
+      final id = (item['vendorIdNo'] ?? '').toString().trim();
+      if (id.isNotEmpty) existingVendorIds.add(id);
+    }
+
+    if (existingVendorIds.isEmpty ||
+        existingVendorIds.contains(productVendorIdNo)) {
+      return true;
+    }
+
+    final newVendorName =
+        (vendor['businessName'] ?? vendor['name'] ?? 'another vendor')
+            .toString();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          'Different vendor',
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          'You are adding a product from $newVendorName. Products from different vendors may incur an additional delivery fee. Do you want to continue?',
+          style: TextStyle(fontSize: 13, color: Colors.grey[700], height: 1.45),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text('Cancel',
+                style: TextStyle(
+                    color: Colors.grey[700], fontWeight: FontWeight.w600)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.black,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Continue',
+                style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+
+    return confirmed == true;
   }
 
   // ============================================================
@@ -20146,19 +23551,10 @@ class _ShoppingSectionPageState extends State<ShoppingSectionPage>
           );
         }
 
-        return Container(
+        return _shimmerBox(
           width: size,
           height: size,
-          color: Colors.grey[100],
-          child: const Center(
-            child: SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-              ),
-            ),
-          ),
+          shape: const CircleBorder(),
         );
       },
       errorBuilder: (_, __, ___) {
@@ -20248,6 +23644,32 @@ class _ShoppingSectionPageState extends State<ShoppingSectionPage>
     );
   }
 
+  Widget _shimmerVendorCard() {
+    return Container(
+      width: 285,
+      height: 112,
+      margin: const EdgeInsets.only(right: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 11),
+      decoration: BoxDecoration(
+          color: Colors.grey[100], borderRadius: BorderRadius.circular(16)),
+      child: Row(children: [
+        _shimmerBox(width: 72, height: 72, shape: const CircleBorder()),
+        const SizedBox(width: 11),
+        Expanded(
+            child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+              _shimmerBox(width: 130, height: 13),
+              const SizedBox(height: 8),
+              _shimmerBox(width: 150, height: 9),
+              const SizedBox(height: 8),
+              _shimmerBox(width: 80, height: 16),
+            ])),
+      ]),
+    );
+  }
+
   Widget _buildShimmerList() {
     return ListView.builder(
       padding: EdgeInsets.zero,
@@ -20260,78 +23682,53 @@ class _ShoppingSectionPageState extends State<ShoppingSectionPage>
   // FILTER PRODUCT
   // ============================================================
 
-  bool _shouldShowProduct(
-    Map<String, dynamic> data,
-  ) {
-    final vendorType = (data['vendorType'] ?? data['vendorCategory'] ?? '')
-        .toString()
-        .trim()
-        .toLowerCase();
+  bool _shouldShowProduct(Map<String, dynamic> data) {
+    final vendorIdNo = (data['vendorIdNo'] ?? '').toString().trim();
+    if (vendorIdNo.isEmpty) return false;
 
-    final productVendorId = (data['vendorId'] ?? '').toString();
-
-    // ----------------------------------------------------------
-    // CATEGORY
-    // ----------------------------------------------------------
-
-    if (selectedCategory == "Groceries") {
-      if (vendorType.isNotEmpty &&
-          vendorType != 'grocery vendor' &&
-          vendorType != 'grocery') {
-        return false;
+    Map<String, dynamic>? vendor;
+    for (final candidate in _shoppingVendors) {
+      if ((candidate['vendorId'] ?? '').toString().trim() == vendorIdNo) {
+        vendor = candidate;
+        break;
       }
     }
+    if (vendor == null) return false;
 
-    if (selectedCategory == "Pharma") {
-      if (vendorType != 'pharmacy') {
-        return false;
-      }
-    }
+    final vendorCity = _vendorCity(vendor).toLowerCase();
+    if (_userCity == null || vendorCity != _userCity!.trim().toLowerCase())
+      return false;
 
-    // ----------------------------------------------------------
-    // SEARCH
-    // ----------------------------------------------------------
+    final vendorType =
+        (vendor['category'] ?? '').toString().trim().toLowerCase();
+    if (selectedCategory == 'Groceries' &&
+        vendorType != 'grocery vendor' &&
+        vendorType != 'grocery') return false;
+    if (selectedCategory == 'Pharma' && vendorType != 'pharmacy') return false;
 
     if (_searchQuery.isNotEmpty) {
       final name =
           (data['name'] ?? data['productName'] ?? '').toString().toLowerCase();
-
       final description = (data['description'] ?? '').toString().toLowerCase();
-
       final category = (data['category'] ?? '').toString().toLowerCase();
-
       if (!name.contains(_searchQuery) &&
           !description.contains(_searchQuery) &&
-          !category.contains(_searchQuery)) {
-        return false;
-      }
+          !category.contains(_searchQuery)) return false;
     }
 
-    // ----------------------------------------------------------
-    // SELECTED VENDOR
-    // ----------------------------------------------------------
-
-    if (selectedVendorId != null) {
-      final selectedVendor = _shoppingVendors.firstWhere(
-        (vendor) => vendor['id'].toString() == selectedVendorId,
-        orElse: () => {},
-      );
-
-      if (selectedVendor.isNotEmpty) {
-        final possibleIds = <String>{
-          selectedVendor['id'].toString(),
-          if (selectedVendor['uid'] != null) selectedVendor['uid'].toString(),
-          if (selectedVendor['vendorId'] != null)
-            selectedVendor['vendorId'].toString(),
-        };
-
-        if (!possibleIds.contains(productVendorId)) {
-          return false;
-        }
-      }
-    }
-
+    if (selectedVendorId != null && vendorIdNo != selectedVendorId)
+      return false;
     return true;
+  }
+
+  Map<String, dynamic>? _findVendorForProduct(Map<String, dynamic> product) {
+    final vendorIdNo = (product['vendorIdNo'] ?? '').toString().trim();
+    if (vendorIdNo.isEmpty) return null;
+    for (final vendor in _shoppingVendors) {
+      if ((vendor['vendorId'] ?? '').toString().trim() == vendorIdNo)
+        return vendor;
+    }
+    return null;
   }
 
   // ============================================================
@@ -20339,33 +23736,18 @@ class _ShoppingSectionPageState extends State<ShoppingSectionPage>
   // ============================================================
 
   Future<List<Map<String, dynamic>>> _getVendorProducts(
-    Map<String, dynamic> vendor,
-  ) async {
-    final possibleVendorIds = <String>[
-      if (vendor['id'] != null) vendor['id'].toString(),
-      if (vendor['uid'] != null) vendor['uid'].toString(),
-      if (vendor['vendorId'] != null) vendor['vendorId'].toString(),
-    ].where((id) => id.isNotEmpty).toSet().toList();
-
-    if (possibleVendorIds.isEmpty) {
-      return [];
-    }
+      Map<String, dynamic> vendor) async {
+    final publicVendorId = (vendor['vendorId'] ?? '').toString().trim();
+    if (publicVendorId.isEmpty) return [];
 
     final snapshot = await FirebaseFirestore.instance
         .collection('products')
-        .where(
-          'vendorId',
-          whereIn: possibleVendorIds,
-        )
+        .where('vendorIdNo', isEqualTo: publicVendorId)
         .get();
 
     return snapshot.docs.map((doc) {
-      final data = doc.data() as Map<String, dynamic>;
-
-      return <String, dynamic>{
-        ...data,
-        'id': doc.id,
-      };
+      final data = doc.data();
+      return <String, dynamic>{...data, 'id': doc.id};
     }).toList();
   }
 
@@ -20373,428 +23755,355 @@ class _ShoppingSectionPageState extends State<ShoppingSectionPage>
   // OPEN VENDOR MODAL
   // ============================================================
 
-  Future<void> _openVendorModal(
-    Map<String, dynamic> vendor,
-  ) async {
-    final vendorProducts = await _getVendorProducts(vendor);
-
-    if (!mounted) return;
-
+  Future<void> _openVendorModal(Map<String, dynamic> vendor) async {
     final vendorName =
         (vendor['businessName'] ?? vendor['name'] ?? 'Vendor').toString();
-
-    final vendorLocation = (vendor['storeLocation'] ??
-            vendor['location'] ??
-            'Location unavailable')
-        .toString();
-
+    final vendorLocation = _vendorAddress(vendor).isNotEmpty
+        ? _vendorAddress(vendor)
+        : _vendorCity(vendor);
     final vendorCategory = (vendor['category'] ?? '').toString();
-
     final isPharmacy = vendorCategory.toLowerCase() == 'pharmacy';
+    final isOpen = _isVendorOpen(vendor);
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withOpacity(0.55),
+      barrierColor: Colors.black.withOpacity(.55),
       builder: (modalContext) {
         return FractionallySizedBox(
-          heightFactor: 0.90,
+          heightFactor: .90,
           child: Container(
             decoration: const BoxDecoration(
               color: Colors.grey,
-              borderRadius: BorderRadius.vertical(
-                top: Radius.circular(28),
-              ),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
             ),
             child: SafeArea(
               top: false,
               child: Column(
                 children: [
-                  // ------------------------------------------------
-                  // HANDLE
-                  // ------------------------------------------------
-
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.only(
-                      top: 10,
-                      bottom: 8,
-                    ),
+                    padding: const EdgeInsets.only(top: 10, bottom: 8),
                     color: Colors.white,
                     child: Center(
                       child: Container(
                         width: 42,
                         height: 5,
                         decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(20),
-                        ),
+                            color: Colors.grey[300],
+                            borderRadius: BorderRadius.circular(20)),
                       ),
                     ),
                   ),
-
                   Expanded(
                     child: Container(
                       color: Colors.grey[100],
-                      child: SingleChildScrollView(
-                        physics: const BouncingScrollPhysics(),
-                        padding: const EdgeInsets.fromLTRB(
-                          14,
-                          8,
-                          14,
-                          20,
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // ------------------------------------------------
-                            // VENDOR HEADER
-                            // ------------------------------------------------
+                      child: FutureBuilder<List<Map<String, dynamic>>>(
+                        future: _getVendorProducts(vendor),
+                        builder: (context, snapshot) {
+                          final loading = snapshot.connectionState ==
+                              ConnectionState.waiting;
+                          final products =
+                              snapshot.data ?? <Map<String, dynamic>>[];
 
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(14),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(18),
-                                border: Border.all(
-                                  color: Colors.grey[200]!,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(.05),
-                                    blurRadius: 10,
-                                    offset: const Offset(0, 3),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    width: 78,
-                                    height: 78,
-                                    padding: const EdgeInsets.all(3),
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      border: Border.all(
-                                        color: Colors.grey[200]!,
-                                        width: 1.5,
-                                      ),
-                                    ),
-                                    child: ClipOval(
-                                      child: _buildVendorImage(
-                                        vendor,
-                                        size: 72,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 13),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          vendorName,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontSize: 17,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 5),
-                                        Row(
-                                          children: [
-                                            Icon(
-                                              Icons.location_on_outlined,
-                                              size: 15,
-                                              color: Colors.grey[600],
-                                            ),
-                                            const SizedBox(width: 4),
-                                            Expanded(
-                                              child: Text(
-                                                vendorLocation,
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: TextStyle(
-                                                  fontSize: 11,
-                                                  color: Colors.grey[600],
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 9),
-                                        Row(
-                                          children: [
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                horizontal: 8,
-                                                vertical: 4,
-                                              ),
-                                              decoration: BoxDecoration(
-                                                color: Colors.green
-                                                    .withOpacity(.10),
-                                                borderRadius:
-                                                    BorderRadius.circular(20),
-                                              ),
-                                              child: Text(
-                                                "Open",
-                                                style: TextStyle(
-                                                  color: Colors.green[700],
-                                                  fontSize: 10,
-                                                  fontWeight: FontWeight.w700,
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Icon(
-                                              Icons.access_time,
-                                              size: 14,
-                                              color: Colors.grey[600],
-                                            ),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              isPharmacy
-                                                  ? "10 mins"
-                                                  : "15 mins",
-                                              style: TextStyle(
-                                                fontSize: 10,
-                                                color: Colors.grey[700],
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            const Icon(
-                                              Icons.star,
-                                              size: 14,
-                                              color: Colors.amber,
-                                            ),
-                                            const SizedBox(width: 3),
-                                            const Text(
-                                              "4.5",
-                                              style: TextStyle(
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                            const SizedBox(height: 18),
-
-                            // ------------------------------------------------
-                            // PRODUCTS HEADER
-                            // ------------------------------------------------
-
-                            Row(
+                          return SingleChildScrollView(
+                            physics: const BouncingScrollPhysics(),
+                            padding: const EdgeInsets.fromLTRB(14, 8, 14, 20),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  isPharmacy ? "Pharmacy" : "Groceries",
-                                  style: const TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 3,
-                                  ),
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(14),
                                   decoration: BoxDecoration(
                                     color: Colors.white,
-                                    borderRadius: BorderRadius.circular(20),
+                                    borderRadius: BorderRadius.circular(18),
+                                    border:
+                                        Border.all(color: Colors.grey[200]!),
                                   ),
-                                  child: Text(
-                                    "${vendorProducts.length}",
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.grey[700],
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 78,
+                                        height: 78,
+                                        padding: const EdgeInsets.all(3),
+                                        decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                                color: Colors.grey[200]!,
+                                                width: 1.5)),
+                                        child: ClipOval(
+                                            child: _buildVendorImage(vendor,
+                                                size: 72)),
+                                      ),
+                                      const SizedBox(width: 13),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(vendorName,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                    fontSize: 17,
+                                                    fontWeight:
+                                                        FontWeight.w700)),
+                                            const SizedBox(height: 5),
+                                            Row(children: [
+                                              Icon(Icons.location_on_outlined,
+                                                  size: 15,
+                                                  color: Colors.grey[600]),
+                                              const SizedBox(width: 4),
+                                              Expanded(
+                                                  child: Text(
+                                                      vendorLocation.isEmpty
+                                                          ? 'Location unavailable'
+                                                          : vendorLocation,
+                                                      maxLines: 2,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: TextStyle(
+                                                          fontSize: 11,
+                                                          color: Colors
+                                                              .grey[600]))),
+                                            ]),
+                                            const SizedBox(height: 9),
+                                            Wrap(
+                                                spacing: 8,
+                                                runSpacing: 5,
+                                                children: [
+                                                  Container(
+                                                    padding: const EdgeInsets
+                                                            .symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 4),
+                                                    decoration: BoxDecoration(
+                                                        color: isOpen
+                                                            ? Colors.green
+                                                                .withOpacity(
+                                                                    .10)
+                                                            : Colors.grey
+                                                                .withOpacity(
+                                                                    .12),
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(20)),
+                                                    child: Text(
+                                                        isOpen
+                                                            ? 'Open now'
+                                                            : 'Closed now',
+                                                        style: TextStyle(
+                                                            color: isOpen
+                                                                ? Colors
+                                                                    .green[700]
+                                                                : Colors
+                                                                    .grey[700],
+                                                            fontSize: 10,
+                                                            fontWeight:
+                                                                FontWeight
+                                                                    .w700)),
+                                                  ),
+                                                  Row(
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      children: [
+                                                        Icon(Icons.access_time,
+                                                            size: 14,
+                                                            color: Colors
+                                                                .grey[600]),
+                                                        const SizedBox(
+                                                            width: 4),
+                                                        Text(
+                                                            _operatingHoursText(
+                                                                vendor),
+                                                            style: TextStyle(
+                                                                fontSize: 10,
+                                                                color:
+                                                                    Colors.grey[
+                                                                        700])),
+                                                      ]),
+                                                  Row(
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      children: const [
+                                                        Icon(Icons.star,
+                                                            size: 14,
+                                                            color:
+                                                                Colors.amber),
+                                                        SizedBox(width: 3),
+                                                        Text('4.5',
+                                                            style: TextStyle(
+                                                                fontSize: 10,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w600)),
+                                                      ]),
+                                                ]),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                              ],
-                            ),
-
-                            const SizedBox(height: 10),
-
-                            // ------------------------------------------------
-                            // PRODUCTS
-                            // ------------------------------------------------
-
-                            if (vendorProducts.isEmpty)
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(35),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(18),
-                                ),
-                                child: Column(
-                                  children: [
-                                    Icon(
+                                const SizedBox(height: 18),
+                                Row(children: [
+                                  Text(isPharmacy ? 'Pharmacy' : 'Groceries',
+                                      style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.w700)),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius:
+                                              BorderRadius.circular(20)),
+                                      child: Text(
+                                          loading
+                                              ? '...'
+                                              : '${products.length}',
+                                          style: TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.grey[700],
+                                              fontWeight: FontWeight.w600))),
+                                ]),
+                                const SizedBox(height: 10),
+                                if (loading)
+                                  _buildShimmerList()
+                                else if (snapshot.hasError)
+                                  _emptyState(
                                       isPharmacy
                                           ? Icons.local_pharmacy_outlined
                                           : Icons.shopping_basket_outlined,
-                                      size: 45,
-                                      color: Colors.grey[400],
-                                    ),
-                                    const SizedBox(height: 10),
-                                    Text(
-                                      "No products available",
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: Colors.grey[600],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              )
-                            else
-                              ...vendorProducts.map(
-                                (product) {
-                                  final imageKey = GlobalKey();
-
-                                  final productName = (product['name'] ??
-                                          product['productName'] ??
-                                          'Product')
-                                      .toString();
-
-                                  final description =
-                                      (product['description'] ?? '').toString();
-
-                                  final price = _parsePrice(
-                                    product['price'],
-                                  );
-
-                                  return Container(
-                                    margin: const EdgeInsets.only(
-                                      bottom: 9,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius: BorderRadius.circular(16),
-                                      border: Border.all(
-                                        color: Colors.grey[200]!,
-                                      ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.black.withOpacity(.025),
-                                          blurRadius: 7,
-                                          offset: const Offset(
-                                            0,
-                                            3,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    child: Material(
-                                      color: Colors.transparent,
-                                      child: InkWell(
-                                        borderRadius: BorderRadius.circular(16),
-                                        onTap: () {
-                                          _openShoppingProductModal(
-                                            product,
-                                            imageKey,
-                                          );
-                                        },
-                                        child: Padding(
-                                          padding: const EdgeInsets.all(9),
-                                          child: Row(
-                                            children: [
+                                      'Unable to load products')
+                                else if (products.isEmpty)
+                                  _emptyState(
+                                      isPharmacy
+                                          ? Icons.local_pharmacy_outlined
+                                          : Icons.shopping_basket_outlined,
+                                      'No products available')
+                                else
+                                  ...products.map((product) {
+                                    final imageKey = GlobalKey();
+                                    final productName = (product['name'] ??
+                                            product['productName'] ??
+                                            'Product')
+                                        .toString();
+                                    final description =
+                                        (product['description'] ?? '')
+                                            .toString();
+                                    final price = _parsePrice(product['price']);
+                                    final available = isOpen;
+                                    return Opacity(
+                                      opacity: available ? 1 : .55,
+                                      child: Container(
+                                        margin:
+                                            const EdgeInsets.only(bottom: 9),
+                                        decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius:
+                                                BorderRadius.circular(16),
+                                            border: Border.all(
+                                                color: Colors.grey[200]!)),
+                                        child: InkWell(
+                                          borderRadius:
+                                              BorderRadius.circular(16),
+                                          onTap: available
+                                              ? () => _openShoppingProductModal(
+                                                  product, imageKey)
+                                              : null,
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(9),
+                                            child: Row(children: [
                                               Container(
-                                                key: imageKey,
-                                                width: 68,
-                                                height: 68,
-                                                decoration: const BoxDecoration(
-                                                  shape: BoxShape.circle,
-                                                ),
-                                                child: ClipOval(
-                                                  child: _buildProductImage(
-                                                    product,
-                                                    size: 68,
-                                                  ),
-                                                ),
-                                              ),
+                                                  key: imageKey,
+                                                  width: 68,
+                                                  height: 68,
+                                                  decoration:
+                                                      const BoxDecoration(
+                                                          shape:
+                                                              BoxShape.circle),
+                                                  child: ClipOval(
+                                                      child: _buildProductImage(
+                                                          product,
+                                                          size: 68))),
                                               const SizedBox(width: 11),
                                               Expanded(
-                                                child: Column(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
-                                                  children: [
-                                                    Text(
-                                                      productName,
-                                                      maxLines: 1,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                      style: const TextStyle(
-                                                        fontSize: 14,
-                                                        fontWeight:
-                                                            FontWeight.w700,
-                                                      ),
-                                                    ),
+                                                  child: Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      children: [
+                                                    Text(productName,
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                        style: const TextStyle(
+                                                            fontSize: 14,
+                                                            fontWeight:
+                                                                FontWeight
+                                                                    .w700)),
                                                     if (description
                                                         .isNotEmpty) ...[
                                                       const SizedBox(height: 4),
-                                                      Text(
-                                                        description,
-                                                        maxLines: 2,
-                                                        overflow: TextOverflow
-                                                            .ellipsis,
-                                                        style: TextStyle(
-                                                          fontSize: 11,
-                                                          color:
-                                                              Colors.grey[600],
-                                                          height: 1.25,
-                                                        ),
-                                                      ),
+                                                      Text(description,
+                                                          maxLines: 2,
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
+                                                          style: TextStyle(
+                                                              fontSize: 11,
+                                                              color: Colors
+                                                                  .grey[600],
+                                                              height: 1.25)),
                                                     ],
                                                     const SizedBox(height: 5),
                                                     Text(
-                                                      "₦${price.toStringAsFixed(0)}",
-                                                      style: const TextStyle(
-                                                        fontSize: 13,
-                                                        fontWeight:
-                                                            FontWeight.w700,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
+                                                        '₦${price.toStringAsFixed(0)}',
+                                                        style: const TextStyle(
+                                                            fontSize: 13,
+                                                            fontWeight:
+                                                                FontWeight
+                                                                    .w700)),
+                                                    if (!available) ...[
+                                                      const SizedBox(height: 4),
+                                                      Text('Not available now',
+                                                          style: TextStyle(
+                                                              fontSize: 10,
+                                                              color: Colors
+                                                                  .grey[700],
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w600)),
+                                                    ],
+                                                  ])),
                                               const SizedBox(width: 7),
                                               Container(
-                                                width: 34,
-                                                height: 34,
-                                                decoration: const BoxDecoration(
-                                                  shape: BoxShape.circle,
-                                                  color: Colors.black,
-                                                ),
-                                                child: const Icon(
-                                                  Icons.add,
-                                                  color: Colors.white,
-                                                  size: 19,
-                                                ),
-                                              ),
-                                            ],
+                                                  width: 34,
+                                                  height: 34,
+                                                  decoration: BoxDecoration(
+                                                      shape: BoxShape.circle,
+                                                      color: available
+                                                          ? Colors.black
+                                                          : Colors.grey[400]),
+                                                  child: Icon(
+                                                      available
+                                                          ? Icons.add
+                                                          : Icons.lock_outline,
+                                                      color: Colors.white,
+                                                      size: 18)),
+                                            ]),
                                           ),
                                         ),
                                       ),
-                                    ),
-                                  );
-                                },
-                              ),
-                          ],
-                        ),
+                                    );
+                                  }),
+                              ],
+                            ),
+                          );
+                        },
                       ),
                     ),
                   ),
@@ -20804,6 +24113,20 @@ class _ShoppingSectionPageState extends State<ShoppingSectionPage>
           ),
         );
       },
+    );
+  }
+
+  Widget _emptyState(IconData icon, String message) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(35),
+      decoration: BoxDecoration(
+          color: Colors.white, borderRadius: BorderRadius.circular(18)),
+      child: Column(children: [
+        Icon(icon, size: 45, color: Colors.grey[400]),
+        const SizedBox(height: 10),
+        Text(message, style: TextStyle(fontSize: 14, color: Colors.grey[600]))
+      ]),
     );
   }
 
@@ -20941,6 +24264,14 @@ class _ShoppingSectionPageState extends State<ShoppingSectionPage>
     final noteController = TextEditingController();
 
     final basePrice = _parsePrice(product['price']);
+    final productVendor = _findVendorForProduct(product);
+    final vendorOpen = productVendor != null && _isVendorOpen(productVendor);
+    final vendorName = productVendor == null
+        ? 'this vendor'
+        : (productVendor['businessName'] ??
+                productVendor['name'] ??
+                'this vendor')
+            .toString();
 
     showModalBottomSheet(
       context: context,
@@ -21286,6 +24617,17 @@ class _ShoppingSectionPageState extends State<ShoppingSectionPage>
                                               fontWeight: FontWeight.w700,
                                             ),
                                           ),
+                                          if (!vendorOpen) ...[
+                                            const SizedBox(height: 6),
+                                            Text(
+                                              'Not available right now • $vendorName is closed',
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                color: Colors.grey[600],
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
                                         ],
                                       ),
                                     ),
@@ -21499,67 +24841,83 @@ class _ShoppingSectionPageState extends State<ShoppingSectionPage>
                                 height: 48,
                                 child: ElevatedButton(
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.black,
+                                    backgroundColor: vendorOpen
+                                        ? Colors.black
+                                        : Colors.grey[400],
                                     foregroundColor: Colors.white,
                                     elevation: 0,
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(14),
                                     ),
                                   ),
-                                  onPressed: () {
-                                    final note = noteController.text.trim();
+                                  onPressed: vendorOpen
+                                      ? () async {
+                                          final canContinue =
+                                              await _confirmDifferentVendor(
+                                            product: product,
+                                            vendor: productVendor ??
+                                                <String, dynamic>{},
+                                          );
+                                          if (!canContinue || !mounted) return;
 
-                                    final productId = (product['id'] ??
-                                            product['productId'] ??
-                                            product['name'] ??
-                                            DateTime.now()
-                                                .microsecondsSinceEpoch)
-                                        .toString();
+                                          final note =
+                                              noteController.text.trim();
 
-                                    final customizationKey =
-                                        "${selectedAddons.map((e) => e['name']).join(',')}_${selectedSides.map((e) => e['name']).join(',')}";
+                                          final productId = (product['id'] ??
+                                                  product['productId'] ??
+                                                  product['name'] ??
+                                                  DateTime.now()
+                                                      .microsecondsSinceEpoch)
+                                              .toString();
 
-                                    final cartKey =
-                                        "${productId}_$customizationKey";
+                                          final customizationKey =
+                                              "${selectedAddons.map((e) => e['name']).join(',')}_${selectedSides.map((e) => e['name']).join(',')}";
 
-                                    final cartProduct = <String, dynamic>{
-                                      ...product,
-                                      'quantity': quantity,
-                                      'price': total,
-                                      'addonsSelected':
-                                          List<Map<String, dynamic>>.from(
-                                        selectedAddons,
-                                      ),
-                                      'sidesSelected':
-                                          List<Map<String, dynamic>>.from(
-                                        selectedSides,
-                                      ),
-                                      'restaurantNote': note,
-                                    };
+                                          final cartKey =
+                                              "${productId}_$customizationKey";
 
-                                    Navigator.pop(
-                                      modalContext,
-                                    );
+                                          final cartProduct = <String, dynamic>{
+                                            ...product,
+                                            'quantity': quantity,
+                                            'price': total,
+                                            'addonsSelected':
+                                                List<Map<String, dynamic>>.from(
+                                              selectedAddons,
+                                            ),
+                                            'sidesSelected':
+                                                List<Map<String, dynamic>>.from(
+                                              selectedSides,
+                                            ),
+                                            'restaurantNote': note,
+                                          };
 
-                                    setState(() {
-                                      _selectedItems.update(
-                                        cartKey,
-                                        (value) => value + quantity,
-                                        ifAbsent: () => quantity,
-                                      );
+                                          Navigator.pop(
+                                            modalContext,
+                                          );
 
-                                      _productDetails[cartKey] = cartProduct;
-                                    });
+                                          setState(() {
+                                            _selectedItems.update(
+                                              cartKey,
+                                              (value) => value + quantity,
+                                              ifAbsent: () => quantity,
+                                            );
 
-                                    _flyToCart(
-                                      imageKey,
-                                      cartProduct,
-                                      cartKey,
-                                      quantity,
-                                    );
-                                  },
+                                            _productDetails[cartKey] =
+                                                cartProduct;
+                                          });
+
+                                          _flyToCart(
+                                            imageKey,
+                                            cartProduct,
+                                            cartKey,
+                                            quantity,
+                                          );
+                                        }
+                                      : null,
                                   child: Text(
-                                    "Add • ₦${total.toStringAsFixed(0)}",
+                                    vendorOpen
+                                        ? "Add • ₦${total.toStringAsFixed(0)}"
+                                        : "Not available",
                                     style: const TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w700,
@@ -21690,112 +25048,81 @@ class _ShoppingSectionPageState extends State<ShoppingSectionPage>
   // PRODUCT CARD
   // ============================================================
 
-  Widget _buildProductCard(
-    Map<String, dynamic> data,
-  ) {
+  Widget _buildProductCard(Map<String, dynamic> data) {
     final imageKey = GlobalKey();
-
     final name = (data['name'] ?? data['productName'] ?? 'Product').toString();
-
     final description = (data['description'] ?? '').toString();
-
     final price = _parsePrice(data['price']);
+    final vendor = _findVendorForProduct(data);
+    final available = vendor != null && _isVendorOpen(vendor);
 
     return GestureDetector(
-      onTap: () {
-        _openShoppingProductModal(
-          data,
-          imageKey,
-        );
-      },
-      child: Container(
-        height: 94,
-        margin: const EdgeInsets.only(bottom: 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(.045),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 9,
-            vertical: 8,
-          ),
-          child: Row(
-            children: [
+      onTap: available ? () => _openShoppingProductModal(data, imageKey) : null,
+      child: Opacity(
+        opacity: available ? 1 : .55,
+        child: Container(
+          height: available ? 94 : 108,
+          margin: const EdgeInsets.only(bottom: 8),
+          decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withOpacity(.045),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3))
+              ]),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
+            child: Row(children: [
               Container(
-                key: imageKey,
-                width: 76,
-                height: 76,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                ),
-                child: ClipOval(
-                  child: _buildProductImage(
-                    data,
-                    size: 76,
-                  ),
-                ),
-              ),
+                  key: imageKey,
+                  width: 76,
+                  height: 76,
+                  decoration: const BoxDecoration(shape: BoxShape.circle),
+                  child: ClipOval(child: _buildProductImage(data, size: 76))),
               const SizedBox(width: 12),
               Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
+                  child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    Text(name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w700)),
                     if (description.trim().isNotEmpty) ...[
                       const SizedBox(height: 4),
-                      Text(
-                        description,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey[600],
-                        ),
-                      ),
+                      Text(description,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              TextStyle(fontSize: 11, color: Colors.grey[600])),
                     ],
                     const SizedBox(height: 5),
-                    Text(
-                      "₦${price.toStringAsFixed(0)}",
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+                    Text('₦${price.toStringAsFixed(0)}',
+                        style: const TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w700)),
+                    if (!available) ...[
+                      const SizedBox(height: 3),
+                      Text('Not available now',
+                          style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey[600],
+                              fontWeight: FontWeight.w600)),
+                    ],
+                  ])),
               const SizedBox(width: 8),
               Container(
-                width: 34,
-                height: 34,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.black,
-                ),
-                child: const Icon(
-                  Icons.add,
-                  color: Colors.white,
-                  size: 19,
-                ),
-              ),
-            ],
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: available ? Colors.black : Colors.grey[400]),
+                  child: Icon(available ? Icons.add : Icons.lock_outline,
+                      color: Colors.white, size: 18)),
+            ]),
           ),
         ),
       ),
@@ -21810,7 +25137,7 @@ class _ShoppingSectionPageState extends State<ShoppingSectionPage>
     Map<String, dynamic> vendor,
     int index,
   ) {
-    final vendorId = vendor['id'].toString();
+    final vendorId = (vendor['vendorId'] ?? '').toString();
 
     final selected = vendorId == selectedVendorId;
 
@@ -21821,10 +25148,10 @@ class _ShoppingSectionPageState extends State<ShoppingSectionPage>
     final name =
         (vendor['businessName'] ?? vendor['name'] ?? 'Vendor').toString();
 
-    final location = (vendor['storeLocation'] ??
-            vendor['location'] ??
-            'Location unavailable')
-        .toString();
+    final location = _vendorAddress(vendor).isNotEmpty
+        ? _vendorAddress(vendor)
+        : _vendorCity(vendor);
+    final isOpen = _isVendorOpen(vendor);
 
     return GestureDetector(
       onTap: () {
@@ -21916,7 +25243,13 @@ class _ShoppingSectionPageState extends State<ShoppingSectionPage>
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      isPharmacy ? "Pharmacy" : "Groceries",
+                      isOpen
+                          ? (isPharmacy
+                              ? "Pharmacy • Open"
+                              : "Groceries • Open")
+                          : (isPharmacy
+                              ? "Pharmacy • Closed"
+                              : "Groceries • Closed"),
                       style: TextStyle(
                         fontSize: 9,
                         fontWeight: FontWeight.w700,
@@ -22203,32 +25536,32 @@ class _ShoppingSectionPageState extends State<ShoppingSectionPage>
 
                     SizedBox(
                       height: 112,
-                      child: _shoppingVendors.isEmpty
+                      child: _isLoadingShoppingVendors
                           ? ListView.builder(
                               scrollDirection: Axis.horizontal,
                               itemCount: 3,
-                              itemBuilder: (_, __) => Container(
-                                width: 285,
-                                height: 112,
-                                margin: const EdgeInsets.only(
-                                  right: 10,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.grey[100],
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                              ),
+                              itemBuilder: (_, __) => _shimmerVendorCard(),
                             )
-                          : ListView.builder(
-                              scrollDirection: Axis.horizontal,
-                              itemCount: _shoppingVendors.length,
-                              itemBuilder: (_, index) {
-                                return _buildVendorCard(
-                                  _shoppingVendors[index],
-                                  index,
-                                );
-                              },
-                            ),
+                          : _shoppingVendors.isEmpty
+                              ? Center(
+                                  child: Text(
+                                    _locationError ??
+                                        'No vendors found in your city',
+                                    style: TextStyle(
+                                        fontSize: 12, color: Colors.grey[600]),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                )
+                              : ListView.builder(
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: _shoppingVendors.length,
+                                  itemBuilder: (_, index) {
+                                    return _buildVendorCard(
+                                      _shoppingVendors[index],
+                                      index,
+                                    );
+                                  },
+                                ),
                     ),
 
                     const SizedBox(height: 10),
@@ -22250,128 +25583,83 @@ class _ShoppingSectionPageState extends State<ShoppingSectionPage>
                     // ==========================================
 
                     Expanded(
-                      child: _shoppingVendors.isEmpty
+                      child: _isLoadingShoppingVendors
                           ? _buildShimmerList()
-                          : StreamBuilder<QuerySnapshot>(
-                              stream: FirebaseFirestore.instance
-                                  .collection('products')
-                                  .where(
-                                    'vendorId',
-                                    whereIn: _shoppingVendors
-                                        .map(
-                                          (v) => v['id'],
-                                        )
-                                        .toSet()
-                                        .take(30)
-                                        .toList(),
-                                  )
-                                  .snapshots(),
-                              builder: (
-                                context,
-                                snapshot,
-                              ) {
-                                if (snapshot.connectionState ==
-                                    ConnectionState.waiting) {
-                                  return _buildShimmerList();
-                                }
-
-                                if (snapshot.hasError) {
-                                  return Center(
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          Icons.error_outline,
-                                          size: 42,
-                                          color: Colors.grey[400],
-                                        ),
-                                        const SizedBox(height: 10),
-                                        Text(
-                                          "Unable to load products",
-                                          style: TextStyle(
-                                            color: Colors.grey[700],
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                }
-
-                                if (!snapshot.hasData) {
-                                  return _buildShimmerList();
-                                }
-
-                                final docs = snapshot.data!.docs;
-
-                                final products = docs
-                                    .map(
-                                      (doc) {
-                                        final data =
-                                            doc.data() as Map<String, dynamic>;
-
-                                        return <String, dynamic>{
-                                          ...data,
-                                          'id': doc.id,
-                                        };
-                                      },
-                                    )
-                                    .where(
-                                      _shouldShowProduct,
-                                    )
-                                    .toList();
-
-                                if (products.isEmpty) {
-                                  return Center(
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(
-                                        30,
-                                      ),
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            selectedCategory == "Pharma"
-                                                ? Icons.local_pharmacy_outlined
-                                                : Icons
-                                                    .shopping_basket_outlined,
-                                            size: 46,
-                                            color: Colors.grey[400],
-                                          ),
-                                          const SizedBox(height: 10),
-                                          Text(
-                                            _searchQuery.isNotEmpty
-                                                ? "No products found"
-                                                : "No items available",
-                                            style: TextStyle(
-                                              color: Colors.grey[600],
-                                              fontSize: 14,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                }
-
-                                return ListView.builder(
-                                  physics: const BouncingScrollPhysics(),
-                                  padding: const EdgeInsets.only(
-                                    bottom: 90,
+                          : _shoppingVendors.isEmpty
+                              ? Center(
+                                  child: Text(
+                                    _locationError ??
+                                        'No vendors found in your city',
+                                    style: TextStyle(
+                                        fontSize: 13, color: Colors.grey[600]),
+                                    textAlign: TextAlign.center,
                                   ),
-                                  itemCount: products.length,
-                                  itemBuilder: (
-                                    context,
-                                    index,
-                                  ) {
-                                    return _buildProductCard(
-                                      products[index],
+                                )
+                              : StreamBuilder<QuerySnapshot>(
+                                  stream: FirebaseFirestore.instance
+                                      .collection('products')
+                                      .where(
+                                        'vendorIdNo',
+                                        whereIn: _shoppingVendors
+                                            .map((v) => (v['vendorId'] ?? '')
+                                                .toString())
+                                            .where((id) => id.isNotEmpty)
+                                            .take(30)
+                                            .toList(),
+                                      )
+                                      .snapshots(),
+                                  builder: (context, snapshot) {
+                                    if (snapshot.connectionState ==
+                                        ConnectionState.waiting) {
+                                      return _buildShimmerList();
+                                    }
+                                    if (snapshot.hasError) {
+                                      return Center(
+                                          child: Text('Unable to load products',
+                                              style: TextStyle(
+                                                  color: Colors.grey[700],
+                                                  fontWeight:
+                                                      FontWeight.w600)));
+                                    }
+                                    if (!snapshot.hasData)
+                                      return _buildShimmerList();
+
+                                    final products = snapshot.data!.docs
+                                        .map((doc) {
+                                          final data = doc.data()
+                                              as Map<String, dynamic>;
+                                          return <String, dynamic>{
+                                            ...data,
+                                            'id': doc.id
+                                          };
+                                        })
+                                        .where(_shouldShowProduct)
+                                        .toList();
+
+                                    if (products.isEmpty) {
+                                      return Center(
+                                        child: Text(
+                                          _searchQuery.isNotEmpty
+                                              ? 'No products found'
+                                              : 'No items available',
+                                          style: TextStyle(
+                                              color: Colors.grey[600],
+                                              fontSize: 14),
+                                        ),
+                                      );
+                                    }
+
+                                    return ListView.builder(
+                                      physics: const BouncingScrollPhysics(),
+                                      padding:
+                                          const EdgeInsets.only(bottom: 90),
+                                      itemCount: products.length,
+                                      itemBuilder: (context, index) =>
+                                          _buildProductCard(products[index]),
                                     );
                                   },
-                                );
-                              },
-                            ),
-                    ),
+                                ),
+                    )
                   ],
                 ),
               ),
@@ -24766,6 +28054,12 @@ class _FoodSectionPageState extends State<FoodSectionPage>
 
   String? selectedVendorId;
 
+  // Location/vendor loading state.
+  bool _isLoadingFoodVendors = true;
+  String? _userCity;
+  String? _locationError;
+  Timer? _vendorStatusTimer;
+
   /// CATEGORY FILTER
   final Set<String> _selectedCategories = {};
   final List<String> _allCategories = [
@@ -24785,6 +28079,18 @@ class _FoodSectionPageState extends State<FoodSectionPage>
     _animationController = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 600));
     _fetchFoodVendors();
+
+    // Re-check vendor opening hours without repeatedly downloading vendors.
+    _vendorStatusTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _vendorStatusTimer?.cancel();
+    _animationController.dispose();
+    super.dispose();
   }
 
   int get _totalItems {
@@ -24792,20 +28098,347 @@ class _FoodSectionPageState extends State<FoodSectionPage>
   }
 
   Future<void> _fetchFoodVendors() async {
-    final snapshot = await FirebaseFirestore.instance
-        .collection('Vendors')
-        .where('category', isEqualTo: 'Food Vendor')
-        .get();
+    if (mounted) {
+      setState(() {
+        _isLoadingFoodVendors = true;
+        _locationError = null;
+      });
+    }
 
-    setState(() {
-      _foodVendors = snapshot.docs
-          .map((doc) => {
-                'id': doc.id,
-                'name': doc['businessName'] ?? 'Unnamed',
-                'image': doc['profileImageUrl'] ?? '',
-              })
-          .toList();
-    });
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+
+      if (user == null) {
+        if (!mounted) return;
+        setState(() {
+          _foodVendors = [];
+          _userCity = null;
+          _locationError = 'Please sign in to view food vendors near you.';
+          _isLoadingFoodVendors = false;
+        });
+        return;
+      }
+
+      // The dashboard/location system stores the user's selected location
+      // under users/{uid}.currentAddress.city.
+      final userSnap = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+
+      final userData = userSnap.data() ?? <String, dynamic>{};
+      final currentAddress = userData['currentAddress'];
+
+      String city = '';
+      if (currentAddress is Map) {
+        city = (currentAddress['city'] ?? '').toString().trim();
+      }
+
+      if (city.isEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _foodVendors = [];
+          _userCity = null;
+          _locationError =
+              'Set your current location to see food vendors in your city.';
+          _isLoadingFoodVendors = false;
+        });
+        return;
+      }
+
+      // Query only vendors in the user's city. This prevents downloading
+      // every food vendor in the database.
+      final snapshot = await FirebaseFirestore.instance
+          .collection('Vendors')
+          .where('storeLocation.city', isEqualTo: city)
+          .get();
+
+      final vendors = snapshot.docs.map((doc) {
+        final data = Map<String, dynamic>.from(doc.data());
+        final storeLocation = data['storeLocation'] is Map
+            ? Map<String, dynamic>.from(data['storeLocation'] as Map)
+            : <String, dynamic>{};
+
+        return <String, dynamic>{
+          ...data,
+          'id': doc.id, // Firebase/Auth UID/document ID.
+          'uid': (data['uid'] ?? doc.id).toString(),
+          'vendorId': (data['vendorId'] ?? '').toString(), // VNxxxxx.
+          'name': data['businessName'] ?? 'Unnamed',
+          'image': data['profileImageUrl'] ?? '',
+          'storeLocation': storeLocation,
+          'state': (storeLocation['state'] ?? data['state'] ?? '').toString(),
+          'city': (storeLocation['city'] ?? data['city'] ?? '').toString(),
+          'address':
+              (storeLocation['address'] ?? data['address'] ?? '').toString(),
+        };
+      }).where((vendor) {
+        // Every new vendor must have the generated public vendor ID.
+        final publicId = vendor['vendorId'].toString().trim();
+        final vendorCity = vendor['city'].toString().trim();
+        final category =
+            (vendor['category'] ?? '').toString().trim().toLowerCase();
+
+        return category == 'food vendor' &&
+            publicId.isNotEmpty &&
+            vendorCity.isNotEmpty &&
+            vendorCity.toLowerCase() == city.toLowerCase();
+      }).toList();
+
+      if (!mounted) return;
+      setState(() {
+        _userCity = city;
+        _foodVendors = vendors;
+        _isLoadingFoodVendors = false;
+      });
+    } catch (e) {
+      debugPrint('Food vendor location query error: $e');
+
+      if (!mounted) return;
+      setState(() {
+        _foodVendors = [];
+        _locationError =
+            'Unable to load food vendors right now. Please try again.';
+        _isLoadingFoodVendors = false;
+      });
+    }
+  }
+
+  String _vendorCity(Map<String, dynamic> vendor) {
+    final location = vendor['storeLocation'];
+    if (location is Map) {
+      final city = (location['city'] ?? '').toString().trim();
+      if (city.isNotEmpty) return city;
+    }
+    return (vendor['city'] ?? '').toString().trim();
+  }
+
+  String _vendorAddress(Map<String, dynamic> vendor) {
+    final location = vendor['storeLocation'];
+    if (location is Map) {
+      final address = (location['address'] ?? '').toString().trim();
+      if (address.isNotEmpty) return address;
+
+      final city = (location['city'] ?? '').toString().trim();
+      final state = (location['state'] ?? '').toString().trim();
+      return [city, state].where((e) => e.isNotEmpty).join(', ');
+    }
+
+    return (vendor['address'] ?? vendor['location'] ?? '').toString().trim();
+  }
+
+  Map<String, dynamic> _vendorOperatingHours(Map<String, dynamic> vendor) {
+    final raw = vendor['operatingHours'];
+    if (raw is Map) {
+      return Map<String, dynamic>.from(raw);
+    }
+    return <String, dynamic>{};
+  }
+
+  int? _timeToMinutes(dynamic value) {
+    if (value == null) return null;
+    final text = value.toString().trim();
+    final match = RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(text);
+    if (match == null) return null;
+
+    final hour = int.tryParse(match.group(1)!);
+    final minute = int.tryParse(match.group(2)!);
+
+    if (hour == null || minute == null || hour > 23 || minute > 59) {
+      return null;
+    }
+    return hour * 60 + minute;
+  }
+
+  bool _isVendorOpen(Map<String, dynamic> vendor, [DateTime? dateTime]) {
+    final now = dateTime ?? DateTime.now();
+    final hours = _vendorOperatingHours(vendor);
+    if (hours.isEmpty) return false;
+
+    const days = <String>[
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ];
+
+    final todayName = days[now.weekday - 1];
+    final todayRaw = hours[todayName];
+
+    bool checkPeriod(dynamic raw, int currentMinutes) {
+      if (raw is! Map) return false;
+
+      final enabled = raw['enabled'] == true;
+      if (!enabled) return false;
+
+      final opening = _timeToMinutes(raw['openingTime']);
+      final closing = _timeToMinutes(raw['closingTime']);
+
+      if (opening == null || closing == null || opening == closing) {
+        return false;
+      }
+
+      // Normal same-day schedule.
+      if (opening < closing) {
+        return currentMinutes >= opening && currentMinutes < closing;
+      }
+
+      // Overnight schedule, e.g. 20:00 -> 02:00.
+      return currentMinutes >= opening || currentMinutes < closing;
+    }
+
+    final currentMinutes = now.hour * 60 + now.minute;
+
+    // First check today's configured period.
+    if (checkPeriod(todayRaw, currentMinutes)) return true;
+
+    // If today's schedule is overnight, the after-midnight portion belongs
+    // to the previous day's schedule.
+    if (now.weekday == DateTime.monday) {
+      // Previous day is Sunday.
+      final previousRaw = hours['Sunday'];
+      if (previousRaw is Map && previousRaw['enabled'] == true) {
+        final opening = _timeToMinutes(previousRaw['openingTime']);
+        final closing = _timeToMinutes(previousRaw['closingTime']);
+        if (opening != null &&
+            closing != null &&
+            opening > closing &&
+            currentMinutes < closing) {
+          return true;
+        }
+      }
+    } else {
+      final previousName = days[now.weekday - 2];
+      final previousRaw = hours[previousName];
+      if (previousRaw is Map && previousRaw['enabled'] == true) {
+        final opening = _timeToMinutes(previousRaw['openingTime']);
+        final closing = _timeToMinutes(previousRaw['closingTime']);
+        if (opening != null &&
+            closing != null &&
+            opening > closing &&
+            currentMinutes < closing) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  String _todayHoursText(Map<String, dynamic> vendor) {
+    final hours = _vendorOperatingHours(vendor);
+    const days = <String>[
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ];
+    final day = days[DateTime.now().weekday - 1];
+    final raw = hours[day];
+
+    if (raw is! Map || raw['enabled'] != true) {
+      return 'Closed today';
+    }
+
+    final opening = raw['openingTime'];
+    final closing = raw['closingTime'];
+    if (opening == null || closing == null) return 'Closed today';
+
+    return '$opening – $closing';
+  }
+
+  Map<String, dynamic>? _findVendorForProduct(Map<String, dynamic> product) {
+    final publicVendorId = (product['vendorIdNo'] ?? '').toString().trim();
+    if (publicVendorId.isEmpty) return null;
+
+    for (final vendor in _foodVendors) {
+      if ((vendor['vendorId'] ?? '').toString().trim() == publicVendorId) {
+        return vendor;
+      }
+    }
+    return null;
+  }
+
+  Future<bool> _confirmDifferentVendor(Map<String, dynamic> product) async {
+    final newVendorId = (product['vendorIdNo'] ?? '').toString().trim();
+    if (newVendorId.isEmpty) return true;
+
+    final existingVendorIds = _productDetails.values
+        .map((item) => (item['vendorIdNo'] ?? '').toString().trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    if (existingVendorIds.isEmpty || existingVendorIds.contains(newVendorId)) {
+      return true;
+    }
+
+    final vendor = _findVendorForProduct(product);
+    final vendorName = (vendor?['businessName'] ?? 'another vendor').toString();
+
+    if (!mounted) return false;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: const Text(
+            'Different vendor',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          content: Text(
+            'You are adding a new product from $vendorName. '
+            'Products from another vendor may incur an additional delivery fee.',
+            style: TextStyle(
+              fontSize: 14,
+              height: 1.4,
+              color: Colors.grey[700],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text(
+                'Cancel',
+                style: TextStyle(
+                  color: Colors.grey[700],
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.black,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text(
+                'Continue',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    return confirmed == true;
   }
 
   double _parsePrice(dynamic price) {
@@ -24816,7 +28449,7 @@ class _FoodSectionPageState extends State<FoodSectionPage>
   }
 
   void openVendorModal(Map<String, dynamic> vendor) async {
-    final vendorId = vendor["uid"];
+    final vendorId = (vendor["vendorId"] ?? "").toString().trim();
 
     // ------------------------------------------------------------
     // VENDOR FALLBACK IMAGE
@@ -24997,12 +28630,32 @@ class _FoodSectionPageState extends State<FoodSectionPage>
             child: FutureBuilder<QuerySnapshot>(
               future: FirebaseFirestore.instance
                   .collection("products")
-                  .where("vendorId", isEqualTo: vendorId)
+                  .where("vendorIdNo", isEqualTo: vendorId)
                   .get(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                    child: CircularProgressIndicator(),
+                  return SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 5,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[300],
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          _skeletonTile(height: 108),
+                          const SizedBox(height: 10),
+                          _skeletonTile(height: 70),
+                          _skeletonTile(height: 70),
+                          _skeletonTile(height: 70),
+                        ],
+                      ),
+                    ),
                   );
                 }
 
@@ -25042,17 +28695,17 @@ class _FoodSectionPageState extends State<FoodSectionPage>
                     }).toList() ??
                     [];
 
-                // ------------------------------------------------
-                // TEMPORARY VALUES
-                // ------------------------------------------------
-                final now = DateTime.now();
+                // Real vendor schedule.
+                final bool isOpen = _isVendorOpen(vendor);
 
-                final bool isOpen = now.second % 2 == 0;
-
-                final deliveryTime = 10 + (now.millisecond % 26);
+                final deliveryTime = (vendor["deliveryTime"] ??
+                        vendor["estimatedDeliveryTime"] ??
+                        "30-45 min")
+                    .toString();
 
                 final rating =
-                    (3.5 + (now.millisecond % 15) / 10).toStringAsFixed(1);
+                    (vendor["rating"] ?? vendor["averageRating"] ?? "4.5")
+                        .toString();
 
                 return SafeArea(
                   child: Padding(
@@ -25151,10 +28804,9 @@ class _FoodSectionPageState extends State<FoodSectionPage>
                                         const SizedBox(width: 4),
                                         Expanded(
                                           child: Text(
-                                            (vendor["storeLocation"] ??
-                                                    vendor["location"] ??
-                                                    "No location")
-                                                .toString(),
+                                            _vendorAddress(vendor).isNotEmpty
+                                                ? _vendorAddress(vendor)
+                                                : _vendorCity(vendor),
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: TextStyle(
@@ -25320,151 +28972,186 @@ class _FoodSectionPageState extends State<FoodSectionPage>
 
                                     final fallbackImage =
                                         getProductFallbackImage(product);
+                                    final productIsOpen = _isVendorOpen(vendor);
 
-                                    return Container(
-                                      margin: const EdgeInsets.only(
-                                        bottom: 10,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius: BorderRadius.circular(16),
-                                        border: Border.all(
-                                          color: Colors.grey[200]!,
+                                    return Opacity(
+                                      opacity: productIsOpen ? 1.0 : 0.55,
+                                      child: Container(
+                                        margin: const EdgeInsets.only(
+                                          bottom: 10,
                                         ),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color:
-                                                Colors.black.withOpacity(0.035),
-                                            blurRadius: 8,
-                                            offset: const Offset(
-                                              0,
-                                              3,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      child: Material(
-                                        color: Colors.transparent,
-                                        child: InkWell(
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
                                           borderRadius:
                                               BorderRadius.circular(16),
-                                          onTap: () {
-                                            _openCustomizationModal(
-                                              product,
-                                              imageKey,
-                                            );
-                                          },
-                                          child: Padding(
-                                            padding: const EdgeInsets.all(10),
-                                            child: Row(
-                                              children: [
-                                                // ----------------
-                                                // PRODUCT IMAGE
-                                                // ----------------
-                                                Container(
-                                                  key: imageKey,
-                                                  width: 70,
-                                                  height: 70,
-                                                  decoration: BoxDecoration(
-                                                    shape: BoxShape.circle,
-                                                    color: Colors.grey[100],
+                                          border: Border.all(
+                                            color: Colors.grey[200]!,
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black
+                                                  .withOpacity(0.035),
+                                              blurRadius: 8,
+                                              offset: const Offset(
+                                                0,
+                                                3,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        child: Material(
+                                          color: Colors.transparent,
+                                          child: InkWell(
+                                            borderRadius:
+                                                BorderRadius.circular(16),
+                                            onTap: productIsOpen
+                                                ? () async {
+                                                    final canContinue =
+                                                        await _confirmDifferentVendor(
+                                                      product,
+                                                    );
+                                                    if (!canContinue ||
+                                                        !mounted) {
+                                                      return;
+                                                    }
+                                                    _openCustomizationModal(
+                                                      product,
+                                                      imageKey,
+                                                    );
+                                                  }
+                                                : null,
+                                            child: Padding(
+                                              padding: const EdgeInsets.all(10),
+                                              child: Row(
+                                                children: [
+                                                  // ----------------
+                                                  // PRODUCT IMAGE
+                                                  // ----------------
+                                                  Container(
+                                                    key: imageKey,
+                                                    width: 70,
+                                                    height: 70,
+                                                    decoration: BoxDecoration(
+                                                      shape: BoxShape.circle,
+                                                      color: Colors.grey[100],
+                                                    ),
+                                                    child: ClipOval(
+                                                      child: productImage
+                                                              .isEmpty
+                                                          ? Image.asset(
+                                                              fallbackImage,
+                                                              fit: BoxFit.cover,
+                                                            )
+                                                          : Image.network(
+                                                              productImage,
+                                                              fit: BoxFit.cover,
+                                                              errorBuilder:
+                                                                  (_, __, ___) {
+                                                                return Image
+                                                                    .asset(
+                                                                  fallbackImage,
+                                                                  fit: BoxFit
+                                                                      .cover,
+                                                                );
+                                                              },
+                                                            ),
+                                                    ),
                                                   ),
-                                                  child: ClipOval(
-                                                    child: productImage.isEmpty
-                                                        ? Image.asset(
-                                                            fallbackImage,
-                                                            fit: BoxFit.cover,
-                                                          )
-                                                        : Image.network(
-                                                            productImage,
-                                                            fit: BoxFit.cover,
-                                                            errorBuilder:
-                                                                (_, __, ___) {
-                                                              return Image
-                                                                  .asset(
-                                                                fallbackImage,
-                                                                fit: BoxFit
-                                                                    .cover,
-                                                              );
-                                                            },
+
+                                                  const SizedBox(width: 12),
+
+                                                  // ----------------
+                                                  // PRODUCT DETAILS
+                                                  // ----------------
+                                                  Expanded(
+                                                    child: Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      children: [
+                                                        Text(
+                                                          (product["name"] ??
+                                                                  product[
+                                                                      "productName"] ??
+                                                                  "Product")
+                                                              .toString(),
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
+                                                          style:
+                                                              const TextStyle(
+                                                            fontSize: 14,
+                                                            fontWeight:
+                                                                FontWeight.w700,
                                                           ),
-                                                  ),
-                                                ),
-
-                                                const SizedBox(width: 12),
-
-                                                // ----------------
-                                                // PRODUCT DETAILS
-                                                // ----------------
-                                                Expanded(
-                                                  child: Column(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                    children: [
-                                                      Text(
-                                                        (product["name"] ??
-                                                                product[
-                                                                    "productName"] ??
-                                                                "Product")
-                                                            .toString(),
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow
-                                                            .ellipsis,
-                                                        style: const TextStyle(
-                                                          fontSize: 14,
-                                                          fontWeight:
-                                                              FontWeight.w700,
                                                         ),
-                                                      ),
-                                                      const SizedBox(height: 5),
-                                                      Text(
-                                                        (product["description"] ??
-                                                                "")
-                                                            .toString(),
-                                                        maxLines: 2,
-                                                        overflow: TextOverflow
-                                                            .ellipsis,
-                                                        style: TextStyle(
-                                                          fontSize: 11,
-                                                          height: 1.3,
-                                                          color:
-                                                              Colors.grey[600],
+                                                        const SizedBox(
+                                                            height: 5),
+                                                        Text(
+                                                          (product["description"] ??
+                                                                  "")
+                                                              .toString(),
+                                                          maxLines: 2,
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
+                                                          style: TextStyle(
+                                                            fontSize: 11,
+                                                            height: 1.3,
+                                                            color: Colors
+                                                                .grey[600],
+                                                          ),
                                                         ),
-                                                      ),
-                                                      const SizedBox(height: 7),
-                                                      Text(
-                                                        "₦${product["price"] ?? "0"}",
-                                                        style: const TextStyle(
-                                                          fontSize: 13,
-                                                          fontWeight:
-                                                              FontWeight.w700,
+                                                        if (!productIsOpen) ...[
+                                                          const SizedBox(
+                                                              height: 5),
+                                                          Text(
+                                                            'Not available now',
+                                                            style: TextStyle(
+                                                              fontSize: 10,
+                                                              color: Colors
+                                                                  .red[600],
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w600,
+                                                            ),
+                                                          ),
+                                                        ],
+                                                        const SizedBox(
+                                                            height: 7),
+                                                        Text(
+                                                          "₦${product["price"] ?? "0"}",
+                                                          style:
+                                                              const TextStyle(
+                                                            fontSize: 13,
+                                                            fontWeight:
+                                                                FontWeight.w700,
+                                                          ),
                                                         ),
-                                                      ),
-                                                    ],
+                                                      ],
+                                                    ),
                                                   ),
-                                                ),
 
-                                                const SizedBox(width: 8),
+                                                  const SizedBox(width: 8),
 
-                                                // ----------------
-                                                // ADD BUTTON
-                                                // ----------------
-                                                Container(
-                                                  width: 34,
-                                                  height: 34,
-                                                  decoration:
-                                                      const BoxDecoration(
-                                                    shape: BoxShape.circle,
-                                                    color: Colors.black,
+                                                  // ----------------
+                                                  // ADD BUTTON
+                                                  // ----------------
+                                                  Container(
+                                                    width: 34,
+                                                    height: 34,
+                                                    decoration:
+                                                        const BoxDecoration(
+                                                      shape: BoxShape.circle,
+                                                      color: Colors.black,
+                                                    ),
+                                                    child: const Icon(
+                                                      Icons.add,
+                                                      color: Colors.white,
+                                                      size: 19,
+                                                    ),
                                                   ),
-                                                  child: const Icon(
-                                                    Icons.add,
-                                                    color: Colors.white,
-                                                    size: 19,
-                                                  ),
-                                                ),
-                                              ],
+                                                ],
+                                              ),
                                             ),
                                           ),
                                         ),
@@ -25497,6 +29184,9 @@ class _FoodSectionPageState extends State<FoodSectionPage>
     final TextEditingController noteController = TextEditingController();
 
     final double basePrice = _parsePrice(product['price']);
+    final Map<String, dynamic>? productVendor = _findVendorForProduct(product);
+    final bool vendorIsOpen =
+        _isVendorOpen(productVendor ?? <String, dynamic>{});
 
     // ============================================================
     // PRODUCT FALLBACK IMAGE
@@ -25732,15 +29422,7 @@ class _FoodSectionPageState extends State<FoodSectionPage>
             width: 82,
             height: 82,
             color: Colors.grey[200],
-            child: const Center(
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                ),
-              ),
-            ),
+            child: _skeletonImage(),
           );
         },
         errorBuilder: (_, __, ___) {
@@ -26095,6 +29777,17 @@ class _FoodSectionPageState extends State<FoodSectionPage>
                                               fontWeight: FontWeight.w700,
                                             ),
                                           ),
+                                          if (!vendorIsOpen) ...[
+                                            const SizedBox(height: 6),
+                                            Text(
+                                              'Not available now — vendor is closed.',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.red[600],
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
                                         ],
                                       ),
                                     ),
@@ -26331,60 +30024,65 @@ class _FoodSectionPageState extends State<FoodSectionPage>
                                       borderRadius: BorderRadius.circular(14),
                                     ),
                                   ),
-                                  onPressed: () {
-                                    final restaurantNote =
-                                        noteController.text.trim();
+                                  onPressed: vendorIsOpen
+                                      ? () {
+                                          final restaurantNote =
+                                              noteController.text.trim();
 
-                                    Navigator.pop(context);
+                                          Navigator.pop(context);
 
-                                    final cartKey =
-                                        "${product['id']}-${selectedAddons.hashCode}-${selectedSides.hashCode}";
+                                          final cartKey =
+                                              "${product['id']}-${selectedAddons.hashCode}-${selectedSides.hashCode}";
 
-                                    final cartProduct = {
-                                      ...product,
+                                          final cartProduct = {
+                                            ...product,
 
-                                      // Selected customization
-                                      'addonsSelected':
-                                          List<Map<String, dynamic>>.from(
-                                              selectedAddons),
+                                            // Selected customization
+                                            'addonsSelected':
+                                                List<Map<String, dynamic>>.from(
+                                                    selectedAddons),
 
-                                      'sidesSelected':
-                                          List<Map<String, dynamic>>.from(
-                                              selectedSides),
+                                            'sidesSelected':
+                                                List<Map<String, dynamic>>.from(
+                                                    selectedSides),
 
-                                      // Quantity
-                                      'quantity': quantity,
+                                            // Quantity
+                                            'quantity': quantity,
 
-                                      // Final calculated price
-                                      'price': total,
+                                            // Final calculated price
+                                            'price': total,
 
-                                      // Restaurant note
-                                      'restaurantNote': restaurantNote,
-                                    };
+                                            // Restaurant note
+                                            'restaurantNote': restaurantNote,
+                                          };
 
-                                    setState(() {
-                                      _selectedItems.update(
-                                        cartKey,
-                                        (value) => value + quantity,
-                                        ifAbsent: () => quantity,
-                                      );
+                                          setState(() {
+                                            _selectedItems.update(
+                                              cartKey,
+                                              (value) => value + quantity,
+                                              ifAbsent: () => quantity,
+                                            );
 
-                                      _productDetails[cartKey] = cartProduct;
-                                    });
+                                            _productDetails[cartKey] =
+                                                cartProduct;
+                                          });
 
-                                    _flyToCart(
-                                      imageKey,
-                                      cartProduct,
-                                      cartKey,
-                                      quantity,
-                                    );
-                                  },
+                                          _flyToCart(
+                                            imageKey,
+                                            cartProduct,
+                                            cartKey,
+                                            quantity,
+                                          );
+                                        }
+                                      : null,
                                   child: Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
                                       const SizedBox(width: 8),
                                       Text(
-                                        'Add • ₦${total.toStringAsFixed(0)}',
+                                        vendorIsOpen
+                                            ? 'Add • ₦${total.toStringAsFixed(0)}'
+                                            : 'Not available now',
                                         style: const TextStyle(
                                           fontSize: 14,
                                           fontWeight: FontWeight.w700,
@@ -26479,15 +30177,109 @@ class _FoodSectionPageState extends State<FoodSectionPage>
   }
 
   /// ================= SKELETON =================
-  Widget _skeletonTile() {
-    return Shimmer.fromColors(
-      baseColor: Colors.grey[300]!,
-      highlightColor: Colors.grey[100]!,
-      child: Container(
-        height: 85,
-        margin: const EdgeInsets.symmetric(vertical: 6),
-        decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12), color: Colors.white),
+  Widget _skeletonImage() {
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.grey[300],
+        borderRadius: BorderRadius.circular(12),
+      ),
+    );
+  }
+
+  Widget _skeletonTile({double height = 85}) {
+    return Container(
+      height: height,
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        color: Colors.grey[200],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 10),
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 12),
+            height: 10,
+            width: 110,
+            decoration: BoxDecoration(
+              color: Colors.grey[300],
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 12),
+            height: 8,
+            width: 180,
+            decoration: BoxDecoration(
+              color: Colors.grey[300],
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _vendorSkeletonCard() {
+    return Container(
+      width: 285,
+      height: 112,
+      margin: const EdgeInsets.only(right: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.grey[100],
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 78,
+            height: 78,
+            decoration: BoxDecoration(
+              color: Colors.grey[300],
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  height: 12,
+                  width: 110,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  height: 9,
+                  width: 150,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  height: 8,
+                  width: 90,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -26756,8 +30548,7 @@ class _FoodSectionPageState extends State<FoodSectionPage>
 
                               // ================= VENDOR ID =================
                               final vendorId =
-                                  (vendor['id'] ?? vendor['vendorId'] ?? '')
-                                      .toString();
+                                  (vendor['vendorId'] ?? '').toString();
 
                               // ================= VENDOR NAME =================
                               final vendorName = (vendor['name'] ??
@@ -26767,11 +30558,10 @@ class _FoodSectionPageState extends State<FoodSectionPage>
                                   .toString();
 
                               // ================= LOCATION =================
-                              final vendorLocation = (vendor['location'] ??
-                                      vendor['address'] ??
-                                      vendor['city'] ??
-                                      '')
-                                  .toString();
+                              final vendorLocation =
+                                  _vendorAddress(vendor).isNotEmpty
+                                      ? _vendorAddress(vendor)
+                                      : _vendorCity(vendor);
 
                               // ================= VENDOR IMAGE =================
                               final vendorImage = (vendor['image'] ?? '')
@@ -26792,15 +30582,7 @@ class _FoodSectionPageState extends State<FoodSectionPage>
                                   .toString();
 
                               // ================= STATUS =================
-                              final rawStatus =
-                                  vendor['status'] ?? vendor['isOpen'] ?? true;
-
-                              final bool isOpen = rawStatus is bool
-                                  ? rawStatus
-                                  : rawStatus.toString().toLowerCase() ==
-                                          'open' ||
-                                      rawStatus.toString().toLowerCase() ==
-                                          'true';
+                              final bool isOpen = _isVendorOpen(vendor);
 
                               // ================= FALLBACK IMAGES =================
                               final fallbackImages = [
@@ -27035,36 +30817,97 @@ class _FoodSectionPageState extends State<FoodSectionPage>
                   SizedBox(height: 10),
 
                   StreamBuilder<QuerySnapshot>(
-                    stream: FirebaseFirestore.instance
-                        .collection('products')
-                        .snapshots(),
+                    stream: _foodVendors.isEmpty
+                        ? const Stream<QuerySnapshot>.empty()
+                        : FirebaseFirestore.instance
+                            .collection('products')
+                            .where(
+                              'vendorIdNo',
+                              whereIn: _foodVendors
+                                  .map((v) => v['vendorId'])
+                                  .where((id) =>
+                                      id != null &&
+                                      id.toString().trim().isNotEmpty)
+                                  .take(30)
+                                  .toList(),
+                            )
+                            .snapshots(),
                     builder: (_, snapshot) {
+                      if (_isLoadingFoodVendors) {
+                        return Column(
+                          children: List.generate(
+                            6,
+                            (_) => _skeletonTile(),
+                          ),
+                        );
+                      }
+
+                      if (_locationError != null) {
+                        return Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Center(
+                            child: Text(
+                              _locationError!,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+
+                      if (_foodVendors.isEmpty) {
+                        return Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Center(
+                            child: Text(
+                              _userCity == null
+                                  ? 'Set your current location to see food vendors.'
+                                  : 'No food vendors found in your city.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+
                       if (!snapshot.hasData) {
-                        return ListView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: 6,
-                            itemBuilder: (_, __) => _skeletonTile());
+                        return Column(
+                          children: List.generate(
+                            6,
+                            (_) => _skeletonTile(),
+                          ),
+                        );
                       }
 
                       var products = snapshot.data!.docs;
 
-                      // Only products from food vendors
-                      final foodVendorIds =
-                          _foodVendors.map((v) => v['id']).toSet();
+                      // Products are linked to the public vendor ID through
+                      // vendorIdNo (e.g. VN70784).
+                      final foodVendorIds = _foodVendors
+                          .map((v) => v['vendorId'].toString())
+                          .toSet();
+
                       products = products.where((doc) {
                         final data = doc.data() as Map<String, dynamic>;
-                        if (!data.containsKey('vendorId')) return false;
-                        return foodVendorIds.contains(data['vendorId']);
+                        final vendorIdNo =
+                            (data['vendorIdNo'] ?? '').toString().trim();
+                        return vendorIdNo.isNotEmpty &&
+                            foodVendorIds.contains(vendorIdNo);
                       }).toList();
 
-                      // Safe vendor filter if any vendor selected
+                      // Filter to the selected public vendor ID.
                       if (selectedVendorId != null) {
-                        products = products
-                            .where((doc) =>
-                                doc.data().toString().contains('vendorId') &&
-                                doc['vendorId'] == selectedVendorId)
-                            .toList();
+                        products = products.where((doc) {
+                          final data = doc.data() as Map<String, dynamic>;
+                          return (data['vendorIdNo'] ?? '').toString() ==
+                              selectedVendorId;
+                        }).toList();
                       }
 
                       // Safe category filter
@@ -27090,287 +30933,298 @@ class _FoodSectionPageState extends State<FoodSectionPage>
                           final product = {'id': doc.id, ...data};
                           final GlobalKey imageKey = GlobalKey();
 
+                          final productVendor = _findVendorForProduct(product);
+                          final productIsOpen = _isVendorOpen(
+                              productVendor ?? <String, dynamic>{});
+
                           return GestureDetector(
-                            onTap: () =>
-                                _openCustomizationModal(product, imageKey),
-                            child: Container(
-                              height: 110, // slightly increased
-                              margin: const EdgeInsets.symmetric(vertical: 6),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(12),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.grey.withOpacity(0.2),
-                                    blurRadius: 5,
-                                  )
-                                ],
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 8),
-                                child: Row(
-                                  children: [
-                                    // 🔥 UPDATED IMAGE (rounded card + bigger)
-                                    Container(
-                                      key: imageKey,
-                                      width: 75,
-                                      height: 75,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: Colors.grey[200],
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color:
-                                                Colors.black.withOpacity(0.1),
-                                            blurRadius: 4,
-                                            offset: const Offset(0, 2),
-                                          ),
-                                        ],
-                                      ),
-                                      child: ClipOval(
-                                        child: (() {
-                                          final rawImage = data['image'];
+                            onTap: productIsOpen
+                                ? () async {
+                                    final canContinue =
+                                        await _confirmDifferentVendor(product);
+                                    if (!canContinue || !mounted) return;
+                                    _openCustomizationModal(product, imageKey);
+                                  }
+                                : null,
+                            child: Opacity(
+                              opacity: productIsOpen ? 1.0 : 0.55,
+                              child: Container(
+                                height: 110, // slightly increased
+                                margin: const EdgeInsets.symmetric(vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(12),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.grey.withOpacity(0.2),
+                                      blurRadius: 5,
+                                    )
+                                  ],
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 8),
+                                  child: Row(
+                                    children: [
+                                      // 🔥 UPDATED IMAGE (rounded card + bigger)
+                                      Container(
+                                        key: imageKey,
+                                        width: 75,
+                                        height: 75,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: Colors.grey[200],
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color:
+                                                  Colors.black.withOpacity(0.1),
+                                              blurRadius: 4,
+                                              offset: const Offset(0, 2),
+                                            ),
+                                          ],
+                                        ),
+                                        child: ClipOval(
+                                          child: (() {
+                                            final rawImage = data['image'];
 
-                                          final imageUrl = (rawImage ?? '')
-                                              .toString()
-                                              .trim()
-                                              .replaceAll('"', '');
+                                            final imageUrl = (rawImage ?? '')
+                                                .toString()
+                                                .trim()
+                                                .replaceAll('"', '');
 
-                                          // Get product category
-                                          final category =
-                                              (data['category'] ?? '')
-                                                  .toString()
-                                                  .trim()
-                                                  .toLowerCase();
+                                            // Get product category
+                                            final category =
+                                                (data['category'] ?? '')
+                                                    .toString()
+                                                    .trim()
+                                                    .toLowerCase();
 
-                                          // Category-specific fallback images
-                                          final Map<String, List<String>>
-                                              categoryImages = {
-                                            'drinks': [
-                                              'assets/images/coke1.jpg',
-                                              'assets/images/zobo.jpg',
-                                              'assets/images/tigernut.jpg',
-                                            ],
-                                            'pizza': [
-                                              'assets/images/pz1.jpg',
-                                              'assets/images/pz2.jpg',
-                                            ],
-                                            'phagetti': [
-                                              'assets/images/sp1.jpg',
-                                              'assets/images/sp2.jpg',
-                                              'assets/images/sp4.jpg',
-                                            ],
-                                            'spaghetti': [
-                                              'assets/images/sp1.jpg',
-                                              'assets/images/sp2.jpg',
-                                              'assets/images/sp4.jpg',
-                                            ],
-                                            'shawarma': [
+                                            // Category-specific fallback images
+                                            final Map<String, List<String>>
+                                                categoryImages = {
+                                              'drinks': [
+                                                'assets/images/coke1.jpg',
+                                                'assets/images/zobo.jpg',
+                                                'assets/images/tigernut.jpg',
+                                              ],
+                                              'pizza': [
+                                                'assets/images/pz1.jpg',
+                                                'assets/images/pz2.jpg',
+                                              ],
+                                              'phagetti': [
+                                                'assets/images/sp1.jpg',
+                                                'assets/images/sp2.jpg',
+                                                'assets/images/sp4.jpg',
+                                              ],
+                                              'spaghetti': [
+                                                'assets/images/sp1.jpg',
+                                                'assets/images/sp2.jpg',
+                                                'assets/images/sp4.jpg',
+                                              ],
+                                              'shawarma': [
+                                                'assets/images/sh1.jpg',
+                                                'assets/images/sh2.jpg',
+                                                'assets/images/sh3.jpg',
+                                              ],
+                                              'rice': [
+                                                'assets/images/rice1.jpg',
+                                                'assets/images/rice2.jpg',
+                                                'assets/images/rice3.jpg',
+                                                'assets/images/rice4.jpg',
+                                              ],
+                                              'Small chops': [
+                                                'assets/images/sc1.jpg',
+                                                'assets/images/sc2.jpg',
+                                                'assets/images/sc13.jpg',
+                                                'assets/images/sc.jpg',
+                                              ],
+                                              'poundo': [
+                                                'assets/images/poundo.jpg',
+                                              ],
+                                            };
+
+                                            // All available product images for unknown categories
+                                            final allFallbackImages = [
                                               'assets/images/sh1.jpg',
                                               'assets/images/sh2.jpg',
                                               'assets/images/sh3.jpg',
-                                            ],
-                                            'rice': [
+                                              'assets/images/pz1.jpg',
+                                              'assets/images/pz2.jpg',
                                               'assets/images/rice1.jpg',
                                               'assets/images/rice2.jpg',
                                               'assets/images/rice3.jpg',
                                               'assets/images/rice4.jpg',
-                                            ],
-                                            'Small chops': [
-                                              'assets/images/sc1.jpg',
-                                              'assets/images/sc2.jpg',
-                                              'assets/images/sc13.jpg',
-                                              'assets/images/sc.jpg',
-                                            ],
-                                            'poundo': [
                                               'assets/images/poundo.jpg',
-                                            ],
-                                          };
+                                              'assets/images/sp1.jpg',
+                                              'assets/images/sp2.jpg',
+                                              'assets/images/sp4.jpg',
+                                              'assets/images/sc.jpg',
+                                              'assets/images/sc1.jpg',
+                                              'assets/images/sc13.jpg',
+                                              'assets/images/sc2.jpg',
+                                              'assets/images/coke1.jpg',
+                                              'assets/images/zobo.jpg',
+                                              'assets/images/tigernut.jpg',
+                                            ];
 
-                                          // All available product images for unknown categories
-                                          final allFallbackImages = [
-                                            'assets/images/sh1.jpg',
-                                            'assets/images/sh2.jpg',
-                                            'assets/images/sh3.jpg',
-                                            'assets/images/pz1.jpg',
-                                            'assets/images/pz2.jpg',
-                                            'assets/images/rice1.jpg',
-                                            'assets/images/rice2.jpg',
-                                            'assets/images/rice3.jpg',
-                                            'assets/images/rice4.jpg',
-                                            'assets/images/poundo.jpg',
-                                            'assets/images/sp1.jpg',
-                                            'assets/images/sp2.jpg',
-                                            'assets/images/sp4.jpg',
-                                            'assets/images/sc.jpg',
-                                            'assets/images/sc1.jpg',
-                                            'assets/images/sc13.jpg',
-                                            'assets/images/sc2.jpg',
-                                            'assets/images/coke1.jpg',
-                                            'assets/images/zobo.jpg',
-                                            'assets/images/tigernut.jpg',
-                                          ];
+                                            // Use category-specific images where available.
+                                            // Otherwise use all product images.
+                                            final availableImages =
+                                                categoryImages[category] ??
+                                                    allFallbackImages;
 
-                                          // Use category-specific images where available.
-                                          // Otherwise use all product images.
-                                          final availableImages =
-                                              categoryImages[category] ??
-                                                  allFallbackImages;
+                                            // Create a stable key for this product.
+                                            // This prevents the fallback image from changing
+                                            // every time the widget rebuilds.
+                                            final productKey = (data['id'] ??
+                                                    data['productId'] ??
+                                                    data['name'] ??
+                                                    data['productName'] ??
+                                                    'product')
+                                                .toString();
 
-                                          // Create a stable key for this product.
-                                          // This prevents the fallback image from changing
-                                          // every time the widget rebuilds.
-                                          final productKey = (data['id'] ??
-                                                  data['productId'] ??
-                                                  data['name'] ??
-                                                  data['productName'] ??
-                                                  'product')
-                                              .toString();
+                                            // Deterministically select an image.
+                                            final fallbackIndex =
+                                                productKey.codeUnits.fold<int>(
+                                                      0,
+                                                      (sum, code) => sum + code,
+                                                    ) %
+                                                    availableImages.length;
 
-                                          // Deterministically select an image.
-                                          final fallbackIndex =
-                                              productKey.codeUnits.fold<int>(
-                                                    0,
-                                                    (sum, code) => sum + code,
-                                                  ) %
-                                                  availableImages.length;
+                                            final fallbackImage =
+                                                availableImages[fallbackIndex];
 
-                                          final fallbackImage =
-                                              availableImages[fallbackIndex];
-
-                                          // No image URL → use fallback
-                                          if (imageUrl.isEmpty) {
-                                            return Image.asset(
-                                              fallbackImage,
-                                              fit: BoxFit.cover,
-                                            );
-                                          }
-
-                                          final cleanUrl = imageUrl;
-
-                                          debugPrint(
-                                              "IMAGE URL USED: $cleanUrl");
-
-                                          return Image.network(
-                                            cleanUrl,
-                                            fit: BoxFit.cover,
-                                            loadingBuilder:
-                                                (context, child, progress) {
-                                              if (progress == null) {
-                                                return child;
-                                              }
-
-                                              return const Center(
-                                                child: SizedBox(
-                                                  width: 20,
-                                                  height: 20,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                    strokeWidth: 2,
-                                                  ),
-                                                ),
-                                              );
-                                            },
-                                            errorBuilder: (_, __, ___) {
-                                              debugPrint(
-                                                  "FAILED URL: $cleanUrl");
-
-                                              // Network image failed → category fallback
+                                            // No image URL → use fallback
+                                            if (imageUrl.isEmpty) {
                                               return Image.asset(
                                                 fallbackImage,
                                                 fit: BoxFit.cover,
                                               );
-                                            },
-                                          );
-                                        })(),
+                                            }
+
+                                            final cleanUrl = imageUrl;
+
+                                            debugPrint(
+                                                "IMAGE URL USED: $cleanUrl");
+
+                                            return Image.network(
+                                              cleanUrl,
+                                              fit: BoxFit.cover,
+                                              loadingBuilder:
+                                                  (context, child, progress) {
+                                                if (progress == null) {
+                                                  return child;
+                                                }
+
+                                                return Container(
+                                                  width: 75,
+                                                  height: 75,
+                                                  color: Colors.grey[200],
+                                                  child: _skeletonImage(),
+                                                );
+                                              },
+                                              errorBuilder: (_, __, ___) {
+                                                debugPrint(
+                                                    "FAILED URL: $cleanUrl");
+
+                                                // Network image failed → category fallback
+                                                return Image.asset(
+                                                  fallbackImage,
+                                                  fit: BoxFit.cover,
+                                                );
+                                              },
+                                            );
+                                          })(),
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(width: 12),
+                                      const SizedBox(width: 12),
 
-                                    // Product Name & Description
-                                    Expanded(
-                                      child: Column(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            data['name'],
-                                            style: const TextStyle(
-                                                fontWeight: FontWeight.bold),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            data['description'] ?? '',
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                                fontSize: 12,
-                                                color: Colors.grey),
-                                          ),
-                                        ],
+                                      // Product Name & Description
+                                      Expanded(
+                                        child: Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              data['name'],
+                                              style: const TextStyle(
+                                                  fontWeight: FontWeight.bold),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              data['description'] ?? '',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.grey),
+                                            ),
+                                          ],
+                                        ),
                                       ),
-                                    ),
 
-                                    // 🔥 PRICE + ORDER COUNT
-                                    Padding(
-                                      padding: const EdgeInsets.only(right: 12),
-                                      child: Builder(
-                                        builder: (_) {
-                                          final int orders =
-                                              (data['name'].hashCode % 30) + 1;
+                                      // 🔥 PRICE + ORDER COUNT
+                                      Padding(
+                                        padding:
+                                            const EdgeInsets.only(right: 12),
+                                        child: Builder(
+                                          builder: (_) {
+                                            final int orders =
+                                                (data['name'].hashCode % 30) +
+                                                    1;
 
-                                          return Column(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.center,
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.end,
-                                            children: [
-                                              Text(
-                                                "₦${_parsePrice(data['price'])}",
-                                                style: const TextStyle(
-                                                    fontWeight:
-                                                        FontWeight.bold),
-                                              ),
-
-                                              const SizedBox(height: 10),
-
-                                              // 🔢 Orders
-
-                                              // 🔥 Popular Badge
-                                              if (orders > 15) ...[
-                                                const SizedBox(height: 4),
-                                                Container(
-                                                  padding: const EdgeInsets
-                                                          .symmetric(
-                                                      horizontal: 6,
-                                                      vertical: 2),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.orange
-                                                        .withOpacity(0.1),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            6),
-                                                  ),
-                                                  child: const Text(
-                                                    "🔥",
-                                                    style: TextStyle(
-                                                      fontSize: 10,
-                                                      color: Colors.orange,
+                                            return Column(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.end,
+                                              children: [
+                                                Text(
+                                                  "₦${_parsePrice(data['price'])}",
+                                                  style: const TextStyle(
                                                       fontWeight:
-                                                          FontWeight.w600,
+                                                          FontWeight.bold),
+                                                ),
+
+                                                const SizedBox(height: 10),
+
+                                                // 🔢 Orders
+
+                                                // 🔥 Popular Badge
+                                                if (orders > 15) ...[
+                                                  const SizedBox(height: 4),
+                                                  Container(
+                                                    padding: const EdgeInsets
+                                                            .symmetric(
+                                                        horizontal: 6,
+                                                        vertical: 2),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.orange
+                                                          .withOpacity(0.1),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              6),
+                                                    ),
+                                                    child: const Text(
+                                                      "🔥",
+                                                      style: TextStyle(
+                                                        fontSize: 10,
+                                                        color: Colors.orange,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                      ),
                                                     ),
                                                   ),
-                                                ),
-                                              ]
-                                            ],
-                                          );
-                                        },
+                                                ]
+                                              ],
+                                            );
+                                          },
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
