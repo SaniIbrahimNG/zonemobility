@@ -32504,6 +32504,31 @@ class _SearchingScreenState extends State<SearchingScreen> {
   bool _mapReady = false;
 
   // ============================================================
+  // ROUTE LINE
+  // ============================================================
+
+  List<LatLng> _routePoints = [];
+
+  Set<Polyline> _polylines = {};
+
+  Timer? _routeAnimationTimer;
+
+  bool _isLoadingRoute = false;
+
+  // ============================================================
+  // DESTINATION ICON
+  // ============================================================
+
+  BitmapDescriptor? _destinationIcon;
+
+  // ============================================================
+  // GOOGLE MAPS API KEY
+  // ============================================================
+
+  static const String _googlePlacesApiKey =
+      "AIzaSyAxD8Gvtn1KGomBFy3pWXgvw0c4a-48";
+
+  // ============================================================
   // RIDE TYPE IMAGE
   // ============================================================
 
@@ -32543,6 +32568,476 @@ class _SearchingScreenState extends State<SearchingScreen> {
       widget.destinationLat,
       widget.destinationLng,
     );
+  }
+
+  // ============================================================
+  // CREATE SMALL ROUNDED RADIO DESTINATION ICON
+  // ============================================================
+
+  Future<BitmapDescriptor> _createDestinationIcon() async {
+    const double size = 42;
+
+    final ui.PictureRecorder recorder = ui.PictureRecorder();
+
+    final Canvas canvas = Canvas(recorder);
+
+    // ==========================================================
+    // OUTER WHITE CIRCLE
+    // ==========================================================
+
+    final Paint outerPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+
+    canvas.drawCircle(
+      const Offset(
+        size / 2,
+        size / 2,
+      ),
+      14,
+      outerPaint,
+    );
+
+    // ==========================================================
+    // GREEN BORDER
+    // ==========================================================
+
+    final Paint borderPaint = Paint()
+      ..color = Colors.green.shade700
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3;
+
+    canvas.drawCircle(
+      const Offset(
+        size / 2,
+        size / 2,
+      ),
+      12,
+      borderPaint,
+    );
+
+    // ==========================================================
+    // SMALL GREEN CENTER
+    // ==========================================================
+
+    final Paint centerPaint = Paint()
+      ..color = Colors.green.shade700
+      ..style = PaintingStyle.fill;
+
+    canvas.drawCircle(
+      const Offset(
+        size / 2,
+        size / 2,
+      ),
+      5,
+      centerPaint,
+    );
+
+    final ui.Image image = await recorder.endRecording().toImage(
+          size.toInt(),
+          size.toInt(),
+        );
+
+    final ByteData? byteData = await image.toByteData(
+      format: ui.ImageByteFormat.png,
+    );
+
+    if (byteData == null) {
+      return BitmapDescriptor.defaultMarkerWithHue(
+        BitmapDescriptor.hueGreen,
+      );
+    }
+
+    return BitmapDescriptor.fromBytes(
+      byteData.buffer.asUint8List(),
+    );
+  }
+
+  // ============================================================
+  // GET GOOGLE ROAD ROUTE
+  // ============================================================
+
+  Future<List<LatLng>> _getRoutePoints(
+    LatLng pickup,
+    LatLng destination,
+  ) async {
+    try {
+      final response = await http.post(
+        Uri.parse(
+          'https://routes.googleapis.com/directions/v2:computeRoutes',
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': _googlePlacesApiKey,
+          'X-Goog-FieldMask': 'routes.polyline.geoJsonLinestring',
+        },
+        body: jsonEncode({
+          'origin': {
+            'location': {
+              'latLng': {
+                'latitude': pickup.latitude,
+                'longitude': pickup.longitude,
+              },
+            },
+          },
+          'destination': {
+            'location': {
+              'latLng': {
+                'latitude': destination.latitude,
+                'longitude': destination.longitude,
+              },
+            },
+          },
+          'travelMode': 'DRIVE',
+          'routingPreference': 'TRAFFIC_AWARE',
+          'computeAlternativeRoutes': false,
+          'polylineQuality': 'HIGH_QUALITY',
+          'polylineEncoding': 'GEO_JSON_LINESTRING',
+        }),
+      );
+
+      debugPrint(
+        'SEARCHING ROUTES STATUS: ${response.statusCode}',
+      );
+
+      if (response.statusCode != 200) {
+        debugPrint(
+          'SEARCHING ROUTES ERROR: ${response.body}',
+        );
+
+        return [];
+      }
+
+      final Map<String, dynamic> data = jsonDecode(response.body);
+
+      final List routes = data['routes'] ?? [];
+
+      if (routes.isEmpty) {
+        debugPrint(
+          'SEARCHING SCREEN: NO ROUTE FOUND',
+        );
+
+        return [];
+      }
+
+      final dynamic geometry = routes.first['polyline']?['geoJsonLinestring'];
+
+      if (geometry == null) {
+        debugPrint(
+          'SEARCHING SCREEN: NO GEOJSON ROUTE RETURNED',
+        );
+
+        return [];
+      }
+
+      final List coordinates = geometry['coordinates'] ?? [];
+
+      if (coordinates.length < 2) {
+        debugPrint(
+          'SEARCHING SCREEN: ROUTE HAS TOO FEW POINTS',
+        );
+
+        return [];
+      }
+
+      final List<LatLng> points = [];
+
+      for (final dynamic coordinate in coordinates) {
+        if (coordinate is! List || coordinate.length < 2) {
+          continue;
+        }
+
+        // ======================================================
+        // IMPORTANT:
+        //
+        // GeoJSON:
+        //
+        // [longitude, latitude]
+        //
+        // Google Maps:
+        //
+        // LatLng(latitude, longitude)
+        // ======================================================
+
+        final double? longitude = (coordinate[0] as num?)?.toDouble();
+
+        final double? latitude = (coordinate[1] as num?)?.toDouble();
+
+        if (latitude == null || longitude == null) {
+          continue;
+        }
+
+        points.add(
+          LatLng(
+            latitude,
+            longitude,
+          ),
+        );
+      }
+
+      if (points.length < 2) {
+        debugPrint(
+          'SEARCHING SCREEN: DECODED ROUTE TOO SHORT',
+        );
+
+        return [];
+      }
+
+      // ======================================================
+      // FORCE EXACT PICKUP + DESTINATION
+      // ======================================================
+
+      points[0] = pickup;
+
+      points[points.length - 1] = destination;
+
+      debugPrint(
+        'SEARCHING SCREEN ROUTE POINTS: '
+        '${points.length}',
+      );
+
+      debugPrint(
+        'SEARCHING SCREEN ROUTE START: '
+        '${points.first.latitude}, '
+        '${points.first.longitude}',
+      );
+
+      debugPrint(
+        'SEARCHING SCREEN ROUTE END: '
+        '${points.last.latitude}, '
+        '${points.last.longitude}',
+      );
+
+      return points;
+    } catch (e) {
+      debugPrint(
+        'SEARCHING SCREEN GET ROUTE ERROR: $e',
+      );
+
+      return [];
+    }
+  }
+
+  // ============================================================
+  // DRAW ANIMATED GREEN ROUTE
+  // ============================================================
+
+  Future<void> _drawAnimatedRoute() async {
+    final LatLng pickup = pickupLatLng;
+
+    final LatLng destination = destinationLatLng;
+
+    _routeAnimationTimer?.cancel();
+
+    if (!mounted) return;
+
+    setState(() {
+      _isLoadingRoute = true;
+      _routePoints = [];
+      _polylines = {};
+    });
+
+    final List<LatLng> points = await _getRoutePoints(
+      pickup,
+      destination,
+    );
+
+    if (!mounted) return;
+
+    if (points.length < 2) {
+      setState(() {
+        _isLoadingRoute = false;
+      });
+
+      return;
+    }
+
+    _routePoints = points;
+
+    setState(() {
+      _isLoadingRoute = false;
+    });
+
+    // ========================================================
+    // FIT MAP TO ACTUAL ROAD ROUTE
+    // ========================================================
+
+    await _fitActualRouteOnMap();
+
+    if (!mounted) return;
+
+    // ========================================================
+    // START ROUTE WITH FIRST TWO POINTS
+    // ========================================================
+
+    int visiblePoints = 2;
+
+    setState(() {
+      _polylines = {
+        Polyline(
+          polylineId: const PolylineId(
+            'ride_route',
+          ),
+          points: _routePoints.take(visiblePoints).toList(),
+          color: Colors.green,
+          width: 5,
+          geodesic: false,
+          jointType: JointType.round,
+          startCap: Cap.roundCap,
+          endCap: Cap.roundCap,
+        ),
+      };
+    });
+
+    // ========================================================
+    // ANIMATE ROUTE LINE
+    // ========================================================
+
+    _routeAnimationTimer = Timer.periodic(
+      const Duration(
+        milliseconds: 25,
+      ),
+      (timer) {
+        if (!mounted) {
+          timer.cancel();
+          return;
+        }
+
+        if (visiblePoints >= _routePoints.length) {
+          timer.cancel();
+
+          setState(() {
+            _polylines = {
+              Polyline(
+                polylineId: const PolylineId(
+                  'ride_route',
+                ),
+                points: List<LatLng>.from(
+                  _routePoints,
+                ),
+                color: Colors.green,
+                width: 5,
+                geodesic: false,
+                jointType: JointType.round,
+                startCap: Cap.roundCap,
+                endCap: Cap.roundCap,
+              ),
+            };
+          });
+
+          return;
+        }
+
+        // ====================================================
+        // CONTROL ANIMATION SPEED
+        // ====================================================
+
+        int step = (_routePoints.length / 100).ceil();
+
+        if (step < 1) {
+          step = 1;
+        }
+
+        if (step > 8) {
+          step = 8;
+        }
+
+        visiblePoints += step;
+
+        if (visiblePoints > _routePoints.length) {
+          visiblePoints = _routePoints.length;
+        }
+
+        setState(() {
+          _polylines = {
+            Polyline(
+              polylineId: const PolylineId(
+                'ride_route',
+              ),
+              points: _routePoints.take(visiblePoints).toList(),
+              color: Colors.green,
+              width: 5,
+              geodesic: false,
+              jointType: JointType.round,
+              startCap: Cap.roundCap,
+              endCap: Cap.roundCap,
+            ),
+          };
+        });
+      },
+    );
+  }
+
+  // ============================================================
+  // FIT CAMERA TO ACTUAL ROAD ROUTE
+  // ============================================================
+
+  Future<void> _fitActualRouteOnMap() async {
+    if (_mapController == null || _routePoints.isEmpty) {
+      return;
+    }
+
+    double minLat = _routePoints.first.latitude;
+
+    double maxLat = _routePoints.first.latitude;
+
+    double minLng = _routePoints.first.longitude;
+
+    double maxLng = _routePoints.first.longitude;
+
+    for (final LatLng point in _routePoints) {
+      if (point.latitude < minLat) {
+        minLat = point.latitude;
+      }
+
+      if (point.latitude > maxLat) {
+        maxLat = point.latitude;
+      }
+
+      if (point.longitude < minLng) {
+        minLng = point.longitude;
+      }
+
+      if (point.longitude > maxLng) {
+        maxLng = point.longitude;
+      }
+    }
+
+    // ========================================================
+    // PREVENT ZERO-SIZE BOUNDS
+    // ========================================================
+
+    if ((maxLat - minLat).abs() < 0.001) {
+      minLat -= 0.001;
+      maxLat += 0.001;
+    }
+
+    if ((maxLng - minLng).abs() < 0.001) {
+      minLng -= 0.001;
+      maxLng += 0.001;
+    }
+
+    try {
+      await _mapController!.animateCamera(
+        CameraUpdate.newLatLngBounds(
+          LatLngBounds(
+            southwest: LatLng(
+              minLat,
+              minLng,
+            ),
+            northeast: LatLng(
+              maxLat,
+              maxLng,
+            ),
+          ),
+          70,
+        ),
+      );
+    } catch (e) {
+      debugPrint(
+        'SEARCHING SCREEN FIT ROUTE ERROR: $e',
+      );
+    }
   }
 
   // ============================================================
@@ -32633,12 +33128,21 @@ class _SearchingScreenState extends State<SearchingScreen> {
           builder: (_) => DriverOfferScreen(
             rideId: currentRideId,
             driverName: data['driverId'],
-            price: data['price'],
+            price: (data['price'] as num).toDouble(),
             vehicleType: data['vehicleType'],
             vehicleDescription: data['vehicleType'],
             pickup: data['Pickup Location'],
             destination: data['Destination'],
             rideType: data['RideType'],
+
+            // ==========================================================
+            // PASS EXACT COORDINATES
+            // ==========================================================
+
+            pickupLat: widget.pickupLat,
+            pickupLng: widget.pickupLng,
+            destinationLat: widget.destinationLat,
+            destinationLng: widget.destinationLng,
           ),
         ),
       );
@@ -32678,7 +33182,7 @@ class _SearchingScreenState extends State<SearchingScreen> {
 
             cycleCount++;
 
-            // Keep the original two-cycle behavior.
+            // Keep original two-cycle behavior.
             if (cycleCount < 2) {
               startTimerLoop();
             } else {
@@ -32745,10 +33249,18 @@ class _SearchingScreenState extends State<SearchingScreen> {
   // CREATE PICKUP + DESTINATION MARKERS
   // ============================================================
 
-  void _setRouteMarkers() {
+  Future<void> _setRouteMarkers() async {
     final pickup = pickupLatLng;
 
     final destination = destinationLatLng;
+
+    // ==========================================================
+    // CREATE DESTINATION RADIO ICON
+    // ==========================================================
+
+    _destinationIcon ??= await _createDestinationIcon();
+
+    if (!mounted) return;
 
     final markers = <Marker>{};
 
@@ -32773,7 +33285,7 @@ class _SearchingScreenState extends State<SearchingScreen> {
     );
 
     // ==========================================================
-    // DESTINATION MARKER
+    // DESTINATION RADIO MARKER
     // ==========================================================
 
     markers.add(
@@ -32782,17 +33294,17 @@ class _SearchingScreenState extends State<SearchingScreen> {
           'destination',
         ),
         position: destination,
-        icon: BitmapDescriptor.defaultMarkerWithHue(
-          BitmapDescriptor.hueGreen,
-        ),
+        icon: _destinationIcon!,
         infoWindow: InfoWindow(
           title: 'Destination',
           snippet: widget.destination,
         ),
+        anchor: const Offset(
+          0.5,
+          0.5,
+        ),
       ),
     );
-
-    if (!mounted) return;
 
     setState(() {
       _markers = markers;
@@ -32828,8 +33340,10 @@ class _SearchingScreenState extends State<SearchingScreen> {
         ? pickup.longitude
         : destination.longitude;
 
-    // If both coordinates are identical,
-    // use a normal camera position.
+    // ==========================================================
+    // IDENTICAL COORDINATES
+    // ==========================================================
+
     if (southWestLat == northEastLat && southWestLng == northEastLng) {
       await _mapController!.animateCamera(
         CameraUpdate.newCameraPosition(
@@ -32880,25 +33394,16 @@ class _SearchingScreenState extends State<SearchingScreen> {
     _mapReady = true;
 
     // ==========================================================
-    // SHOW BOTH LOCATIONS IMMEDIATELY
+    // SHOW BOTH LOCATIONS
     // ==========================================================
 
     _setRouteMarkers();
 
     // ==========================================================
-    // FIT MAP AROUND ROUTE
+    // DRAW ACTUAL ROAD ROUTE
     // ==========================================================
 
-    Future.delayed(
-      const Duration(
-        milliseconds: 250,
-      ),
-      () {
-        if (!mounted) return;
-
-        _fitRouteOnMap();
-      },
-    );
+    _drawAnimatedRoute();
   }
 
   // ============================================================
@@ -32926,7 +33431,10 @@ class _SearchingScreenState extends State<SearchingScreen> {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          // Background ring
+          // ======================================================
+          // BACKGROUND RING
+          // ======================================================
+
           SizedBox(
             width: 28,
             height: 28,
@@ -32940,7 +33448,10 @@ class _SearchingScreenState extends State<SearchingScreen> {
             ),
           ),
 
-          // Countdown ring
+          // ======================================================
+          // COUNTDOWN RING
+          // ======================================================
+
           SizedBox(
             width: 28,
             height: 28,
@@ -32954,7 +33465,10 @@ class _SearchingScreenState extends State<SearchingScreen> {
             ),
           ),
 
-          // Time
+          // ======================================================
+          // TIME
+          // ======================================================
+
           Text(
             "$remainingSeconds",
             style: const TextStyle(
@@ -32987,7 +33501,7 @@ class _SearchingScreenState extends State<SearchingScreen> {
     _setRouteMarkers();
 
     // ==========================================================
-    // START THE VISUAL SEARCH TIMER IMMEDIATELY
+    // START VISUAL SEARCH TIMER
     // ==========================================================
 
     startTimerLoop();
@@ -33008,6 +33522,8 @@ class _SearchingScreenState extends State<SearchingScreen> {
   @override
   void dispose() {
     timer?.cancel();
+
+    _routeAnimationTimer?.cancel();
 
     _rideSubscription?.cancel();
 
@@ -33039,6 +33555,13 @@ class _SearchingScreenState extends State<SearchingScreen> {
               zoom: 14,
             ),
             markers: _markers,
+
+            // ==================================================
+            // ACTUAL GREEN ROAD ROUTE
+            // ==================================================
+
+            polylines: _polylines,
+
             myLocationEnabled: false,
             myLocationButtonEnabled: false,
             zoomControlsEnabled: false,
@@ -33339,7 +33862,14 @@ class RideStartedScreen extends StatefulWidget {
   final String driverName;
   final String vehicleType;
   final String vehicleDescription;
-  //final String driverPhone;
+
+  // Exact ride coordinates passed from DriverOfferScreen
+  final double pickupLat;
+  final double pickupLng;
+  final double destinationLat;
+  final double destinationLng;
+
+  // final String driverPhone;
 
   RideStartedScreen({
     //required this.driverPhone,
@@ -33351,63 +33881,557 @@ class RideStartedScreen extends StatefulWidget {
     required this.driverName,
     required this.vehicleType,
     required this.vehicleDescription,
+    required this.pickupLat,
+    required this.pickupLng,
+    required this.destinationLat,
+    required this.destinationLng,
   });
 
   @override
   State<RideStartedScreen> createState() => _RideStartedScreenState();
 }
 
-class _RideStartedScreenState extends State<RideStartedScreen> {
-  final LatLng _defaultCenter = const LatLng(6.5244, 3.3792); // Lagos
+class _RideStartedScreenState extends State<RideStartedScreen>
+    with SingleTickerProviderStateMixin {
+  final LatLng _defaultCenter = const LatLng(6.5244, 3.3792);
+
   final String? email =
       FirebaseAuth.instance.currentUser?.email ?? 'default@deck.com';
 
   LatLng? userLocation;
   GoogleMapController? _mapController;
 
+  Set<Marker> _markers = {};
+  Set<Polyline> _polylines = {};
+
+  List<LatLng> _routePoints = [];
+
+  Timer? _routeAnimationTimer;
+
+  bool _isLoadingRoute = true;
+
+  int _visibleRoutePoints = 0;
+
+  static const String _googleRoutesApiUrl =
+      'https://routes.googleapis.com/directions/v2:computeRoutes';
+
+  /*
+   * IMPORTANT:
+   *
+   * Replace this with the same Google Maps / Places API key
+   * already being used by your HomePage / SearchingScreen.
+   *
+   * If you already have a global constant for your Google API key,
+   * use that instead.
+   */
+  static const String _googleMapsApiKey = 'YOUR_GOOGLE_MAPS_API_KEY';
+
+  @override
+  void initState() {
+    super.initState();
+
+    _setupRideMap();
+
+    FirebaseFirestore.instance
+        .collection('ride_requests')
+        .doc(widget.rideId)
+        .update({
+      'DriverStatus': 'awaiting_pickup',
+    });
+  }
+
+  @override
+  void dispose() {
+    _routeAnimationTimer?.cancel();
+    super.dispose();
+  }
+
+  // ---------------------------------------------------------------------------
+  // MAP SETUP
+  // ---------------------------------------------------------------------------
+
+  Future<void> _setupRideMap() async {
+    _setRideMarkers();
+
+    await _getRoute();
+
+    if (mounted) {
+      setState(() {
+        _isLoadingRoute = false;
+      });
+    }
+
+    await Future.delayed(const Duration(milliseconds: 300));
+
+    if (mounted) {
+      _fitRouteOnMap();
+    }
+  }
+
+  void _setRideMarkers() {
+    final LatLng pickup = LatLng(
+      widget.pickupLat,
+      widget.pickupLng,
+    );
+
+    final LatLng destination = LatLng(
+      widget.destinationLat,
+      widget.destinationLng,
+    );
+
+    setState(() {
+      _markers = {
+        Marker(
+          markerId: const MarkerId('pickup'),
+          position: pickup,
+          infoWindow: InfoWindow(
+            title: 'Pickup',
+            snippet: widget.pickup,
+          ),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueGreen,
+          ),
+        ),
+        Marker(
+          markerId: const MarkerId('destination'),
+          position: destination,
+          infoWindow: InfoWindow(
+            title: 'Destination',
+            snippet: widget.destination,
+          ),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueRed,
+          ),
+        ),
+      };
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // GOOGLE ROUTES API
+  // ---------------------------------------------------------------------------
+
+  Future<List<LatLng>> _getRoutePoints() async {
+    try {
+      final Uri url = Uri.parse(_googleRoutesApiUrl);
+
+      final Map<String, dynamic> body = {
+        'origin': {
+          'location': {
+            'latLng': {
+              'latitude': widget.pickupLat,
+              'longitude': widget.pickupLng,
+            }
+          }
+        },
+        'destination': {
+          'location': {
+            'latLng': {
+              'latitude': widget.destinationLat,
+              'longitude': widget.destinationLng,
+            }
+          }
+        },
+        'travelMode': 'DRIVE',
+        'routingPreference': 'TRAFFIC_AWARE',
+        'polylineQuality': 'HIGH_QUALITY',
+        'polylineEncoding': 'GEO_JSON_LINESTRING',
+      };
+
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': _googleMapsApiKey,
+          'X-Goog-FieldMask': 'routes.polyline.geoJsonLinestring',
+        },
+        body: jsonEncode(body),
+      );
+
+      if (response.statusCode != 200) {
+        debugPrint(
+          'Google Routes API failed: '
+          '${response.statusCode} ${response.body}',
+        );
+
+        return _fallbackStraightRoute();
+      }
+
+      final Map<String, dynamic> responseData =
+          jsonDecode(response.body) as Map<String, dynamic>;
+
+      final List<dynamic>? routes = responseData['routes'] as List<dynamic>?;
+
+      if (routes == null || routes.isEmpty) {
+        debugPrint('Google Routes API returned no routes.');
+        return _fallbackStraightRoute();
+      }
+
+      final Map<String, dynamic> route = routes.first as Map<String, dynamic>;
+
+      final Map<String, dynamic>? polyline =
+          route['polyline'] as Map<String, dynamic>?;
+
+      if (polyline == null) {
+        debugPrint('No polyline found in Google Routes response.');
+        return _fallbackStraightRoute();
+      }
+
+      final Map<String, dynamic>? geoJson =
+          polyline['geoJsonLinestring'] as Map<String, dynamic>?;
+
+      if (geoJson == null) {
+        debugPrint('No geoJsonLinestring found in response.');
+        return _fallbackStraightRoute();
+      }
+
+      final List<dynamic>? coordinates =
+          geoJson['coordinates'] as List<dynamic>?;
+
+      if (coordinates == null || coordinates.isEmpty) {
+        debugPrint('Route coordinates are empty.');
+        return _fallbackStraightRoute();
+      }
+
+      final List<LatLng> points = [];
+
+      /*
+       * GeoJSON uses:
+       *
+       * [longitude, latitude]
+       *
+       * Google Maps Flutter LatLng uses:
+       *
+       * LatLng(latitude, longitude)
+       *
+       * So we intentionally reverse them here.
+       */
+      for (final dynamic coordinate in coordinates) {
+        if (coordinate is List && coordinate.length >= 2) {
+          final double longitude = (coordinate[0] as num).toDouble();
+
+          final double latitude = (coordinate[1] as num).toDouble();
+
+          points.add(
+            LatLng(
+              latitude,
+              longitude,
+            ),
+          );
+        }
+      }
+
+      if (points.length < 2) {
+        return _fallbackStraightRoute();
+      }
+
+      // Guarantee that the route starts and ends on the exact
+      // coordinates supplied to this screen.
+      points.insert(
+        0,
+        LatLng(
+          widget.pickupLat,
+          widget.pickupLng,
+        ),
+      );
+
+      points.add(
+        LatLng(
+          widget.destinationLat,
+          widget.destinationLng,
+        ),
+      );
+
+      return points;
+    } catch (e) {
+      debugPrint('Error getting ride route: $e');
+      return _fallbackStraightRoute();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // FALLBACK ROUTE
+  // ---------------------------------------------------------------------------
+
+  List<LatLng> _fallbackStraightRoute() {
+    final LatLng start = LatLng(
+      widget.pickupLat,
+      widget.pickupLng,
+    );
+
+    final LatLng end = LatLng(
+      widget.destinationLat,
+      widget.destinationLng,
+    );
+
+    /*
+     * This is only a fallback if the Routes API is unavailable.
+     * It does NOT represent the actual road route.
+     */
+    const int numberOfPoints = 40;
+
+    final List<LatLng> points = [];
+
+    for (int i = 0; i <= numberOfPoints; i++) {
+      final double t = i / numberOfPoints;
+
+      final double latitude =
+          start.latitude + ((end.latitude - start.latitude) * t);
+
+      final double longitude =
+          start.longitude + ((end.longitude - start.longitude) * t);
+
+      points.add(
+        LatLng(
+          latitude,
+          longitude,
+        ),
+      );
+    }
+
+    return points;
+  }
+
+  Future<void> _getRoute() async {
+    final List<LatLng> points = await _getRoutePoints();
+
+    if (!mounted) return;
+
+    setState(() {
+      _routePoints = points;
+    });
+
+    if (points.isNotEmpty) {
+      _animateRoute();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // ANIMATED GREEN ROUTE
+  // ---------------------------------------------------------------------------
+
+  void _animateRoute() {
+    _routeAnimationTimer?.cancel();
+
+    if (_routePoints.length < 2) {
+      return;
+    }
+
+    setState(() {
+      _visibleRoutePoints = 1;
+      _polylines = {};
+    });
+
+    _routeAnimationTimer = Timer.periodic(
+      const Duration(milliseconds: 25),
+      (timer) {
+        if (!mounted) {
+          timer.cancel();
+          return;
+        }
+
+        if (_visibleRoutePoints >= _routePoints.length) {
+          timer.cancel();
+
+          setState(() {
+            _polylines = {
+              Polyline(
+                polylineId: const PolylineId('ride_route'),
+                points: _routePoints,
+                color: Colors.green.shade700,
+                width: 6,
+                startCap: Cap.roundCap,
+                endCap: Cap.roundCap,
+                jointType: JointType.round,
+              ),
+            };
+          });
+
+          return;
+        }
+
+        setState(() {
+          _visibleRoutePoints++;
+          _polylines = {
+            Polyline(
+              polylineId: const PolylineId('ride_route'),
+              points: _routePoints.take(_visibleRoutePoints).toList(),
+              color: Colors.green.shade700,
+              width: 6,
+              startCap: Cap.roundCap,
+              endCap: Cap.roundCap,
+              jointType: JointType.round,
+            ),
+          };
+        });
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // FIT ROUTE ON MAP
+  // ---------------------------------------------------------------------------
+
+  Future<void> _fitRouteOnMap() async {
+    if (_mapController == null) return;
+
+    final List<LatLng> points = _routePoints.isNotEmpty
+        ? _routePoints
+        : [
+            LatLng(
+              widget.pickupLat,
+              widget.pickupLng,
+            ),
+            LatLng(
+              widget.destinationLat,
+              widget.destinationLng,
+            ),
+          ];
+
+    double minLat = points.first.latitude;
+    double maxLat = points.first.latitude;
+    double minLng = points.first.longitude;
+    double maxLng = points.first.longitude;
+
+    for (final LatLng point in points) {
+      minLat = math.min(minLat, point.latitude);
+      maxLat = math.max(maxLat, point.latitude);
+      minLng = math.min(minLng, point.longitude);
+      maxLng = math.max(maxLng, point.longitude);
+    }
+
+    final LatLngBounds bounds = LatLngBounds(
+      southwest: LatLng(
+        minLat,
+        minLng,
+      ),
+      northeast: LatLng(
+        maxLat,
+        maxLng,
+      ),
+    );
+
+    try {
+      await _mapController!.animateCamera(
+        CameraUpdate.newLatLngBounds(
+          bounds,
+          90,
+        ),
+      );
+    } catch (e) {
+      debugPrint('Unable to fit route on map: $e');
+
+      await _mapController!.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(
+            target: LatLng(
+              widget.pickupLat,
+              widget.pickupLng,
+            ),
+            zoom: 14,
+          ),
+        ),
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // PAYSTACK
+  // ---------------------------------------------------------------------------
+
   Future<void> _initiatePaystackPayment(BuildContext context) async {
     const String paystackSecretKey =
         'sk_test_661490bf9dc0914e122c2c043ab3aaf3a307d658';
+
     final String email =
         FirebaseAuth.instance.currentUser?.email ?? "user@deck.com";
+
     final int amount = (widget.price * 100).toInt();
+
     final String reference = "deck_${DateTime.now().millisecondsSinceEpoch}";
 
-    final Uri url = Uri.parse('https://api.paystack.co/transaction/initialize');
-    final response = await http.post(
-      url,
-      headers: {
-        'Authorization': 'Bearer $paystackSecretKey',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode(
-          {'email': email, 'amount': amount, 'reference': reference}),
+    final Uri url = Uri.parse(
+      'https://api.paystack.co/transaction/initialize',
     );
 
-    if (response.statusCode == 200) {
-      final responseData = jsonDecode(response.body);
-      final String checkoutUrl = responseData['data']['authorization_url'];
+    try {
+      final response = await http.post(
+        url,
+        headers: {
+          'Authorization': 'Bearer $paystackSecretKey',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'email': email,
+          'amount': amount,
+          'reference': reference,
+        }),
+      );
 
-      if (await canLaunchUrl(Uri.parse(checkoutUrl))) {
-        await launchUrl(Uri.parse(checkoutUrl),
-            mode: LaunchMode.externalApplication);
+      if (response.statusCode == 200) {
+        final responseData = jsonDecode(response.body);
 
-        // After payment redirect, give user time to return to app then update status
-        Future.delayed(const Duration(seconds: 8), () {
-          FirebaseFirestore.instance
-              .collection('ride_requests')
-              .doc(widget.rideId)
-              .update({'status': 'completed'}).then((_) {
-            _showRideCompletedDialog(context);
-          });
-        });
+        final String checkoutUrl = responseData['data']['authorization_url'];
+
+        if (await canLaunchUrl(
+          Uri.parse(checkoutUrl),
+        )) {
+          await launchUrl(
+            Uri.parse(checkoutUrl),
+            mode: LaunchMode.externalApplication,
+          );
+
+          // After payment redirect, give user time
+          // to return to app then update status.
+          Future.delayed(
+            const Duration(seconds: 8),
+            () {
+              FirebaseFirestore.instance
+                  .collection('ride_requests')
+                  .doc(widget.rideId)
+                  .update({
+                'status': 'completed',
+              }).then((_) {
+                if (mounted) {
+                  _showRideCompletedDialog(context);
+                }
+              });
+            },
+          );
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Could not open payment page',
+                ),
+              ),
+            );
+          }
+        }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not open payment page')));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Payment initiation failed',
+              ),
+            ),
+          );
+        }
       }
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Payment initiation failed')));
+    } catch (e) {
+      debugPrint('Paystack error: $e');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Payment error: $e',
+            ),
+          ),
+        );
+      }
     }
   }
 
@@ -33415,79 +34439,175 @@ class _RideStartedScreenState extends State<RideStartedScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("Ride Completed 🎉"),
-        content: const Text("Thank you for riding with Deck Mobility!"),
+        title: const Text(
+          "Ride Completed 🎉",
+        ),
+        content: const Text(
+          "Thank you for riding with Deck Mobility!",
+        ),
         actions: [
           TextButton(
             onPressed: () {
               Navigator.of(context).pop();
-              Navigator.of(context).pop(); // Exit Ride Page
+              Navigator.of(context).pop();
             },
-            child: const Text("Close"),
+            child: const Text(
+              "Close",
+            ),
           ),
         ],
       ),
     );
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _getUserLocation();
-    FirebaseFirestore.instance
-        .collection('ride_requests')
-        .doc(widget.rideId)
-        .update({'DriverStatus': 'awaiting_pickup'});
-  }
+  // ---------------------------------------------------------------------------
+  // USER LOCATION
+  // ---------------------------------------------------------------------------
 
   Future<void> _getUserLocation() async {
-    Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high);
-    setState(() {
-      userLocation = LatLng(position.latitude, position.longitude);
-    });
+    try {
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        userLocation = LatLng(
+          position.latitude,
+          position.longitude,
+        );
+      });
+    } catch (e) {
+      debugPrint(
+        'Could not get current user location: $e',
+      );
+    }
   }
+
+  // ---------------------------------------------------------------------------
+  // BUILD
+  // ---------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(
         children: [
+          // -------------------------------------------------------------------
           // MAP BACKGROUND
+          // -------------------------------------------------------------------
+
           GoogleMap(
             onMapCreated: (controller) {
               _mapController = controller;
+
+              if (_routePoints.isNotEmpty) {
+                Future.delayed(
+                  const Duration(milliseconds: 300),
+                  () {
+                    if (mounted) {
+                      _fitRouteOnMap();
+                    }
+                  },
+                );
+              }
             },
             initialCameraPosition: CameraPosition(
-              target: userLocation ?? _defaultCenter,
-              zoom: 15,
+              target: LatLng(
+                widget.pickupLat,
+                widget.pickupLng,
+              ),
+              zoom: 14,
             ),
+            markers: _markers,
+            polylines: _polylines,
             myLocationEnabled: true,
             myLocationButtonEnabled: true,
+            zoomControlsEnabled: false,
+            mapToolbarEnabled: false,
+            compassEnabled: false,
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).size.height * 0.48,
+              top: 70,
+            ),
           ),
 
+          // -------------------------------------------------------------------
+          // ROUTE LOADING INDICATOR
+          // -------------------------------------------------------------------
+
+          if (_isLoadingRoute)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 15,
+              left: 16,
+              right: 16,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black12,
+                      blurRadius: 8,
+                    ),
+                  ],
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                      ),
+                    ),
+                    SizedBox(width: 10),
+                    Text(
+                      'Loading route...',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // -------------------------------------------------------------------
           // APP BAR OVERLAY
+          // -------------------------------------------------------------------
+
           Positioned(
             top: MediaQuery.of(context).padding.top + 10,
             left: 16,
             right: 16,
-            child: const Row(
+            child: Row(
               children: [
-                SizedBox(width: 12),
-                Center(
+                const SizedBox(width: 12),
+                const Center(
                   child: Text(
                     "",
                     style: TextStyle(
-                        color: Colors.black,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold),
+                      color: Colors.black,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
 
+          // -------------------------------------------------------------------
           // DETAILS AT THE BOTTOM
+          // -------------------------------------------------------------------
+
           Positioned(
             left: 0,
             right: 0,
@@ -33496,7 +34616,9 @@ class _RideStartedScreenState extends State<RideStartedScreen> {
               padding: const EdgeInsets.all(20),
               decoration: const BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                borderRadius: BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black12,
@@ -33509,11 +34631,19 @@ class _RideStartedScreenState extends State<RideStartedScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // -------------------------------------------------------------
+                  // PICKUP / DESTINATION
+                  // -------------------------------------------------------------
+
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Pickup Location',
-                          style: TextStyle(color: Colors.grey[400])),
+                      Text(
+                        'Pickup Location',
+                        style: TextStyle(
+                          color: Colors.grey[400],
+                        ),
+                      ),
                       Container(
                         height: 50,
                         width: double.infinity,
@@ -33525,56 +34655,73 @@ class _RideStartedScreenState extends State<RideStartedScreen> {
                           padding: const EdgeInsets.all(8.0),
                           child: Row(
                             children: [
-                              const Icon(Icons.radio_button_checked,
-                                  color: Colors.green, size: 20),
+                              const Icon(
+                                Icons.radio_button_checked,
+                                color: Colors.green,
+                                size: 20,
+                              ),
                               const SizedBox(width: 8),
                               Expanded(
-                                child: Text(widget.pickup,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
-                                    ),
-                                    overflow: TextOverflow.ellipsis),
+                                child: Text(
+                                  widget.pickup,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
                             ],
                           ),
                         ),
                       ),
                       const SizedBox(height: 5),
-                      Text('Destination',
-                          style: TextStyle(
-                            color: Colors.grey[400],
-                          )),
+                      Text(
+                        'Destination',
+                        style: TextStyle(
+                          color: Colors.grey[400],
+                        ),
+                      ),
                       Container(
-                          height: 50,
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            color: Colors.grey[100],
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.location_on,
-                                    color: Colors.red, size: 20),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(widget.destination,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16,
-                                      ),
-                                      overflow: TextOverflow.ellipsis),
+                        height: 50,
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.location_on,
+                                color: Colors.red,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  widget.destination,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                              ],
-                            ),
-                          )),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ],
                   ),
+
                   const SizedBox(height: 10),
 
-                  // Driver Details
+                  // -------------------------------------------------------------
+                  // DRIVER DETAILS
+                  // -------------------------------------------------------------
+
                   const Center(
                     child: Text(
                       "Driver Details",
@@ -33583,15 +34730,18 @@ class _RideStartedScreenState extends State<RideStartedScreen> {
                       ),
                     ),
                   ),
+
                   const SizedBox(height: 2),
 
-                  // Driver Info
                   Card(
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(15)),
+                      borderRadius: BorderRadius.circular(15),
+                    ),
                     elevation: 3,
                     color: Colors.grey[100],
-                    margin: const EdgeInsets.symmetric(vertical: 8),
+                    margin: const EdgeInsets.symmetric(
+                      vertical: 8,
+                    ),
                     child: Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: Column(
@@ -33601,14 +34751,19 @@ class _RideStartedScreenState extends State<RideStartedScreen> {
                             children: [
                               CircleAvatar(
                                 backgroundColor: Colors.grey.shade300,
-                                child: const Icon(Icons.person,
-                                    color: Colors.black),
+                                child: const Icon(
+                                  Icons.person,
+                                  color: Colors.black,
+                                ),
                               ),
                               const SizedBox(width: 10),
-                              Text(
-                                widget.driverName,
-                                style: const TextStyle(
-                                  fontSize: 15,
+                              Expanded(
+                                child: Text(
+                                  widget.driverName,
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ],
@@ -33618,13 +34773,20 @@ class _RideStartedScreenState extends State<RideStartedScreen> {
                             children: [
                               CircleAvatar(
                                 backgroundColor: Colors.grey.shade300,
-                                child: const Icon(Icons.directions_car,
-                                    color: Colors.black),
+                                child: const Icon(
+                                  Icons.directions_car,
+                                  color: Colors.black,
+                                ),
                               ),
                               const SizedBox(width: 10),
-                              Text(
-                                widget.vehicleType,
-                                style: const TextStyle(fontSize: 14),
+                              Expanded(
+                                child: Text(
+                                  widget.vehicleType,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
                             ],
                           ),
@@ -33632,16 +34794,25 @@ class _RideStartedScreenState extends State<RideStartedScreen> {
                           const Center(
                             child: Row(
                               children: [
-                                Text('Status',
-                                    style: TextStyle(
-                                      color: Colors.black,
-                                    )),
+                                Text(
+                                  'Status',
+                                  style: TextStyle(
+                                    color: Colors.black,
+                                  ),
+                                ),
                                 Spacer(),
-                                Icon(Icons.verified,
-                                    color: Colors.green, size: 18),
+                                Icon(
+                                  Icons.verified,
+                                  color: Colors.green,
+                                  size: 18,
+                                ),
                                 SizedBox(width: 6),
-                                Text("Verified",
-                                    style: TextStyle(color: Colors.green)),
+                                Text(
+                                  "Verified",
+                                  style: TextStyle(
+                                    color: Colors.green,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -33649,10 +34820,13 @@ class _RideStartedScreenState extends State<RideStartedScreen> {
                       ),
                     ),
                   ),
+
                   const SizedBox(height: 5),
 
-                  // Driver Status
-                  // Driver Status
+                  // -------------------------------------------------------------
+                  // DRIVER STATUS
+                  // -------------------------------------------------------------
+
                   StreamBuilder<DocumentSnapshot>(
                     stream: FirebaseFirestore.instance
                         .collection('ride_requests')
@@ -33660,18 +34834,58 @@ class _RideStartedScreenState extends State<RideStartedScreen> {
                         .snapshots(),
                     builder: (context, snapshot) {
                       if (!snapshot.hasData) {
-                        return const Center(child: CircularProgressIndicator());
+                        return Container(
+                          height: 30,
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[500],
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Center(
+                            child: Text(
+                              'Awaiting Pickup',
+                              style: TextStyle(
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        );
                       }
 
-                      final data =
-                          snapshot.data!.data() as Map<String, dynamic>;
-                      final status = data['DriverStatus'];
+                      final rawData = snapshot.data!.data();
+
+                      if (rawData == null || rawData is! Map<String, dynamic>) {
+                        return Container(
+                          height: 30,
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[500],
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Center(
+                            child: Text(
+                              'Awaiting Pickup',
+                              style: TextStyle(
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+
+                      final Map<String, dynamic> data = rawData;
+
+                      final dynamic status = data['DriverStatus'];
 
                       String statusText = "Awaiting Pickup";
-                      if (status == 'en_route')
+
+                      if (status == 'en_route') {
                         statusText = "Driver On His Way";
-                      if (status == 'arrived')
+                      }
+
+                      if (status == 'arrived') {
                         statusText = "Your Driver Arrived";
+                      }
 
                       return Container(
                         height: 30,
@@ -33683,7 +34897,9 @@ class _RideStartedScreenState extends State<RideStartedScreen> {
                         child: Center(
                           child: Text(
                             statusText,
-                            style: const TextStyle(color: Colors.white),
+                            style: const TextStyle(
+                              color: Colors.white,
+                            ),
                           ),
                         ),
                       );
@@ -33692,18 +34908,28 @@ class _RideStartedScreenState extends State<RideStartedScreen> {
 
                   const SizedBox(height: 10),
 
-                  // Pay Button
+                  // -------------------------------------------------------------
+                  // PAY BUTTON
+                  // -------------------------------------------------------------
+
                   ElevatedButton(
-                    onPressed: () => _initiatePaystackPayment(context),
+                    onPressed: () => _initiatePaystackPayment(
+                      context,
+                    ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.black,
                       foregroundColor: Colors.white,
-                      minimumSize: const Size(double.infinity, 50),
+                      minimumSize: const Size(
+                        double.infinity,
+                        50,
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(25),
                       ),
                     ),
-                    child: Text("Pay ₦${widget.price.toStringAsFixed(2)}"),
+                    child: Text(
+                      "Pay ₦${widget.price.toStringAsFixed(2)}",
+                    ),
                   ),
                 ],
               ),
@@ -33715,26 +34941,39 @@ class _RideStartedScreenState extends State<RideStartedScreen> {
   }
 }
 
-// WebView widget to load Paystack payment page
+// ============================================================================
+// PAYSTACK WEBVIEW
+// ============================================================================
+
 class PaystackWebView extends StatelessWidget {
   final String checkoutUrl;
 
-  PaystackWebView({required this.checkoutUrl});
+  PaystackWebView({
+    required this.checkoutUrl,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Complete Payment")),
+      appBar: AppBar(
+        title: const Text(
+          "Complete Payment",
+        ),
+      ),
       body: WebViewWidget(
         controller: WebViewController()
-          ..loadRequest(Uri.parse(checkoutUrl))
-          ..setJavaScriptMode(JavaScriptMode.unrestricted),
+          ..loadRequest(
+            Uri.parse(checkoutUrl),
+          )
+          ..setJavaScriptMode(
+            JavaScriptMode.unrestricted,
+          ),
       ),
     );
   }
 }
 
-class DriverOfferScreen extends StatelessWidget {
+class DriverOfferScreen extends StatefulWidget {
   final String rideId;
   final String driverName;
   final double price;
@@ -33743,6 +34982,15 @@ class DriverOfferScreen extends StatelessWidget {
   final String pickup;
   final String destination;
   final String rideType;
+
+  // ============================================================
+  // EXACT RIDE COORDINATES
+  // ============================================================
+
+  final double pickupLat;
+  final double pickupLng;
+  final double destinationLat;
+  final double destinationLng;
 
   const DriverOfferScreen({
     Key? key,
@@ -33754,36 +35002,672 @@ class DriverOfferScreen extends StatelessWidget {
     required this.pickup,
     required this.destination,
     required this.rideType,
+    required this.pickupLat,
+    required this.pickupLng,
+    required this.destinationLat,
+    required this.destinationLng,
   }) : super(key: key);
 
   @override
-  Widget build(BuildContext context) {
+  State<DriverOfferScreen> createState() => _DriverOfferScreenState();
+}
+
+class _DriverOfferScreenState extends State<DriverOfferScreen> {
+  // ============================================================
+  // FIRESTORE LISTENER
+  // ============================================================
+
+  StreamSubscription<DocumentSnapshot>? _rideSubscription;
+
+  // ============================================================
+  // NEGOTIATION STATE
+  // ============================================================
+
+  bool _isSubmitting = false;
+
+  bool _waitingForDriver = false;
+
+  double? _currentOfferPrice;
+
+  String _waitingMessage = 'Waiting for driver response...';
+
+  // ============================================================
+  // COUNTER PRICE CONTROLLER
+  // ============================================================
+
+  final TextEditingController _counterPriceController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+
+    _currentOfferPrice = widget.price;
+
+    // ==========================================================
+    // LISTEN FOR DRIVER RESPONSE
+    // ==========================================================
+
+    _listenForDriverResponse();
+  }
+
+  // ============================================================
+  // LISTEN TO RIDE REQUEST
+  // ============================================================
+
+  void _listenForDriverResponse() {
+    _rideSubscription = FirebaseFirestore.instance
+        .collection('ride_requests')
+        .doc(widget.rideId)
+        .snapshots()
+        .listen(
+          _handleRideUpdate,
+        );
+  }
+
+  // ============================================================
+  // HANDLE DRIVER RESPONSE
+  // ============================================================
+
+  void _handleRideUpdate(
+    DocumentSnapshot snapshot,
+  ) {
+    if (!mounted) return;
+
+    final data = snapshot.data() as Map<String, dynamic>?;
+
+    if (data == null) return;
+
+    final String status = data['Status']?.toString() ?? '';
+
+    // ==========================================================
+    // DRIVER COUNTERED USER'S COUNTER OFFER
+    // ==========================================================
+
+    if (status == 'driver_countered') {
+      final dynamic driverPrice = data['price'];
+
+      double? parsedPrice;
+
+      if (driverPrice is num) {
+        parsedPrice = driverPrice.toDouble();
+      } else {
+        parsedPrice = double.tryParse(
+          driverPrice?.toString() ?? '',
+        );
+      }
+
+      setState(() {
+        _waitingForDriver = false;
+        _isSubmitting = false;
+
+        if (parsedPrice != null) {
+          _currentOfferPrice = parsedPrice;
+        }
+
+        _waitingMessage = 'Driver sent a new offer.';
+      });
+
+      return;
+    }
+
+    // ==========================================================
+    // DRIVER ACCEPTED USER'S COUNTER OFFER
+    // ==========================================================
+
+    if (status == 'counter_accepted') {
+      final dynamic finalPrice =
+          data['price'] ?? data['finalPrice'] ?? data['driverPrice'];
+
+      double ridePrice = _currentOfferPrice ?? widget.price;
+
+      if (finalPrice is num) {
+        ridePrice = finalPrice.toDouble();
+      } else {
+        final double? parsed = double.tryParse(
+          finalPrice?.toString() ?? '',
+        );
+
+        if (parsed != null) {
+          ridePrice = parsed;
+        }
+      }
+
+      _navigateToRideStarted(
+        ridePrice,
+      );
+
+      return;
+    }
+
+    // ==========================================================
+    // DRIVER CONFIRMED USER ACCEPTANCE
+    // ==========================================================
+
+    if (status == 'ride_confirmed' || status == 'driver_confirmed') {
+      final dynamic finalPrice = data['price'];
+
+      double ridePrice = _currentOfferPrice ?? widget.price;
+
+      if (finalPrice is num) {
+        ridePrice = finalPrice.toDouble();
+      } else {
+        final double? parsed = double.tryParse(
+          finalPrice?.toString() ?? '',
+        );
+
+        if (parsed != null) {
+          ridePrice = parsed;
+        }
+      }
+
+      _navigateToRideStarted(
+        ridePrice,
+      );
+
+      return;
+    }
+
+    // ==========================================================
+    // RIDE ACCEPTED
+    // ==========================================================
+
+    if (status == 'ride_accepted') {
+      final dynamic finalPrice = data['price'];
+
+      double ridePrice = _currentOfferPrice ?? widget.price;
+
+      if (finalPrice is num) {
+        ridePrice = finalPrice.toDouble();
+      } else {
+        final double? parsed = double.tryParse(
+          finalPrice?.toString() ?? '',
+        );
+
+        if (parsed != null) {
+          ridePrice = parsed;
+        }
+      }
+
+      _navigateToRideStarted(
+        ridePrice,
+      );
+
+      return;
+    }
+
+    // ==========================================================
+    // RIDE CANCELLED
+    // ==========================================================
+
+    if (status == 'cancelled') {
+      setState(() {
+        _waitingForDriver = false;
+        _isSubmitting = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'The ride offer has been cancelled.',
+          ),
+        ),
+      );
+
+      Navigator.pop(context);
+    }
+  }
+
+  // ============================================================
+  // NAVIGATE TO RIDE STARTED
+  // ============================================================
+
+  void _navigateToRideStarted(
+    double finalPrice,
+  ) {
+    if (!mounted) return;
+
+    _rideSubscription?.cancel();
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RideStartedScreen(
+          rideId: widget.rideId,
+
+          pickup: widget.pickup,
+
+          destination: widget.destination,
+
+          rideType: widget.rideType,
+
+          price: finalPrice,
+
+          driverName: widget.driverName,
+
+          vehicleType: widget.vehicleType,
+
+          vehicleDescription: widget.vehicleDescription,
+
+          // ==================================================
+          // PASS EXACT COORDINATES TO RIDE STARTED
+          // ==================================================
+
+          pickupLat: widget.pickupLat,
+
+          pickupLng: widget.pickupLng,
+
+          destinationLat: widget.destinationLat,
+
+          destinationLng: widget.destinationLng,
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // ACCEPT DRIVER'S OFFER
+  // ============================================================
+
+  Future<void> _acceptOffer() async {
+    if (_isSubmitting || _waitingForDriver) {
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+      _waitingForDriver = true;
+      _waitingMessage = 'Waiting for driver to confirm...';
+    });
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('ride_requests')
+          .doc(widget.rideId)
+          .update({
+        // ======================================================
+        // USER HAS ACCEPTED THE DRIVER'S PRICE
+        // ======================================================
+
+        'Status': 'user_accepted_offer',
+
+        'userAcceptedPrice': _currentOfferPrice ?? widget.price,
+
+        'userAcceptedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      debugPrint(
+        'Error accepting driver offer: $e',
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _isSubmitting = false;
+        _waitingForDriver = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Unable to send acceptance. Please try again.',
+          ),
+        ),
+      );
+    }
+  }
+
+  // ============================================================
+  // OPEN COUNTER OFFER SHEET
+  // ============================================================
+
+  void _showCounterOfferSheet() {
+    if (_isSubmitting || _waitingForDriver) {
+      return;
+    }
+
+    _counterPriceController.text =
+        (_currentOfferPrice ?? widget.price).toStringAsFixed(0);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(
+              sheetContext,
+            ).viewInsets.bottom,
+          ),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(
+              20,
+              12,
+              20,
+              25,
+            ),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(
+                  28,
+                ),
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ==================================================
+                // HANDLE
+                // ==================================================
+
+                Center(
+                  child: Container(
+                    width: 45,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(
+                        20,
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(
+                  height: 22,
+                ),
+
+                const Text(
+                  'Counter Offer',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
+                ),
+
+                const SizedBox(
+                  height: 6,
+                ),
+
+                Text(
+                  'Enter the price you would like to offer the driver.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+
+                const SizedBox(
+                  height: 20,
+                ),
+
+                // ==================================================
+                // PRICE FIELD
+                // ==================================================
+
+                TextField(
+                  controller: _counterPriceController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    prefixText: '₦ ',
+                    hintText: 'Enter your price',
+                    filled: true,
+                    fillColor: Colors.grey.shade100,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(
+                        14,
+                      ),
+                      borderSide: BorderSide.none,
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(
+                        14,
+                      ),
+                      borderSide: const BorderSide(
+                        color: Colors.black,
+                        width: 1.5,
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(
+                  height: 20,
+                ),
+
+                // ==================================================
+                // SEND COUNTER OFFER
+                // ==================================================
+
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      final String value = _counterPriceController.text.trim();
+
+                      final double? counterPrice = double.tryParse(
+                        value,
+                      );
+
+                      if (counterPrice == null || counterPrice <= 0) {
+                        ScaffoldMessenger.of(
+                          sheetContext,
+                        ).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Enter a valid price.',
+                            ),
+                          ),
+                        );
+
+                        return;
+                      }
+
+                      Navigator.pop(
+                        sheetContext,
+                      );
+
+                      await _submitCounterOffer(
+                        counterPrice,
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.black,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(
+                          28,
+                        ),
+                      ),
+                    ),
+                    child: const Text(
+                      'Send Counter Offer',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ============================================================
+  // SUBMIT COUNTER OFFER
+  // ============================================================
+
+  Future<void> _submitCounterOffer(
+    double counterPrice,
+  ) async {
+    if (_isSubmitting || _waitingForDriver) {
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+      _waitingForDriver = true;
+      _currentOfferPrice = counterPrice;
+      _waitingMessage =
+          'Waiting for driver to respond to your counter offer...';
+    });
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('ride_requests')
+          .doc(widget.rideId)
+          .update({
+        // ======================================================
+        // USER COUNTER OFFER
+        // ======================================================
+
+        'Status': 'counter_offer',
+
+        'userCounterPrice': counterPrice,
+
+        'userCounterAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      debugPrint(
+        'Error sending counter offer: $e',
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _isSubmitting = false;
+        _waitingForDriver = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Unable to send counter offer. Please try again.',
+          ),
+        ),
+      );
+    }
+  }
+
+  // ============================================================
+  // BUILD WAITING PANEL
+  // ============================================================
+
+  Widget _buildWaitingPanel() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: 16,
+        vertical: 14,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(
+          16,
+        ),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 25,
+            height: 25,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.5,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                Colors.green.shade700,
+              ),
+            ),
+          ),
+          const SizedBox(
+            width: 12,
+          ),
+          Expanded(
+            child: Text(
+              _waitingMessage,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Colors.black,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // DISPOSE
+  // ============================================================
+
+  @override
+  void dispose() {
+    _rideSubscription?.cancel();
+
+    _counterPriceController.dispose();
+
+    super.dispose();
+  }
+
+  // ============================================================
+  // BUILD
+  // ============================================================
+
+  @override
+  Widget build(
+    BuildContext context,
+  ) {
+    final double displayedPrice = _currentOfferPrice ?? widget.price;
+
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
       appBar: AppBar(
         backgroundColor: Colors.grey.shade100,
         elevation: 0,
         leading: Padding(
-          padding: const EdgeInsets.only(left: 10),
+          padding: const EdgeInsets.only(
+            left: 10,
+          ),
           child: GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(.06),
-                    blurRadius: 8,
-                  ),
-                ],
-              ),
-              child: const Icon(
-                Icons.arrow_back_ios_new,
-                size: 16,
-                color: Colors.black,
+            onTap: _waitingForDriver
+                ? null
+                : () => Navigator.pop(
+                      context,
+                    ),
+            child: Opacity(
+              opacity: _waitingForDriver ? .35 : 1,
+              child: Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(
+                        .06,
+                      ),
+                      blurRadius: 8,
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.arrow_back_ios_new,
+                  size: 16,
+                  color: Colors.black,
+                ),
               ),
             ),
           ),
@@ -33818,7 +35702,9 @@ class DriverOfferScreen extends StatelessWidget {
                       color: Colors.black,
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(
+                    width: 10,
+                  ),
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
@@ -33826,7 +35712,9 @@ class DriverOfferScreen extends StatelessWidget {
                     ),
                     decoration: BoxDecoration(
                       color: Colors.black,
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(
+                        20,
+                      ),
                     ),
                     child: const Text(
                       "1",
@@ -33840,7 +35728,9 @@ class DriverOfferScreen extends StatelessWidget {
                 ],
               ),
 
-              const SizedBox(height: 18),
+              const SizedBox(
+                height: 18,
+              ),
 
               // =====================================================
               // DRIVER OFFER CARD
@@ -33849,14 +35739,20 @@ class DriverOfferScreen extends StatelessWidget {
               Center(
                 child: Container(
                   width: 350,
-                  height: 200,
-                  padding: const EdgeInsets.all(14),
+                  height: _waitingForDriver ? 250 : 200,
+                  padding: const EdgeInsets.all(
+                    14,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(22),
+                    borderRadius: BorderRadius.circular(
+                      22,
+                    ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(.07),
+                        color: Colors.black.withOpacity(
+                          .07,
+                        ),
                         blurRadius: 18,
                         offset: const Offset(
                           0,
@@ -33884,7 +35780,9 @@ class DriverOfferScreen extends StatelessWidget {
                               height: 82,
                               decoration: BoxDecoration(
                                 color: Colors.grey.shade100,
-                                borderRadius: BorderRadius.circular(18),
+                                borderRadius: BorderRadius.circular(
+                                  18,
+                                ),
                               ),
                               clipBehavior: Clip.antiAlias,
                               child: Image.asset(
@@ -33907,7 +35805,9 @@ class DriverOfferScreen extends StatelessWidget {
                               ),
                             ),
 
-                            const SizedBox(width: 14),
+                            const SizedBox(
+                              width: 14,
+                            ),
 
                             // =============================================
                             // DRIVER DETAILS
@@ -33919,7 +35819,7 @@ class DriverOfferScreen extends StatelessWidget {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    driverName,
+                                    widget.driverName,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
@@ -33928,9 +35828,11 @@ class DriverOfferScreen extends StatelessWidget {
                                       color: Colors.black,
                                     ),
                                   ),
-                                  const SizedBox(height: 5),
+                                  const SizedBox(
+                                    height: 5,
+                                  ),
                                   Text(
-                                    vehicleType,
+                                    widget.vehicleType,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
@@ -33939,9 +35841,11 @@ class DriverOfferScreen extends StatelessWidget {
                                       color: Colors.grey.shade700,
                                     ),
                                   ),
-                                  const SizedBox(height: 3),
+                                  const SizedBox(
+                                    height: 3,
+                                  ),
                                   Text(
-                                    vehicleDescription,
+                                    widget.vehicleDescription,
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
@@ -33953,7 +35857,9 @@ class DriverOfferScreen extends StatelessWidget {
                               ),
                             ),
 
-                            const SizedBox(width: 8),
+                            const SizedBox(
+                              width: 8,
+                            ),
 
                             // =============================================
                             // OFFER PRICE
@@ -33971,9 +35877,11 @@ class DriverOfferScreen extends StatelessWidget {
                                     fontWeight: FontWeight.w500,
                                   ),
                                 ),
-                                const SizedBox(height: 3),
+                                const SizedBox(
+                                  height: 3,
+                                ),
                                 Text(
-                                  "₦${price.toStringAsFixed(0)}",
+                                  "₦${displayedPrice.toStringAsFixed(0)}",
                                   style: const TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,
@@ -33986,53 +35894,110 @@ class DriverOfferScreen extends StatelessWidget {
                         ),
                       ),
 
-                      const SizedBox(height: 10),
+                      const SizedBox(
+                        height: 10,
+                      ),
 
                       // =================================================
-                      // ACCEPT BUTTON
+                      // WAITING FOR DRIVER
                       // =================================================
 
-                      SizedBox(
-                        width: double.infinity,
-                        height: 48,
-                        child: ElevatedButton(
-                          onPressed: () {
-                            // Navigate to RideStartedScreen
-                            // with full ride details.
+                      if (_waitingForDriver) _buildWaitingPanel(),
 
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => RideStartedScreen(
-                                  rideId: rideId,
-                                  pickup: pickup,
-                                  destination: destination,
-                                  rideType: rideType,
-                                  price: price,
-                                  driverName: driverName,
-                                  vehicleType: vehicleType,
-                                  vehicleDescription: vehicleDescription,
+                      if (_waitingForDriver)
+                        const SizedBox(
+                          height: 10,
+                        ),
+
+                      // =================================================
+                      // COUNTER + ACCEPT BUTTONS
+                      // =================================================
+
+                      if (!_waitingForDriver)
+                        Row(
+                          children: [
+                            // =========================================
+                            // COUNTER
+                            // =========================================
+
+                            Expanded(
+                              child: SizedBox(
+                                height: 48,
+                                child: OutlinedButton(
+                                  onPressed: _isSubmitting
+                                      ? null
+                                      : _showCounterOfferSheet,
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.black,
+                                    side: const BorderSide(
+                                      color: Colors.black,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(
+                                        30,
+                                      ),
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    "Counter",
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                                 ),
                               ),
-                            );
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.black,
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(30),
                             ),
-                          ),
-                          child: const Text(
-                            "Accept Offer",
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
+
+                            const SizedBox(
+                              width: 10,
                             ),
-                          ),
+
+                            // =========================================
+                            // ACCEPT
+                            // =========================================
+
+                            Expanded(
+                              flex: 2,
+                              child: SizedBox(
+                                height: 48,
+                                child: ElevatedButton(
+                                  onPressed:
+                                      _isSubmitting ? null : _acceptOffer,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.black,
+                                    foregroundColor: Colors.white,
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(
+                                        30,
+                                      ),
+                                    ),
+                                  ),
+                                  child: _isSubmitting
+                                      ? const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            valueColor:
+                                                AlwaysStoppedAnimation<Color>(
+                                              Colors.white,
+                                            ),
+                                          ),
+                                        )
+                                      : const Text(
+                                          "Accept Offer",
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
                     ],
                   ),
                 ),
