@@ -806,9 +806,10 @@ class _HomePageState extends State<HomePage> {
   GoogleMapController? _mapController;
 
   Set<Marker> _markers = {};
-// ============================================================
-// ROUTE STATE
-// ============================================================
+
+  // ============================================================
+  // ROUTE STATE
+  // ============================================================
 
   Set<Polyline> _polylines = {};
 
@@ -817,6 +818,7 @@ class _HomePageState extends State<HomePage> {
   bool _isLoadingRoute = false;
 
   Timer? _routeAnimationTimer;
+
   String pickupAddress = '';
 
   bool _mapReady = false;
@@ -858,6 +860,7 @@ class _HomePageState extends State<HomePage> {
     // IMPORTANT:
     // The map itself does NOT wait for this.
     _loadCurrentAddress();
+
     // Listen for autocomplete text changes.
     _pickupController.addListener(_onPickupChanged);
     _destinationController.addListener(_onDestinationChanged);
@@ -873,6 +876,7 @@ class _HomePageState extends State<HomePage> {
     _destinationDebounce?.cancel();
 
     _routeAnimationTimer?.cancel();
+
     _pickupController.removeListener(_onPickupChanged);
     _destinationController.removeListener(_onDestinationChanged);
 
@@ -1389,8 +1393,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ============================================================
-// GET ROAD ROUTE FROM PICKUP TO DESTINATION
-// ============================================================
+  // GET GOOGLE ROAD ROUTE
+  // ============================================================
 
   Future<List<LatLng>> _getRoutePoints(
     LatLng pickup,
@@ -1404,8 +1408,11 @@ class _HomePageState extends State<HomePage> {
         headers: {
           "Content-Type": "application/json",
           "X-Goog-Api-Key": _googlePlacesApiKey,
-          "X-Goog-FieldMask":
-              "routes.polyline.encodedPolyline,routes.distanceMeters,routes.duration",
+
+          // We intentionally request GeoJSON instead of an
+          // encoded polyline. This prevents coordinate decoding
+          // errors and gives us [longitude, latitude] directly.
+          "X-Goog-FieldMask": "routes.polyline.geoJsonLinestring",
         },
         body: jsonEncode({
           "origin": {
@@ -1427,105 +1434,126 @@ class _HomePageState extends State<HomePage> {
           "travelMode": "DRIVE",
           "routingPreference": "TRAFFIC_AWARE",
           "computeAlternativeRoutes": false,
-          "languageCode": "en",
-          "units": "METRIC",
+          "polylineQuality": "HIGH_QUALITY",
+          "polylineEncoding": "GEO_JSON_LINESTRING",
         }),
+      );
+
+      debugPrint(
+        "ROUTES STATUS: ${response.statusCode}",
       );
 
       if (response.statusCode != 200) {
         debugPrint(
-          "Routes API error: "
-          "${response.statusCode} ${response.body}",
+          "ROUTES ERROR: ${response.body}",
         );
-
         return [];
       }
 
       final Map<String, dynamic> data = jsonDecode(response.body);
 
-      final routes = data["routes"];
+      final List routes = data["routes"] ?? [];
 
-      if (routes == null || routes.isEmpty) {
-        debugPrint("No route found.");
+      if (routes.isEmpty) {
+        debugPrint(
+          "NO ROUTE FOUND",
+        );
         return [];
       }
 
-      final String encodedPolyline =
-          routes[0]["polyline"]?["encodedPolyline"]?.toString() ?? "";
+      final dynamic geometry = routes.first["polyline"]?["geoJsonLinestring"];
 
-      if (encodedPolyline.isEmpty) {
-        debugPrint("Route polyline is empty.");
+      if (geometry == null) {
+        debugPrint(
+          "NO GEOJSON ROUTE RETURNED",
+        );
         return [];
       }
 
-      return _decodePolyline(encodedPolyline);
+      final List coordinates = geometry["coordinates"] ?? [];
+
+      if (coordinates.length < 2) {
+        debugPrint(
+          "ROUTE HAS TOO FEW POINTS",
+        );
+        return [];
+      }
+
+      final List<LatLng> points = [];
+
+      for (final dynamic coordinate in coordinates) {
+        if (coordinate is! List || coordinate.length < 2) {
+          continue;
+        }
+
+        // IMPORTANT:
+        // GeoJSON coordinates are:
+        //
+        // [longitude, latitude]
+        //
+        // GoogleMap LatLng requires:
+        //
+        // LatLng(latitude, longitude)
+        final double? longitude = (coordinate[0] as num?)?.toDouble();
+
+        final double? latitude = (coordinate[1] as num?)?.toDouble();
+
+        if (latitude == null || longitude == null) {
+          continue;
+        }
+
+        points.add(
+          LatLng(
+            latitude,
+            longitude,
+          ),
+        );
+      }
+
+      if (points.length < 2) {
+        debugPrint(
+          "DECODED ROUTE HAS TOO FEW POINTS",
+        );
+        return [];
+      }
+
+      // Replace ONLY the first and last route points.
+      //
+      // This makes the line begin exactly at our pickup
+      // and finish exactly at our destination while
+      // preserving Google's road geometry between them.
+      points[0] = pickup;
+      points[points.length - 1] = destination;
+
+      debugPrint(
+        "ROUTE POINTS: ${points.length}",
+      );
+
+      debugPrint(
+        "ROUTE START: "
+        "${points.first.latitude}, "
+        "${points.first.longitude}",
+      );
+
+      debugPrint(
+        "ROUTE END: "
+        "${points.last.latitude}, "
+        "${points.last.longitude}",
+      );
+
+      return points;
     } catch (e) {
       debugPrint(
-        "Error getting route: $e",
+        "GET ROUTE ERROR: $e",
       );
 
       return [];
     }
   }
 
-// ============================================================
-// DECODE GOOGLE ENCODED POLYLINE
-// ============================================================
-
-  List<LatLng> _decodePolyline(String encoded) {
-    final List<LatLng> points = [];
-
-    int index = 0;
-    int lat = 0;
-    int lng = 0;
-
-    while (index < encoded.length) {
-      int shift = 0;
-      int result = 0;
-
-      while (true) {
-        final int byte = encoded.codeUnitAt(index++) - 63;
-
-        result |= (byte & 0x1f) << shift;
-        shift += 5;
-
-        if (byte < 0x20) break;
-      }
-
-      final int deltaLat = (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
-
-      lat += deltaLat;
-
-      shift = 0;
-      result = 0;
-
-      while (true) {
-        final int byte = encoded.codeUnitAt(index++) - 63;
-
-        result |= (byte & 0x1f) << shift;
-        shift += 5;
-
-        if (byte < 0x20) break;
-      }
-
-      final int deltaLng = (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
-
-      lng += deltaLng;
-
-      points.add(
-        LatLng(
-          lat / 1e5,
-          lng / 1e5,
-        ),
-      );
-    }
-
-    return points;
-  }
-
-// ============================================================
-// ANIMATE ROUTE FROM PICKUP TO DESTINATION
-// ============================================================
+  // ============================================================
+  // ANIMATE ROUTE FROM PICKUP TO DESTINATION
+  // ============================================================
 
   Future<void> _drawAnimatedRoute() async {
     if (pickupLocation == null || destinationLocation == null) {
@@ -1533,12 +1561,15 @@ class _HomePageState extends State<HomePage> {
     }
 
     final LatLng pickup = pickupLocation!;
+
     final LatLng destination = destinationLocation!;
 
+    // Cancel any previous route animation.
     _routeAnimationTimer?.cancel();
 
     if (!mounted) return;
 
+    // Clear old route immediately.
     setState(() {
       _isLoadingRoute = true;
       _routePoints = [];
@@ -1552,7 +1583,7 @@ class _HomePageState extends State<HomePage> {
 
     if (!mounted) return;
 
-    if (points.isEmpty) {
+    if (points.length < 2) {
       setState(() {
         _isLoadingRoute = false;
       });
@@ -1566,25 +1597,26 @@ class _HomePageState extends State<HomePage> {
       _isLoadingRoute = false;
     });
 
-    // ----------------------------------------------------------
-    // FIT BOTH LOCATIONS ON SCREEN
-    // ----------------------------------------------------------
-
+    // Fit the complete route into the visible map.
     await _fitRouteOnMap();
 
-    // ----------------------------------------------------------
-    // ANIMATE THE LINE
-    // ----------------------------------------------------------
+    if (!mounted) return;
 
-    int visiblePoints = 1;
+    // ==========================================================
+    // START ANIMATION
+    // ==========================================================
+
+    // Start with two points so the route is immediately visible.
+    int visiblePoints = 2;
 
     setState(() {
       _polylines = {
         Polyline(
           polylineId: const PolylineId("ride_route"),
           points: _routePoints.take(visiblePoints).toList(),
-          color: Colors.black,
+          color: Colors.green,
           width: 5,
+          geodesic: false,
           jointType: JointType.round,
           startCap: Cap.roundCap,
           endCap: Cap.roundCap,
@@ -1600,17 +1632,42 @@ class _HomePageState extends State<HomePage> {
           return;
         }
 
+        // ========================================================
+        // FINISHED
+        // ========================================================
+
         if (visiblePoints >= _routePoints.length) {
           timer.cancel();
+
+          setState(() {
+            _polylines = {
+              Polyline(
+                polylineId: const PolylineId(
+                  "ride_route",
+                ),
+                points: List<LatLng>.from(
+                  _routePoints,
+                ),
+                color: Colors.green,
+                width: 5,
+                geodesic: false,
+                jointType: JointType.round,
+                startCap: Cap.roundCap,
+                endCap: Cap.roundCap,
+              ),
+            };
+          });
+
           return;
         }
 
-        // Draw several points at once so long routes
-        // animate smoothly without taking too long.
-        visiblePoints += math.max(
-          1,
-          (_routePoints.length / 80).ceil(),
-        );
+        // ========================================================
+        // ADVANCE ANIMATION
+        // ========================================================
+
+        final int step = (_routePoints.length / 100).ceil().clamp(1, 8);
+
+        visiblePoints += step;
 
         if (visiblePoints > _routePoints.length) {
           visiblePoints = _routePoints.length;
@@ -1619,10 +1676,13 @@ class _HomePageState extends State<HomePage> {
         setState(() {
           _polylines = {
             Polyline(
-              polylineId: const PolylineId("ride_route"),
+              polylineId: const PolylineId(
+                "ride_route",
+              ),
               points: _routePoints.take(visiblePoints).toList(),
-              color: Colors.black,
+              color: Colors.green,
               width: 5,
+              geodesic: false,
               jointType: JointType.round,
               startCap: Cap.roundCap,
               endCap: Cap.roundCap,
@@ -1633,56 +1693,71 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-// ============================================================
-// FIT PICKUP + DESTINATION + ROUTE ON MAP
-// ============================================================
+  // ============================================================
+  // FIT ENTIRE ROAD ROUTE ON MAP
+  // ============================================================
 
   Future<void> _fitRouteOnMap() async {
-    if (_mapController == null ||
-        pickupLocation == null ||
-        destinationLocation == null) {
+    if (_mapController == null || _routePoints.isEmpty) {
       return;
     }
 
-    final double southWestLat = math.min(
-      pickupLocation!.latitude,
-      destinationLocation!.latitude,
-    );
+    double minLat = _routePoints.first.latitude;
 
-    final double southWestLng = math.min(
-      pickupLocation!.longitude,
-      destinationLocation!.longitude,
-    );
+    double maxLat = _routePoints.first.latitude;
 
-    final double northEastLat = math.max(
-      pickupLocation!.latitude,
-      destinationLocation!.latitude,
-    );
+    double minLng = _routePoints.first.longitude;
 
-    final double northEastLng = math.max(
-      pickupLocation!.longitude,
-      destinationLocation!.longitude,
-    );
+    double maxLng = _routePoints.first.longitude;
+
+    for (final LatLng point in _routePoints) {
+      if (point.latitude < minLat) {
+        minLat = point.latitude;
+      }
+
+      if (point.latitude > maxLat) {
+        maxLat = point.latitude;
+      }
+
+      if (point.longitude < minLng) {
+        minLng = point.longitude;
+      }
+
+      if (point.longitude > maxLng) {
+        maxLng = point.longitude;
+      }
+    }
+
+    // Prevent zero-size bounds for very short routes.
+    if ((maxLat - minLat).abs() < 0.001) {
+      minLat -= 0.001;
+      maxLat += 0.001;
+    }
+
+    if ((maxLng - minLng).abs() < 0.001) {
+      minLng -= 0.001;
+      maxLng += 0.001;
+    }
 
     try {
       await _mapController!.animateCamera(
         CameraUpdate.newLatLngBounds(
           LatLngBounds(
             southwest: LatLng(
-              southWestLat,
-              southWestLng,
+              minLat,
+              minLng,
             ),
             northeast: LatLng(
-              northEastLat,
-              northEastLng,
+              maxLat,
+              maxLng,
             ),
           ),
-          80,
+          70,
         ),
       );
     } catch (e) {
       debugPrint(
-        "Error fitting route on map: $e",
+        "FIT ROUTE ERROR: $e",
       );
     }
   }
@@ -1706,28 +1781,55 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       if (isPickup) {
         _pickupController.text = description;
+
         _pickupSuggestions = [];
       } else {
         _destinationController.text = description;
+
         _destinationSuggestions = [];
       }
+
+      _activeAutocompleteField = null;
     });
 
-    // Get the exact coordinates of the selected place.
+    // Get exact coordinates of selected place.
     final LatLng? location = await _getPlaceLocation(placeId);
 
     if (location == null) return;
 
-    // NEW:
-    // Save the exact selected coordinate so it
-    // can be passed to SearchingScreen.
+    if (!mounted) return;
+
+    // ==========================================================
+    // PICKUP SELECTED
+    // ==========================================================
+
     if (isPickup) {
-      pickupLocation = location;
-    } else {
-      destinationLocation = location;
+      // Any existing route is now invalid because
+      // the pickup has changed.
+      _routeAnimationTimer?.cancel();
+
+      _routePoints = [];
+
+      setState(() {
+        pickupLocation = location;
+        _polylines = {};
+      });
     }
 
-    // Add selected place to the map.
+    // ==========================================================
+    // DESTINATION SELECTED
+    // ==========================================================
+
+    else {
+      setState(() {
+        destinationLocation = location;
+      });
+    }
+
+    // ==========================================================
+    // UPDATE MARKERS
+    // ==========================================================
+
     final Set<Marker> updatedMarkers = {
       ..._markers,
       Marker(
@@ -1742,16 +1844,23 @@ class _HomePageState extends State<HomePage> {
       ),
     };
 
-    if (!mounted) return;
-
     setState(() {
       _markers = updatedMarkers;
     });
 
-// Draw the road route from pickup to destination.
+    // ==========================================================
+    // DRAW ROUTE ONLY AFTER DESTINATION IS SELECTED
+    // ==========================================================
+
     if (!isPickup && pickupLocation != null && destinationLocation != null) {
       await _drawAnimatedRoute();
-    } else if (_mapController != null) {
+    }
+
+    // ==========================================================
+    // MOVE CAMERA FOR PICKUP
+    // ==========================================================
+
+    else if (isPickup && _mapController != null) {
       await _mapController!.animateCamera(
         CameraUpdate.newCameraPosition(
           CameraPosition(
@@ -2052,8 +2161,15 @@ class _HomePageState extends State<HomePage> {
                       zoomControlsEnabled: false,
                       compassEnabled: true,
                       mapToolbarEnabled: false,
+
+                      // Existing markers.
                       markers: _markers,
+
+                      // NEW:
+                      // Animated pickup -> destination
+                      // road route.
                       polylines: _polylines,
+
                       onMapCreated: _onMapCreated,
                     ),
 
@@ -2119,7 +2235,9 @@ class _HomePageState extends State<HomePage> {
                     top: 16,
                     left: 16,
                     child: GestureDetector(
-                      onTap: () => Navigator.pop(context),
+                      onTap: () => Navigator.pop(
+                        context,
+                      ),
                       child: Container(
                         width: 42,
                         height: 42,
@@ -2159,7 +2277,9 @@ class _HomePageState extends State<HomePage> {
                 decoration: const BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.vertical(
-                    top: Radius.circular(28),
+                    top: Radius.circular(
+                      28,
+                    ),
                   ),
                   boxShadow: [
                     BoxShadow(
@@ -2215,7 +2335,9 @@ class _HomePageState extends State<HomePage> {
                           if (_destinationController.text.trim().isEmpty) {
                             _destinationFocusNode.requestFocus();
 
-                            ScaffoldMessenger.of(context).showSnackBar(
+                            ScaffoldMessenger.of(
+                              context,
+                            ).showSnackBar(
                               const SnackBar(
                                 content: Text(
                                   "Please Enter Your Destination!",
