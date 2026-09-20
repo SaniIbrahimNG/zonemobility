@@ -31365,6 +31365,10 @@ class _FoodSectionPageState extends State<FoodSectionPage>
   }
 }
 
+// ============================================================================
+// DRIVER BOOKED / DRIVER OFFER WAITING SCREEN
+// ============================================================================
+
 class DriverBookedScreen extends StatefulWidget {
   final String riderName;
   final String pickup;
@@ -31372,6 +31376,14 @@ class DriverBookedScreen extends StatefulWidget {
   final double price;
   final String paymentMethod;
   final String rideId;
+
+  // Exact rider pickup coordinates.
+  final double pickupLat;
+  final double pickupLng;
+
+  // Exact rider destination coordinates.
+  final double destinationLat;
+  final double destinationLng;
 
   const DriverBookedScreen({
     Key? key,
@@ -31381,6 +31393,10 @@ class DriverBookedScreen extends StatefulWidget {
     required this.destination,
     required this.price,
     required this.paymentMethod,
+    required this.pickupLat,
+    required this.pickupLng,
+    required this.destinationLat,
+    required this.destinationLng,
   }) : super(key: key);
 
   @override
@@ -31388,262 +31404,2182 @@ class DriverBookedScreen extends StatefulWidget {
 }
 
 class _DriverBookedScreenState extends State<DriverBookedScreen> {
+  // ==========================================================================
+  // DRIVER / RIDE STATE
+  // ==========================================================================
+
   bool hasStartedPickup = false;
   bool hasArrivedAtPickup = false;
 
-  LatLng _defaultCenter = const LatLng(6.5244, 3.3792); // Lagos fallback
+  bool riderAcceptedOffer = false;
+  bool riderMadeCounterOffer = false;
+
+  bool _isProcessingCounter = false;
+  bool _isUpdatingStatus = false;
+
+  double? _currentRidePrice;
+  double? _counterOfferPrice;
+
+  String _rideStatus = 'driver_offered';
+
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _rideSubscription;
+
+  // ==========================================================================
+  // MAP STATE
+  // ==========================================================================
+
+  final LatLng _defaultCenter = const LatLng(
+    6.5244,
+    3.3792,
+  );
+
   LatLng? userLocation;
+
   GoogleMapController? _mapController;
+
+  Set<Marker> _markers = {};
+
+  Set<Polyline> _polylines = {};
+
+  List<LatLng> _routePoints = [];
+
+  Timer? _routeAnimationTimer;
+
+  bool _isLoadingRoute = false;
+
+  bool _mapReady = false;
+
+  BitmapDescriptor? _destinationIcon;
+
+  // ==========================================================================
+  // GOOGLE MAPS / ROUTES API KEY
+  // ==========================================================================
+  //
+  // This is the same key/configuration used by the working HomePage route
+  // implementation in your project.
+  //
+  // IMPORTANT:
+  // Make sure Routes API and Maps SDK are enabled for this key.
+  //
+  static const String _googleMapsApiKey =
+      "AIzaSyAxmD8Gvtn1KGomBFy3pWXRFgvw0c4a-48";
+
+  // ==========================================================================
+  // INIT
+  // ==========================================================================
 
   @override
   void initState() {
     super.initState();
+
+    _currentRidePrice = widget.price;
+
+    _listenToRideStatus();
     _getUserLocation();
-    _listenToRideStatus(); // 🔥 Start Firestore listener
+
+    // Prepare map markers immediately from the exact ride coordinates.
+    _prepareMap();
   }
 
-  /// 🔥 LISTEN TO FIRESTORE FOR STATUS CHANGE
+  // ==========================================================================
+  // DISPOSE
+  // ==========================================================================
+
+  @override
+  void dispose() {
+    _rideSubscription?.cancel();
+    _routeAnimationTimer?.cancel();
+
+    _mapController?.dispose();
+
+    super.dispose();
+  }
+
+  // ==========================================================================
+  // READ NUMBER SAFELY
+  // ==========================================================================
+
+  double? _readDouble(dynamic value) {
+    if (value == null) {
+      return null;
+    }
+
+    if (value is num) {
+      return value.toDouble();
+    }
+
+    return double.tryParse(
+      value.toString(),
+    );
+  }
+
+  // ==========================================================================
+  // EXACT PICKUP COORDINATE
+  // ==========================================================================
+
+  LatLng get pickupLatLng {
+    return LatLng(
+      widget.pickupLat,
+      widget.pickupLng,
+    );
+  }
+
+  // ==========================================================================
+  // EXACT DESTINATION COORDINATE
+  // ==========================================================================
+
+  LatLng get destinationLatLng {
+    return LatLng(
+      widget.destinationLat,
+      widget.destinationLng,
+    );
+  }
+
+  // ==========================================================================
+  // FIRESTORE RIDE LISTENER
+  // ==========================================================================
+
   void _listenToRideStatus() {
-    FirebaseFirestore.instance
+    _rideSubscription = FirebaseFirestore.instance
         .collection('ride_requests')
         .doc(widget.rideId)
         .snapshots()
-        .listen((snapshot) {
-      if (!snapshot.exists) return;
-
-      final data = snapshot.data() as Map<String, dynamic>;
-      final String? status = data['status'];
-
-      if (status == 'completed' && mounted) {
-        _showRideCompletedDialog();
-      }
-    });
+        .listen(
+      _handleRideSnapshot,
+      onError: (error) {
+        debugPrint(
+          'DriverBookedScreen ride listener error: $error',
+        );
+      },
+    );
   }
 
-  void _showRideCompletedDialog() {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Ride Completed"),
-        content:
-            const Text("The passenger has paid and the trip is completed."),
-        actions: [
-          TextButton(
-            child: const Text("OK"),
-            onPressed: () {
-              Navigator.of(context).pop(); // close dialog
-              Navigator.of(context).pop(); // close driver screen
-            },
-          ),
-        ],
+  // ==========================================================================
+  // HANDLE RIDE DOCUMENT UPDATE
+  // ==========================================================================
+
+  void _handleRideSnapshot(
+    DocumentSnapshot<Map<String, dynamic>> snapshot,
+  ) {
+    if (!snapshot.exists) {
+      return;
+    }
+
+    final data = snapshot.data();
+
+    if (data == null) {
+      return;
+    }
+
+    // IMPORTANT:
+    //
+    // Your ride_requests documents use:
+    //
+    // Status
+    //
+    // with a capital S.
+    //
+    // Do NOT use data['status'] here.
+    final String status = data['Status']?.toString().trim() ?? 'unknown';
+
+    final double? firestorePrice = _readDouble(
+      data['price'],
+    );
+
+    final double? firestoreCounterPrice = _readDouble(
+      data['userCounterPrice'] ??
+          data['counterOfferPrice'] ??
+          data['counterPrice'],
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _rideStatus = status;
+
+      if (firestorePrice != null) {
+        _currentRidePrice = firestorePrice;
+      }
+
+      if (firestoreCounterPrice != null) {
+        _counterOfferPrice = firestoreCounterPrice;
+      }
+
+      riderAcceptedOffer =
+          status == 'user_accepted_offer' || status == 'driver_accepted';
+
+      riderMadeCounterOffer = status == 'counter_offer';
+    });
+
+    // ------------------------------------------------------------------------
+    // RIDER ACCEPTED DRIVER OFFER
+    // ------------------------------------------------------------------------
+
+    if (status == 'user_accepted_offer') {
+      _showRiderAcceptedState();
+
+      return;
+    }
+
+    // ------------------------------------------------------------------------
+    // RIDER ACCEPTED / RIDE ALREADY MOVING
+    // ------------------------------------------------------------------------
+
+    if (status == 'driver_accepted') {
+      if (!riderAcceptedOffer) {
+        setState(() {
+          riderAcceptedOffer = true;
+        });
+      }
+
+      return;
+    }
+
+    // ------------------------------------------------------------------------
+    // RIDER MADE COUNTER OFFER
+    // ------------------------------------------------------------------------
+
+    if (status == 'counter_offer') {
+      if (firestoreCounterPrice != null) {
+        _showCounterOfferSheet(
+          firestoreCounterPrice,
+        );
+      }
+
+      return;
+    }
+
+    // ------------------------------------------------------------------------
+    // RIDER CANCELLED
+    // ------------------------------------------------------------------------
+
+    if (status == 'cancelled') {
+      _showRideCancelledDialog();
+
+      return;
+    }
+
+    // ------------------------------------------------------------------------
+    // RIDE COMPLETED
+    // ------------------------------------------------------------------------
+
+    if (status == 'completed') {
+      _showRideCompletedDialog();
+
+      return;
+    }
+  }
+
+  // ==========================================================================
+  // RIDER ACCEPTED STATE
+  // ==========================================================================
+
+  void _showRiderAcceptedState() {
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'The rider accepted your offer. You can now start pickup.',
+        ),
+        backgroundColor: Colors.green,
+        duration: Duration(seconds: 3),
       ),
     );
   }
 
-  /// 📍 Get Driver Location
-  Future<void> _getUserLocation() async {
-    try {
-      Position position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high);
-      setState(() {
-        userLocation = LatLng(position.latitude, position.longitude);
-      });
-    } catch (e) {
-      print("Error getting location: $e");
+  // ==========================================================================
+  // COUNTER OFFER SHEET
+  // ==========================================================================
+
+  Future<void> _showCounterOfferSheet(
+    double counterPrice,
+  ) async {
+    if (!mounted) {
+      return;
+    }
+
+    // Avoid opening the same bottom sheet repeatedly because Firestore can
+    // send several snapshots containing the same counter_offer status.
+    if (_isProcessingCounter) {
+      return;
+    }
+
+    _isProcessingCounter = true;
+
+    final bool? result = await showModalBottomSheet<bool>(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: Colors.transparent,
+      builder: (modalContext) {
+        return Container(
+          padding: const EdgeInsets.fromLTRB(
+            24,
+            14,
+            24,
+            28,
+          ),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(
+              top: Radius.circular(28),
+            ),
+          ),
+          child: SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 45,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+                const SizedBox(height: 22),
+                Container(
+                  width: 62,
+                  height: 62,
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.swap_horiz_rounded,
+                    color: Colors.green.shade700,
+                    size: 34,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Rider Counter Offer',
+                  style: TextStyle(
+                    fontSize: 21,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'The rider has proposed:',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[600],
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '₦${counterPrice.toStringAsFixed(2)}',
+                  style: TextStyle(
+                    fontSize: 30,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green.shade700,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Your original offer: ₦${(_currentRidePrice ?? widget.price).toStringAsFixed(2)}',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey[600],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: 52,
+                        child: OutlinedButton(
+                          onPressed: () {
+                            Navigator.pop(
+                              modalContext,
+                              false,
+                            );
+                          },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.black,
+                            side: const BorderSide(
+                              color: Colors.black12,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(26),
+                            ),
+                          ),
+                          child: const Text(
+                            'Reject',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: SizedBox(
+                        height: 52,
+                        child: ElevatedButton(
+                          onPressed: () {
+                            Navigator.pop(
+                              modalContext,
+                              true,
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.black,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(26),
+                            ),
+                          ),
+                          child: const Text(
+                            'Accept',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    _isProcessingCounter = false;
+
+    if (result == null || !mounted) {
+      return;
+    }
+
+    if (result) {
+      await _acceptCounterOffer(
+        counterPrice,
+      );
+    } else {
+      await _rejectCounterOffer(
+        counterPrice,
+      );
     }
   }
 
+  // ==========================================================================
+  // ACCEPT RIDER COUNTER OFFER
+  // ==========================================================================
+
+  Future<void> _acceptCounterOffer(
+    double counterPrice,
+  ) async {
+    if (_isUpdatingStatus) {
+      return;
+    }
+
+    setState(() {
+      _isUpdatingStatus = true;
+    });
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('ride_requests')
+          .doc(widget.rideId)
+          .update({
+        // The negotiated price becomes the active ride price.
+        'price': counterPrice,
+
+        // Keep the original driver offer.
+        'driverOfferPrice': widget.price,
+
+        // Save the accepted rider counter.
+        'acceptedCounterOfferPrice': counterPrice,
+
+        'Status': 'driver_accepted',
+
+        'DriverStatus': 'driver_booked',
+
+        'driverAcceptedAt': FieldValue.serverTimestamp(),
+
+        'counterOfferAcceptedAt': FieldValue.serverTimestamp(),
+
+        'DriverStatus_updates': FieldValue.arrayUnion([
+          {
+            'DriverStatus': 'driver_booked',
+            'timestamp': Timestamp.now(),
+          }
+        ]),
+      });
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _currentRidePrice = counterPrice;
+        riderAcceptedOffer = true;
+        riderMadeCounterOffer = false;
+        _rideStatus = 'driver_accepted';
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Counter offer accepted at ₦${counterPrice.toStringAsFixed(2)}.',
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      debugPrint(
+        'Error accepting counter offer: $e',
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not accept counter offer: $e',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUpdatingStatus = false;
+        });
+      }
+    }
+  }
+
+  // ==========================================================================
+  // REJECT RIDER COUNTER OFFER
+  // ==========================================================================
+
+  Future<void> _rejectCounterOffer(
+    double counterPrice,
+  ) async {
+    if (_isUpdatingStatus) {
+      return;
+    }
+
+    setState(() {
+      _isUpdatingStatus = true;
+    });
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('ride_requests')
+          .doc(widget.rideId)
+          .update({
+        'Status': 'cancelled',
+        'cancelledBy': 'driver',
+        'cancellationReason': 'Driver rejected rider counter offer.',
+        'rejectedCounterOfferPrice': counterPrice,
+        'cancelledAt': FieldValue.serverTimestamp(),
+      });
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _rideStatus = 'cancelled';
+        riderMadeCounterOffer = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Counter offer rejected. Ride cancelled.',
+          ),
+        ),
+      );
+
+      await Future.delayed(
+        const Duration(milliseconds: 500),
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      Navigator.pop(context);
+    } catch (e) {
+      debugPrint(
+        'Error rejecting counter offer: $e',
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not reject counter offer: $e',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUpdatingStatus = false;
+        });
+      }
+    }
+  }
+
+  // ==========================================================================
+  // GET DRIVER LOCATION
+  // ==========================================================================
+
+  Future<void> _getUserLocation() async {
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        debugPrint(
+          'Driver location permission unavailable.',
+        );
+
+        if (mounted) {
+          setState(() {});
+        }
+
+        return;
+      }
+
+      final Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        userLocation = LatLng(
+          position.latitude,
+          position.longitude,
+        );
+      });
+
+      await _updateMapMarkers();
+
+      if (_mapReady) {
+        await _fitMapToRide();
+      }
+    } catch (e) {
+      debugPrint(
+        'Error getting driver location: $e',
+      );
+    }
+  }
+
+  // ==========================================================================
+  // PREPARE MAP
+  // ==========================================================================
+
+  Future<void> _prepareMap() async {
+    await _updateMapMarkers();
+    await _drawAnimatedRoute();
+  }
+
+  // ==========================================================================
+  // UPDATE MAP MARKERS
+  // ==========================================================================
+  Future<void> _updateMapMarkers() async {
+    try {
+      if (!mounted) {
+        return;
+      }
+
+      final Set<Marker> markers = {};
+
+      // ------------------------------------------------------------------------
+      // DRIVER LOCATION
+      // ------------------------------------------------------------------------
+
+      if (userLocation != null) {
+        markers.add(
+          Marker(
+            markerId: const MarkerId(
+              'driver_location',
+            ),
+            position: userLocation!,
+            infoWindow: const InfoWindow(
+              title: 'Your location',
+            ),
+            icon: BitmapDescriptor.defaultMarkerWithHue(
+              BitmapDescriptor.hueAzure,
+            ),
+          ),
+        );
+      }
+
+      // ------------------------------------------------------------------------
+      // PICKUP
+      // ------------------------------------------------------------------------
+
+      markers.add(
+        Marker(
+          markerId: const MarkerId(
+            'pickup_location',
+          ),
+          position: pickupLatLng,
+          infoWindow: InfoWindow(
+            title: 'Pickup',
+            snippet: widget.pickup,
+          ),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueGreen,
+          ),
+        ),
+      );
+
+      // ------------------------------------------------------------------------
+      // DESTINATION
+      // ------------------------------------------------------------------------
+
+      markers.add(
+        Marker(
+          markerId: const MarkerId(
+            'destination_location',
+          ),
+          position: destinationLatLng,
+          infoWindow: InfoWindow(
+            title: 'Destination',
+            snippet: widget.destination,
+          ),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueGreen,
+          ),
+        ),
+      );
+
+      setState(() {
+        _markers = markers;
+      });
+    } catch (e) {
+      debugPrint(
+        'Error updating ride markers: $e',
+      );
+    }
+  }
+
+  // ==========================================================================
+  // GET GOOGLE ROAD ROUTE
+  // ==========================================================================
+
+  Future<List<LatLng>> _getRoutePoints(
+    LatLng pickup,
+    LatLng destination,
+  ) async {
+    try {
+      if (_googleMapsApiKey.trim().isEmpty ||
+          _googleMapsApiKey == 'YOUR_GOOGLE_MAPS_API_KEY') {
+        debugPrint(
+          'Google Maps API key has not been configured.',
+        );
+
+        return [];
+      }
+
+      final response = await http.post(
+        Uri.parse(
+          'https://routes.googleapis.com/directions/v2:computeRoutes',
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': _googleMapsApiKey,
+          'X-Goog-FieldMask': 'routes.polyline.geoJsonLinestring',
+        },
+        body: jsonEncode({
+          'origin': {
+            'location': {
+              'latLng': {
+                'latitude': pickup.latitude,
+                'longitude': pickup.longitude,
+              },
+            },
+          },
+          'destination': {
+            'location': {
+              'latLng': {
+                'latitude': destination.latitude,
+                'longitude': destination.longitude,
+              },
+            },
+          },
+          'travelMode': 'DRIVE',
+          'routingPreference': 'TRAFFIC_AWARE',
+          'computeAlternativeRoutes': false,
+          'polylineQuality': 'HIGH_QUALITY',
+          'polylineEncoding': 'GEO_JSON_LINESTRING',
+        }),
+      );
+
+      debugPrint(
+        'DRIVER BOOKED ROUTES STATUS: ${response.statusCode}',
+      );
+
+      if (response.statusCode != 200) {
+        debugPrint(
+          'DRIVER BOOKED ROUTES ERROR: ${response.body}',
+        );
+
+        return [];
+      }
+
+      final Map<String, dynamic> data = jsonDecode(response.body);
+
+      final List routes = data['routes'] ?? [];
+
+      if (routes.isEmpty) {
+        debugPrint(
+          'DRIVER BOOKED SCREEN: NO ROUTE FOUND',
+        );
+
+        return [];
+      }
+
+      final dynamic geometry = routes.first['polyline']?['geoJsonLinestring'];
+
+      if (geometry == null) {
+        debugPrint(
+          'DRIVER BOOKED SCREEN: NO GEOJSON ROUTE RETURNED',
+        );
+
+        return [];
+      }
+
+      final List coordinates = geometry['coordinates'] ?? [];
+
+      if (coordinates.length < 2) {
+        debugPrint(
+          'DRIVER BOOKED SCREEN: ROUTE HAS TOO FEW POINTS',
+        );
+
+        return [];
+      }
+
+      final List<LatLng> points = [];
+
+      for (final dynamic coordinate in coordinates) {
+        if (coordinate is! List || coordinate.length < 2) {
+          continue;
+        }
+
+        // GeoJSON is:
+        //
+        // [longitude, latitude]
+        //
+        // Google Maps LatLng is:
+        //
+        // LatLng(latitude, longitude)
+
+        final double? longitude = (coordinate[0] as num?)?.toDouble();
+
+        final double? latitude = (coordinate[1] as num?)?.toDouble();
+
+        if (latitude == null || longitude == null) {
+          continue;
+        }
+
+        points.add(
+          LatLng(
+            latitude,
+            longitude,
+          ),
+        );
+      }
+
+      if (points.isEmpty) {
+        return [];
+      }
+
+      // Force exact pickup and destination as first/last points.
+      return [
+        pickup,
+        ...points,
+        destination,
+      ];
+    } catch (e) {
+      debugPrint(
+        'Driver booked route error: $e',
+      );
+
+      return [];
+    }
+  }
+
+  // ==========================================================================
+  // DRAW ANIMATED ROUTE
+  // ==========================================================================
+
+  Future<void> _drawAnimatedRoute() async {
+    if (_isLoadingRoute) {
+      return;
+    }
+
+    _isLoadingRoute = true;
+
+    try {
+      final List<LatLng> points = await _getRoutePoints(
+        pickupLatLng,
+        destinationLatLng,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      if (points.length < 2) {
+        setState(() {
+          _routePoints = [];
+          _polylines = {};
+        });
+
+        return;
+      }
+
+      _routeAnimationTimer?.cancel();
+
+      setState(() {
+        _routePoints = points;
+        _polylines = {};
+      });
+
+      int visiblePointCount = 2;
+
+      _routeAnimationTimer = Timer.periodic(
+        const Duration(milliseconds: 25),
+        (timer) {
+          if (!mounted) {
+            timer.cancel();
+            return;
+          }
+
+          if (visiblePointCount >= points.length) {
+            timer.cancel();
+
+            setState(() {
+              _polylines = {
+                Polyline(
+                  polylineId: const PolylineId(
+                    'ride_route',
+                  ),
+                  points: points,
+                  color: Colors.green.shade700,
+                  width: 6,
+                  jointType: JointType.round,
+                  startCap: Cap.roundCap,
+                  endCap: Cap.roundCap,
+                ),
+              };
+            });
+
+            _fitMapToRoute();
+
+            return;
+          }
+
+          final List<LatLng> visiblePoints = points.sublist(
+            0,
+            visiblePointCount,
+          );
+
+          setState(() {
+            _polylines = {
+              Polyline(
+                polylineId: const PolylineId(
+                  'ride_route',
+                ),
+                points: visiblePoints,
+                color: Colors.green.shade700,
+                width: 6,
+                jointType: JointType.round,
+                startCap: Cap.roundCap,
+                endCap: Cap.roundCap,
+              ),
+            };
+          });
+
+          visiblePointCount++;
+        },
+      );
+
+      await _fitMapToRoute();
+    } catch (e) {
+      debugPrint(
+        'Driver booked animated route error: $e',
+      );
+    } finally {
+      _isLoadingRoute = false;
+    }
+  }
+
+  // ==========================================================================
+  // FIT MAP TO ROUTE
+  // ==========================================================================
+
+  Future<void> _fitMapToRoute() async {
+    if (_mapController == null) {
+      return;
+    }
+
+    if (_routePoints.length < 2) {
+      return;
+    }
+
+    try {
+      double minLat = _routePoints.first.latitude;
+      double maxLat = _routePoints.first.latitude;
+      double minLng = _routePoints.first.longitude;
+      double maxLng = _routePoints.first.longitude;
+
+      for (final LatLng point in _routePoints) {
+        minLat = math.min(
+          minLat,
+          point.latitude,
+        );
+
+        maxLat = math.max(
+          maxLat,
+          point.latitude,
+        );
+
+        minLng = math.min(
+          minLng,
+          point.longitude,
+        );
+
+        maxLng = math.max(
+          maxLng,
+          point.longitude,
+        );
+      }
+
+      final double latPadding = (maxLat - minLat) * 0.15;
+
+      final double lngPadding = (maxLng - minLng) * 0.15;
+
+      final LatLngBounds bounds = LatLngBounds(
+        southwest: LatLng(
+          minLat - latPadding,
+          minLng - lngPadding,
+        ),
+        northeast: LatLng(
+          maxLat + latPadding,
+          maxLng + lngPadding,
+        ),
+      );
+
+      await _mapController!.animateCamera(
+        CameraUpdate.newLatLngBounds(
+          bounds,
+          70,
+        ),
+      );
+    } catch (e) {
+      debugPrint(
+        'Driver booked fit route error: $e',
+      );
+    }
+  }
+
+  // ==========================================================================
+  // FIT MAP TO RIDE
+  // ==========================================================================
+
+  Future<void> _fitMapToRide() async {
+    if (_mapController == null) {
+      return;
+    }
+
+    final List<LatLng> points = [
+      pickupLatLng,
+      destinationLatLng,
+    ];
+
+    if (userLocation != null) {
+      points.add(userLocation!);
+    }
+
+    try {
+      double minLat = points.first.latitude;
+      double maxLat = points.first.latitude;
+      double minLng = points.first.longitude;
+      double maxLng = points.first.longitude;
+
+      for (final LatLng point in points) {
+        minLat = math.min(
+          minLat,
+          point.latitude,
+        );
+
+        maxLat = math.max(
+          maxLat,
+          point.latitude,
+        );
+
+        minLng = math.min(
+          minLng,
+          point.longitude,
+        );
+
+        maxLng = math.max(
+          maxLng,
+          point.longitude,
+        );
+      }
+
+      final double latPadding = math.max(
+        (maxLat - minLat) * 0.18,
+        0.002,
+      );
+
+      final double lngPadding = math.max(
+        (maxLng - minLng) * 0.18,
+        0.002,
+      );
+
+      final LatLngBounds bounds = LatLngBounds(
+        southwest: LatLng(
+          minLat - latPadding,
+          minLng - lngPadding,
+        ),
+        northeast: LatLng(
+          maxLat + latPadding,
+          maxLng + lngPadding,
+        ),
+      );
+
+      await _mapController!.animateCamera(
+        CameraUpdate.newLatLngBounds(
+          bounds,
+          70,
+        ),
+      );
+    } catch (e) {
+      debugPrint(
+        'Driver booked fit ride error: $e',
+      );
+    }
+  }
+
+  // ==========================================================================
+  // START PICKUP
+  // ==========================================================================
+
+  Future<void> _startPickup() async {
+    if (!riderAcceptedOffer) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Wait for the rider to accept your offer first.',
+          ),
+        ),
+      );
+
+      return;
+    }
+
+    if (hasStartedPickup || _isUpdatingStatus) {
+      return;
+    }
+
+    setState(() {
+      _isUpdatingStatus = true;
+    });
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('ride_requests')
+          .doc(widget.rideId)
+          .update({
+        'DriverStatus': 'en_route',
+        'DriverStatus_updates': FieldValue.arrayUnion([
+          {
+            'DriverStatus': 'en_route',
+            'timestamp': Timestamp.now(),
+          }
+        ]),
+        'pickupStartedAt': FieldValue.serverTimestamp(),
+      });
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        hasStartedPickup = true;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Pickup started.',
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      debugPrint(
+        'Error starting pickup: $e',
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not start pickup: $e',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUpdatingStatus = false;
+        });
+      }
+    }
+  }
+
+  // ==========================================================================
+  // ARRIVED AT PICKUP
+  // ==========================================================================
+
+  Future<void> _arrivedAtPickup() async {
+    if (!hasStartedPickup) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Start pickup before marking yourself as arrived.',
+          ),
+        ),
+      );
+
+      return;
+    }
+
+    if (hasArrivedAtPickup || _isUpdatingStatus) {
+      return;
+    }
+
+    setState(() {
+      _isUpdatingStatus = true;
+    });
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('ride_requests')
+          .doc(widget.rideId)
+          .update({
+        'DriverStatus': 'arrived',
+        'DriverStatus_updates': FieldValue.arrayUnion([
+          {
+            'DriverStatus': 'arrived',
+            'timestamp': Timestamp.now(),
+          }
+        ]),
+        'arrivedAtPickupAt': FieldValue.serverTimestamp(),
+      });
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        hasArrivedAtPickup = true;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'You have arrived at the pickup location.',
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      debugPrint(
+        'Error updating arrival status: $e',
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not update arrival status: $e',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUpdatingStatus = false;
+        });
+      }
+    }
+  }
+
+  // ==========================================================================
+  // COMPLETE RIDE
+  // ==========================================================================
+
+  Future<void> _completeRide() async {
+    if (!hasArrivedAtPickup) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Mark arrival at pickup before completing the ride.',
+          ),
+        ),
+      );
+
+      return;
+    }
+
+    if (_isUpdatingStatus) {
+      return;
+    }
+
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text(
+            'Complete Ride?',
+          ),
+          content: const Text(
+            'Only complete the ride after the passenger has reached the destination and payment has been handled.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  false,
+                );
+              },
+              child: const Text(
+                'Cancel',
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  true,
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.black,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text(
+                'Complete',
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirm != true || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _isUpdatingStatus = true;
+    });
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('ride_requests')
+          .doc(widget.rideId)
+          .update({
+        'Status': 'completed',
+        'DriverStatus': 'completed',
+        'DriverStatus_updates': FieldValue.arrayUnion([
+          {
+            'DriverStatus': 'completed',
+            'timestamp': Timestamp.now(),
+          }
+        ]),
+        'completedAt': FieldValue.serverTimestamp(),
+      });
+
+      if (!mounted) {
+        return;
+      }
+
+      _showRideCompletedDialog();
+    } catch (e) {
+      debugPrint(
+        'Error completing ride: $e',
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not complete ride: $e',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUpdatingStatus = false;
+        });
+      }
+    }
+  }
+
+  // ==========================================================================
+  // RIDE CANCELLED DIALOG
+  // ==========================================================================
+
+  void _showRideCancelledDialog() {
+    if (!mounted) {
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text(
+            'Ride Cancelled',
+          ),
+          content: const Text(
+            'This ride request is no longer active.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                );
+
+                Navigator.pop(
+                  context,
+                );
+              },
+              child: const Text(
+                'OK',
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // ==========================================================================
+  // RIDE COMPLETED DIALOG
+  // ==========================================================================
+
+  void _showRideCompletedDialog() {
+    if (!mounted) {
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text(
+            'Ride Completed',
+          ),
+          content: const Text(
+            'The trip has been completed.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+
+                if (mounted) {
+                  Navigator.of(context).pop();
+                }
+              },
+              child: const Text(
+                'OK',
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // ==========================================================================
+  // STATUS TITLE
+  // ==========================================================================
+
+  String _statusTitle() {
+    switch (_rideStatus) {
+      case 'driver_offered':
+        return 'Waiting for rider';
+
+      case 'counter_offer':
+        return 'Rider made a counter offer';
+
+      case 'user_accepted_offer':
+      case 'driver_accepted':
+        return 'Ride accepted';
+
+      case 'cancelled':
+        return 'Ride cancelled';
+
+      case 'completed':
+        return 'Ride completed';
+
+      default:
+        return 'Ride request';
+    }
+  }
+
+  // ==========================================================================
+  // STATUS DESCRIPTION
+  // ==========================================================================
+
+  String _statusDescription() {
+    switch (_rideStatus) {
+      case 'driver_offered':
+        return 'Your offer has been sent. Wait for the rider to accept or make a counter offer.';
+
+      case 'counter_offer':
+        return 'The rider has proposed a different price. Review the counter offer below.';
+
+      case 'user_accepted_offer':
+      case 'driver_accepted':
+        return 'The rider accepted the negotiated price. You can now begin pickup.';
+
+      case 'cancelled':
+        return 'This ride is no longer active.';
+
+      case 'completed':
+        return 'This ride has been completed.';
+
+      default:
+        return 'Waiting for the ride status to update.';
+    }
+  }
+
+  // ==========================================================================
+  // BUILD
+  // ==========================================================================
+
   @override
   Widget build(BuildContext context) {
+    final double activePrice = _currentRidePrice ?? widget.price;
+
     return Scaffold(
+      backgroundColor: Colors.white,
       body: Stack(
         children: [
-          // 🌍 GOOGLE MAP BACKGROUND
-          userLocation == null
-              ? const Center(child: CircularProgressIndicator())
-              : GoogleMap(
-                  initialCameraPosition: CameraPosition(
-                    target: userLocation ?? _defaultCenter,
-                    zoom: 15,
-                  ),
-                  onMapCreated: (controller) => _mapController = controller,
-                  markers: {
-                    Marker(
-                      markerId: const MarkerId("driver_location"),
-                      position: userLocation ?? _defaultCenter,
-                      icon: BitmapDescriptor.defaultMarkerWithHue(
-                          BitmapDescriptor.hueAzure),
-                    ),
-                  },
-                  myLocationEnabled: true,
-                  myLocationButtonEnabled: true,
-                ),
+          // ====================================================================
+          // MAP
+          // ====================================================================
 
-          // 🎉 DETAILS BOTTOM SHEET
+          GoogleMap(
+            initialCameraPosition: CameraPosition(
+              target: pickupLatLng,
+              zoom: 14,
+            ),
+            onMapCreated: (controller) async {
+              _mapController = controller;
+              _mapReady = true;
+
+              await Future.delayed(
+                const Duration(
+                  milliseconds: 250,
+                ),
+              );
+
+              if (!mounted) {
+                return;
+              }
+
+              await _fitMapToRide();
+
+              if (_routePoints.length >= 2) {
+                await _fitMapToRoute();
+              }
+            },
+            markers: _markers,
+            polylines: _polylines,
+            myLocationEnabled: userLocation != null,
+            myLocationButtonEnabled: userLocation != null,
+            zoomControlsEnabled: false,
+            mapToolbarEnabled: false,
+            compassEnabled: true,
+          ),
+
+          // ====================================================================
+          // TOP STATUS CARD
+          // ====================================================================
+
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                16,
+                12,
+                16,
+                0,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.pop(context);
+                    },
+                    child: Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.10),
+                            blurRadius: 10,
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.arrow_back_ios_new,
+                        size: 17,
+                        color: Colors.black,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 13,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(
+                          18,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.10),
+                            blurRadius: 12,
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 9,
+                                height: 9,
+                                decoration: BoxDecoration(
+                                  color: _rideStatus == 'cancelled'
+                                      ? Colors.red
+                                      : Colors.green,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(
+                                width: 8,
+                              ),
+                              Expanded(
+                                child: Text(
+                                  _statusTitle(),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            _statusDescription(),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                              height: 1.3,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // ====================================================================
+          // BOTTOM INFORMATION PANEL
+          // ====================================================================
+
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
             child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+              constraints: const BoxConstraints(
+                maxHeight: 390,
+              ),
+              padding: const EdgeInsets.fromLTRB(
+                18,
+                18,
+                18,
+                20,
+              ),
               decoration: const BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                borderRadius: BorderRadius.vertical(
+                  top: Radius.circular(28),
+                ),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black12,
-                    blurRadius: 10,
-                    offset: Offset(0, -2),
+                    blurRadius: 18,
+                    offset: Offset(0, -4),
                   ),
                 ],
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildInfoRow(
-                    icon: Icons.person,
-                    label: 'Client',
-                    content: widget.riderName,
-                    context: context,
-                  ),
-                  const SizedBox(height: 12),
-                  _buildInfoRow(
-                    icon: Icons.my_location,
-                    label: 'Pickup',
-                    content: widget.pickup,
-                    context: context,
-                  ),
-                  const SizedBox(height: 12),
-                  _buildInfoRow(
-                    icon: Icons.location_on,
-                    label: 'Destination',
-                    content: widget.destination,
-                    context: context,
-                  ),
-                  const SizedBox(height: 12),
-                  _buildInfoRow(
-                    icon: Icons.payment,
-                    label: 'Payment Method',
-                    content: widget.paymentMethod,
-                    context: context,
-                  ),
-                  const SizedBox(height: 5),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.purple.shade50,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      "You will receive ₦${widget.price.toStringAsFixed(2)} in cash at the end of the trip.",
-                      style:
-                          const TextStyle(fontSize: 16, color: Colors.black87),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-
-                  // 🚕 STATUS BUTTONS
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              child: SafeArea(
+                top: false,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: hasStartedPickup
-                              ? Colors.grey
-                              : Colors.purple[900],
-                          foregroundColor: Colors.white,
-                          elevation: 4,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 24, vertical: 16),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
+                      Center(
+                        child: Container(
+                          width: 42,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[300],
+                            borderRadius: BorderRadius.circular(
+                              10,
+                            ),
+                          ),
                         ),
-                        onPressed: hasStartedPickup
-                            ? null
-                            : () async {
-                                await FirebaseFirestore.instance
-                                    .collection('ride_requests')
-                                    .doc(widget.rideId)
-                                    .update({
-                                  'DriverStatus': 'en_route',
-                                  'DriverStatus_updates':
-                                      FieldValue.arrayUnion([
-                                    {
-                                      'DriverStatus': 'en_route',
-                                      'timestamp': Timestamp.now()
-                                    }
-                                  ])
-                                });
-
-                                setState(() {
-                                  hasStartedPickup = true;
-                                });
-                              },
-                        child: const Text('Start Pickup'),
                       ),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: hasArrivedAtPickup
-                              ? Colors.grey
-                              : Colors.purple[900],
-                          foregroundColor: Colors.white,
-                          elevation: 4,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 24, vertical: 16),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
+
+                      const SizedBox(height: 16),
+
+                      // --------------------------------------------------------
+                      // RIDER
+                      // --------------------------------------------------------
+
+                      _buildInfoRow(
+                        icon: Icons.person_outline,
+                        label: 'Client',
+                        content: widget.riderName,
+                        context: context,
+                      ),
+
+                      const SizedBox(height: 11),
+
+                      // --------------------------------------------------------
+                      // PICKUP
+                      // --------------------------------------------------------
+
+                      _buildInfoRow(
+                        icon: Icons.my_location_outlined,
+                        label: 'Pickup',
+                        content: widget.pickup,
+                        context: context,
+                      ),
+
+                      const SizedBox(height: 11),
+
+                      // --------------------------------------------------------
+                      // DESTINATION
+                      // --------------------------------------------------------
+
+                      _buildInfoRow(
+                        icon: Icons.location_on_outlined,
+                        label: 'Destination',
+                        content: widget.destination,
+                        context: context,
+                      ),
+
+                      const SizedBox(height: 14),
+
+                      // --------------------------------------------------------
+                      // PRICE
+                      // --------------------------------------------------------
+
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(
+                          15,
                         ),
-                        onPressed: hasArrivedAtPickup
-                            ? null
-                            : () async {
-                                await FirebaseFirestore.instance
-                                    .collection('ride_requests')
-                                    .doc(widget.rideId)
-                                    .update({
-                                  'DriverStatus': 'arrived',
-                                  'DriverStatus_updates':
-                                      FieldValue.arrayUnion([
-                                    {
-                                      'DriverStatus': 'arrived',
-                                      'timestamp': Timestamp.now()
-                                    }
-                                  ])
-                                });
-
-                                setState(() {
-                                  hasArrivedAtPickup = true;
-                                });
-                              },
-                        child: const Text('Arrived at Pickup'),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          borderRadius: BorderRadius.circular(
+                            16,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 42,
+                              height: 42,
+                              decoration: BoxDecoration(
+                                color: Colors.green.shade50,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.payments_outlined,
+                                color: Colors.green.shade700,
+                                size: 21,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Agreed fare',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                  const SizedBox(
+                                    height: 2,
+                                  ),
+                                  Text(
+                                    '₦${activePrice.toStringAsFixed(2)}',
+                                    style: const TextStyle(
+                                      fontSize: 19,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.black,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Text(
+                              widget.paymentMethod,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
+
+                      // --------------------------------------------------------
+                      // COUNTER OFFER NOTICE
+                      // --------------------------------------------------------
+
+                      if (riderMadeCounterOffer && _counterOfferPrice != null)
+                        Padding(
+                          padding: const EdgeInsets.only(
+                            top: 12,
+                          ),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(
+                              14,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.green.shade50,
+                              borderRadius: BorderRadius.circular(
+                                15,
+                              ),
+                              border: Border.all(
+                                color: Colors.green.shade100,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.swap_horiz,
+                                  color: Colors.green.shade700,
+                                ),
+                                const SizedBox(
+                                  width: 10,
+                                ),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Rider counter offer',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(
+                                        height: 2,
+                                      ),
+                                      Text(
+                                        '₦${_counterOfferPrice!.toStringAsFixed(2)}',
+                                        style: TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.green.shade700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: _isUpdatingStatus
+                                      ? null
+                                      : () {
+                                          _showCounterOfferSheet(
+                                            _counterOfferPrice!,
+                                          );
+                                        },
+                                  child: const Text(
+                                    'Review',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+
+                      const SizedBox(height: 14),
+
+                      // --------------------------------------------------------
+                      // ACTIONS
+                      // --------------------------------------------------------
+
+                      if (_rideStatus == 'driver_offered' &&
+                          !riderAcceptedOffer)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(
+                            13,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[50],
+                            borderRadius: BorderRadius.circular(
+                              15,
+                            ),
+                            border: Border.all(
+                              color: Colors.grey[200]!,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.green.shade700,
+                                ),
+                              ),
+                              const SizedBox(
+                                width: 12,
+                              ),
+                              const Expanded(
+                                child: Text(
+                                  'Waiting for the rider to respond to your offer...',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                      // --------------------------------------------------------
+                      // START PICKUP / ARRIVED
+                      // --------------------------------------------------------
+
+                      if (riderAcceptedOffer) ...[
+                        Row(
+                          children: [
+                            Expanded(
+                              child: SizedBox(
+                                height: 52,
+                                child: ElevatedButton(
+                                  onPressed:
+                                      hasStartedPickup || _isUpdatingStatus
+                                          ? null
+                                          : _startPickup,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: hasStartedPickup
+                                        ? Colors.grey
+                                        : Colors.black,
+                                    foregroundColor: Colors.white,
+                                    elevation: 0,
+                                    disabledBackgroundColor: Colors.grey[300],
+                                    disabledForegroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(
+                                        26,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    hasStartedPickup
+                                        ? 'Pickup Started'
+                                        : 'Start Pickup',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(
+                              width: 10,
+                            ),
+                            Expanded(
+                              child: SizedBox(
+                                height: 52,
+                                child: ElevatedButton(
+                                  onPressed: !hasStartedPickup ||
+                                          hasArrivedAtPickup ||
+                                          _isUpdatingStatus
+                                      ? null
+                                      : _arrivedAtPickup,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: hasArrivedAtPickup
+                                        ? Colors.grey
+                                        : Colors.green.shade700,
+                                    foregroundColor: Colors.white,
+                                    elevation: 0,
+                                    disabledBackgroundColor: Colors.grey[300],
+                                    disabledForegroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(
+                                        26,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    hasArrivedAtPickup
+                                        ? 'Arrived'
+                                        : 'Arrived at Pickup',
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 10),
+
+                        // ------------------------------------------------------
+                        // COMPLETE RIDE
+                        // ------------------------------------------------------
+
+                        SizedBox(
+                          width: double.infinity,
+                          height: 52,
+                          child: ElevatedButton(
+                            onPressed: !hasArrivedAtPickup || _isUpdatingStatus
+                                ? null
+                                : _completeRide,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.black,
+                              foregroundColor: Colors.white,
+                              disabledBackgroundColor: Colors.grey[300],
+                              disabledForegroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(
+                                  26,
+                                ),
+                              ),
+                            ),
+                            child: _isUpdatingStatus
+                                ? const SizedBox(
+                                    width: 21,
+                                    height: 21,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Text(
+                                    'Complete Ride',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
-
-                  const SizedBox(height: 10),
-
-                  // 🏁 COMPLETE BUTTON
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Text(
-                        'Complete Ride',
-                        style: TextStyle(fontSize: 18, color: Colors.white),
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -31652,7 +33588,10 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
     );
   }
 
-  /// UI Helper for Info Rows
+  // ==========================================================================
+  // INFO ROW
+  // ==========================================================================
+
   Widget _buildInfoRow({
     required IconData icon,
     required String label,
@@ -31662,39 +33601,54 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, color: Colors.grey[400], size: 18),
-        const SizedBox(width: 16),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[600],
-                fontWeight: FontWeight.w500,
+        Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            icon,
+            color: Colors.black,
+            size: 17,
+          ),
+        ),
+        const SizedBox(width: 11),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500,
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            SizedBox(
-              width: MediaQuery.of(context).size.width - 100,
-              child: Text(
+              const SizedBox(height: 3),
+              Text(
                 content,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  fontSize: 16,
+                  fontSize: 14,
                   fontWeight: FontWeight.w600,
                   color: Colors.black,
                 ),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 2,
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ],
     );
   }
 }
+
+// ============================================================================
+// ADMIN DASHBOARD
+// ============================================================================
 
 class AdminDashboard extends StatelessWidget {
   const AdminDashboard({super.key});
@@ -31704,11 +33658,9 @@ class AdminDashboard extends StatelessWidget {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
         scrolledUnderElevation: 0,
-
         leading: Padding(
           padding: const EdgeInsets.only(left: 10),
           child: GestureDetector(
@@ -31717,7 +33669,7 @@ class AdminDashboard extends StatelessWidget {
               width: 25,
               height: 25,
               decoration: BoxDecoration(
-                color: Colors.grey[100], // ✅ grey 50 look
+                color: Colors.grey[100],
                 shape: BoxShape.circle,
               ),
               child: const Icon(
@@ -31728,9 +33680,8 @@ class AdminDashboard extends StatelessWidget {
             ),
           ),
         ),
-
         title: const Padding(
-          padding: EdgeInsets.only(left: 8), // ✅ spacing from icon
+          padding: EdgeInsets.only(left: 8),
           child: Text(
             'Admin Dashboard',
             style: TextStyle(
@@ -31751,19 +33702,32 @@ class AdminDashboard extends StatelessWidget {
             child: StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('Drivers')
-                  .where('status', isEqualTo: 'pending')
+                  .where(
+                    'status',
+                    isEqualTo: 'pending',
+                  )
                   .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
+                  return const Center(
+                    child: CircularProgressIndicator(),
+                  );
                 }
 
                 if (snapshot.hasError) {
-                  return const Center(child: Text('Error loading data'));
+                  return const Center(
+                    child: Text(
+                      'Error loading data',
+                    ),
+                  );
                 }
 
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return const Center(child: Text('No drivers found'));
+                  return const Center(
+                    child: Text(
+                      'No drivers found',
+                    ),
+                  );
                 }
 
                 final drivers = snapshot.data!.docs;
@@ -31772,42 +33736,65 @@ class AdminDashboard extends StatelessWidget {
                   itemCount: drivers.length,
                   itemBuilder: (context, index) {
                     final driver = drivers[index];
+
                     final driverData = driver.data() as Map<String, dynamic>;
 
                     final fullName = driverData['name'] ?? 'No Name';
+
                     final phoneNumber = driverData['phone'] ?? 'No Phone';
+
                     final vehicleType = driverData['vehicle'] ?? 'No Vehicle';
+
                     final status = driverData['status'] ?? 'No Status';
 
                     return Card(
                       margin: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 8),
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
                       child: ListTile(
                         title: Text(fullName),
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Phone: $phoneNumber'),
-                            Text('Vehicle: $vehicleType'),
-                            Text('Status: $status'),
+                            Text(
+                              'Phone: $phoneNumber',
+                            ),
+                            Text(
+                              'Vehicle: $vehicleType',
+                            ),
+                            Text(
+                              'Status: $status',
+                            ),
                           ],
                         ),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             IconButton(
-                              icon:
-                                  const Icon(Icons.check, color: Colors.green),
+                              icon: const Icon(
+                                Icons.check,
+                                color: Colors.green,
+                              ),
                               onPressed: () {
                                 _updateDriverStatus(
-                                    driver.id, 'verified', context);
+                                  driver.id,
+                                  'verified',
+                                  context,
+                                );
                               },
                             ),
                             IconButton(
-                              icon: const Icon(Icons.close, color: Colors.red),
+                              icon: const Icon(
+                                Icons.close,
+                                color: Colors.red,
+                              ),
                               onPressed: () {
                                 _updateDriverStatus(
-                                    driver.id, 'rejected', context);
+                                  driver.id,
+                                  'rejected',
+                                  context,
+                                );
                               },
                             ),
                           ],
@@ -31824,38 +33811,69 @@ class AdminDashboard extends StatelessWidget {
     );
   }
 
-  /// Summary card showing stats
+  // ==========================================================================
+  // SUMMARY CARD
+  // ==========================================================================
+
   Widget _buildSummaryCard() {
     return FutureBuilder<Map<String, int>>(
       future: _fetchSummaryCounts(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(
+            child: CircularProgressIndicator(),
+          );
         }
 
         if (snapshot.hasError || !snapshot.hasData) {
-          return const Text('Failed to load summary (error)');
+          return const Text(
+            'Failed to load summary (error)',
+          );
         }
 
         final data = snapshot.data!;
+
         return Card(
           elevation: 3,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(
+              12,
+            ),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
-                  const SizedBox(width: 16),
-                  _summaryItem('Drivers', data['drivers'] ?? 0),
-                  const SizedBox(width: 16),
-                  _summaryItem('Rides', data['rides'] ?? 0),
-                  const SizedBox(width: 16),
-                  _summaryItem('Logistics', data['logistics'] ?? 0),
-                  const SizedBox(width: 16),
-                  _summaryItem('Transport', data['transport'] ?? 0),
+                  const SizedBox(
+                    width: 16,
+                  ),
+                  _summaryItem(
+                    'Drivers',
+                    data['drivers'] ?? 0,
+                  ),
+                  const SizedBox(
+                    width: 16,
+                  ),
+                  _summaryItem(
+                    'Rides',
+                    data['rides'] ?? 0,
+                  ),
+                  const SizedBox(
+                    width: 16,
+                  ),
+                  _summaryItem(
+                    'Logistics',
+                    data['logistics'] ?? 0,
+                  ),
+                  const SizedBox(
+                    width: 16,
+                  ),
+                  _summaryItem(
+                    'Transport',
+                    data['transport'] ?? 0,
+                  ),
                 ],
               ),
             ),
@@ -31865,39 +33883,70 @@ class AdminDashboard extends StatelessWidget {
     );
   }
 
-  /// Individual summary item
-  Widget _summaryItem(String title, int count) {
+  // ==========================================================================
+  // SUMMARY ITEM
+  // ==========================================================================
+
+  Widget _summaryItem(
+    String title,
+    int count,
+  ) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
           '$count',
-          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          style: const TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         Text(
           title,
-          style: const TextStyle(fontSize: 12, color: Colors.grey),
+          style: const TextStyle(
+            fontSize: 12,
+            color: Colors.grey,
+          ),
         ),
       ],
     );
   }
 
-  /// Fetches summary counts from Firestore
+  // ==========================================================================
+  // FETCH SUMMARY COUNTS
+  // ==========================================================================
+
   Future<Map<String, int>> _fetchSummaryCounts() async {
     try {
       final driversSnapshot =
           await FirebaseFirestore.instance.collection('Drivers').get();
+
       final ridesSnapshot = await FirebaseFirestore.instance
           .collection('ride_requests')
-          .where('Status', isEqualTo: 'driver_accepted')
+          .where(
+            'Status',
+            isEqualTo: 'driver_accepted',
+          )
           .get();
+
       final logisticsSnapshot = await FirebaseFirestore.instance
-          .collection('logistics_requests')
-          .where('status', isEqualTo: 'accepted')
+          .collection(
+            'logistics_requests',
+          )
+          .where(
+            'status',
+            isEqualTo: 'accepted',
+          )
           .get();
+
       final transportSnapshot = await FirebaseFirestore.instance
-          .collection('transport_requests')
-          .where('status', isEqualTo: 'accepted')
+          .collection(
+            'transport_requests',
+          )
+          .where(
+            'status',
+            isEqualTo: 'accepted',
+          )
           .get();
 
       return {
@@ -31907,39 +33956,60 @@ class AdminDashboard extends StatelessWidget {
         'transport': transportSnapshot.size,
       };
     } catch (e) {
-      print('Error fetching summary counts: $e');
-      return {}; // Still return empty map so widget doesn't crash
+      debugPrint(
+        'Error fetching summary counts: $e',
+      );
+
+      return {};
     }
   }
 
-  /// Updates driver status
-  void _updateDriverStatus(String docId, String status, BuildContext context) {
+  // ==========================================================================
+  // UPDATE DRIVER STATUS
+  // ==========================================================================
+
+  void _updateDriverStatus(
+    String docId,
+    String status,
+    BuildContext context,
+  ) {
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) {
-        return const Center(child: CircularProgressIndicator());
+        return const Center(
+          child: CircularProgressIndicator(),
+        );
       },
     );
 
-    FirebaseFirestore.instance
-        .collection('Drivers')
-        .doc(docId)
-        .update({'status': status}).then((_) {
+    FirebaseFirestore.instance.collection('Drivers').doc(docId).update({
+      'status': status,
+    }).then((_) {
       Navigator.of(context).pop();
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Driver $status successfully!'),
-          duration: const Duration(seconds: 2),
+          content: Text(
+            'Driver $status successfully!',
+          ),
+          duration: const Duration(
+            seconds: 2,
+          ),
         ),
       );
     }).catchError((error) {
       Navigator.of(context).pop();
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error updating driver status: $error'),
+          content: Text(
+            'Error updating driver status: $error',
+          ),
           backgroundColor: Colors.red,
-          duration: const Duration(seconds: 3),
+          duration: const Duration(
+            seconds: 3,
+          ),
         ),
       );
     });
@@ -32526,7 +34596,7 @@ class _SearchingScreenState extends State<SearchingScreen> {
   // ============================================================
 
   static const String _googlePlacesApiKey =
-      "AIzaSyAxD8Gvtn1KGomBFy3pWXgvw0c4a-48";
+      "AIzaSyAxmD8Gvtn1KGomBFy3pWXRFgvw0c4a-48";
 
   // ============================================================
   // RIDE TYPE IMAGE
@@ -44455,7 +46525,15 @@ class _DriverHomePageState extends State<DriverHomePage> {
   final Set<String> notifiedRequests = {};
 
   final AudioPlayer _audioPlayer = AudioPlayer();
-  String? driverId, driverName, vehicleType, vehicle, driverImageUrl;
+
+  String? driverId;
+  String? driverName;
+  String? vehicleType;
+  String? vehicle;
+  String? driverImageUrl;
+
+  int completedRides = 0;
+  double totalEarnings = 0.0;
 
   @override
   void initState() {
@@ -44463,77 +46541,461 @@ class _DriverHomePageState extends State<DriverHomePage> {
     _loadDriverInfo();
   }
 
-  int completedRides = 0;
-  double totalEarnings = 0.0;
+  @override
+  void dispose() {
+    for (final controller in _priceControllers.values) {
+      controller.dispose();
+    }
+
+    _audioPlayer.dispose();
+
+    super.dispose();
+  }
+
+  // ---------------------------------------------------------------------------
+  // DRIVER INFORMATION
+  // ---------------------------------------------------------------------------
 
   Future<void> _loadDriverInfo() async {
     final currentUser = FirebaseAuth.instance.currentUser;
+
     if (currentUser == null) return;
 
-    final doc = await FirebaseFirestore.instance
-        .collection('Drivers')
-        .doc(currentUser.uid)
-        .get();
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('Drivers')
+          .doc(currentUser.uid)
+          .get();
 
-    if (doc.exists) {
-      final data = doc.data()!;
-      driverId = currentUser.uid;
-      driverName = data['name'] ?? 'Unknown';
-      vehicleType = data['vehicle'] ?? 'Not specified';
-      vehicle = data['vehicleType'] ?? 'No description';
-      driverImageUrl = data['profileImage']; // ✅ use direct URL now
+      if (doc.exists) {
+        final data = doc.data()!;
+
+        driverId = currentUser.uid;
+        driverName = data['name'] ?? 'Unknown';
+        vehicleType = data['vehicle'] ?? 'Not specified';
+        vehicle = data['vehicleType'] ?? 'No description';
+        driverImageUrl = data['profileImage'];
+      }
+
+      // Fetch completed rides
+      final ridesSnapshot = await FirebaseFirestore.instance
+          .collection('ride_requests')
+          .where('driverId', isEqualTo: driverName)
+          .where('Status', isEqualTo: 'driver_accepted')
+          .get();
+
+      double earnings = 0.0;
+
+      for (final ride in ridesSnapshot.docs) {
+        final data = ride.data();
+        final price = data['price'];
+
+        if (price is num) {
+          earnings += price.toDouble();
+        }
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        completedRides = ridesSnapshot.docs.length;
+        totalEarnings = earnings;
+      });
+    } catch (e) {
+      debugPrint('Error loading driver information: $e');
     }
-
-    // Fetch completed rides
-    final ridesSnapshot = await FirebaseFirestore.instance
-        .collection('ride_requests')
-        .where('driverId', isEqualTo: driverName)
-        .where('Status', isEqualTo: 'driver_accepted')
-        .get();
-
-    double earnings = 0.0;
-    for (var ride in ridesSnapshot.docs) {
-      final price = ride['price'];
-      if (price is num) earnings += price.toDouble();
-    }
-
-    setState(() {
-      completedRides = ridesSnapshot.docs.length;
-      totalEarnings = earnings;
-    });
   }
 
+  // ---------------------------------------------------------------------------
+  // NOTIFICATION SOUND
+  // ---------------------------------------------------------------------------
+
   Future<void> _playNotificationSound() async {
-    await _audioPlayer.play(AssetSource('sounds/notification_sound.mp3'));
+    try {
+      await _audioPlayer.play(
+        AssetSource('sounds/notification_sound.mp3'),
+      );
+    } catch (e) {
+      debugPrint('Notification sound error: $e');
+    }
   }
 
   Future<void> _stopSound() async {
-    await _audioPlayer.stop();
+    try {
+      await _audioPlayer.stop();
+    } catch (e) {
+      debugPrint('Stop sound error: $e');
+    }
   }
 
+  // ---------------------------------------------------------------------------
+  // REFRESH
+  // ---------------------------------------------------------------------------
+
   Future<void> _refresh() async {
-    setState(() {});
-    await Future.delayed(const Duration(milliseconds: 500));
+    if (mounted) {
+      setState(() {});
+    }
+
+    await Future.delayed(
+      const Duration(milliseconds: 500),
+    );
   }
+
+  // ---------------------------------------------------------------------------
+  // CLEAN LOCATION TEXT
+  // ---------------------------------------------------------------------------
+
+  /*
+   * This removes coordinate information from the displayed address if the
+   * address was stored in a format such as:
+   *
+   * "ATBU Gubi Campus, Bauchi (10.3158, 9.8442)"
+   *
+   * or:
+   *
+   * "Some Address - 10.3158, 9.8442"
+   *
+   * The actual coordinates remain untouched in Firestore and are passed
+   * separately to the next page.
+   */
+  String _cleanAddress(dynamic value) {
+    if (value == null) {
+      return 'Unknown';
+    }
+
+    String address = value.toString().trim();
+
+    if (address.isEmpty) {
+      return 'Unknown';
+    }
+
+    // Remove coordinates inside parentheses:
+    // (10.3158, 9.8442)
+    address = address.replaceAll(
+      RegExp(
+        r'\(\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*\)',
+      ),
+      '',
+    );
+
+    // Remove coordinate pairs after common separators.
+    address = address.replaceAll(
+      RegExp(
+        r'\s*[-|•]\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?',
+      ),
+      '',
+    );
+
+    // Remove a coordinate pair at the very end of the string.
+    address = address.replaceAll(
+      RegExp(
+        r'\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*$',
+      ),
+      '',
+    );
+
+    return address.trim().replaceAll(
+          RegExp(r'\s{2,}'),
+          ' ',
+        );
+  }
+
+  // ---------------------------------------------------------------------------
+  // SEND DRIVER OFFER
+  // ---------------------------------------------------------------------------
+
+  Future<void> _sendDriverOffer({
+    required BuildContext context,
+    required String rideId,
+    required Map<String, dynamic> data,
+  }) async {
+    final priceText = _priceControllers[rideId]?.text.trim() ?? '';
+
+    final double? price = double.tryParse(priceText);
+
+    if (price == null || price <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            "Please enter a valid price",
+          ),
+        ),
+      );
+
+      return;
+    }
+
+    // Get exact coordinates from Firestore.
+    final double? pickupLat = _readDouble(data['pickupLat']);
+
+    final double? pickupLng = _readDouble(data['pickupLng']);
+
+    final double? destinationLat = _readDouble(data['destinationLat']);
+
+    final double? destinationLng = _readDouble(data['destinationLng']);
+
+    try {
+      /*
+       * IMPORTANT:
+       *
+       * We DO NOT use driver_accepted here.
+       *
+       * The driver has only made an offer. The rider has not accepted yet.
+       *
+       * DriverBookedScreen will listen to this ride and wait for:
+       *
+       * user_accepted_offer
+       * counter_offer
+       * cancelled
+       */
+      await FirebaseFirestore.instance
+          .collection('ride_requests')
+          .doc(rideId)
+          .update({
+        'Status': 'driver_offered',
+
+        'driverId': driverName ?? 'Unknown',
+
+        'driverUid': driverId,
+
+        'price': price,
+
+        'driverOfferPrice': price,
+
+        'driverOfferAt': FieldValue.serverTimestamp(),
+
+        'vehicleType': vehicleType ?? 'Not specified',
+
+        'vehicle': vehicle ?? 'No description',
+
+        // Keep exact coordinates on the ride document.
+        if (pickupLat != null) 'pickupLat': pickupLat,
+
+        if (pickupLng != null) 'pickupLng': pickupLng,
+
+        if (destinationLat != null) 'destinationLat': destinationLat,
+
+        if (destinationLng != null) 'destinationLng': destinationLng,
+      });
+
+      await _stopSound();
+
+      if (!mounted) return;
+
+      /*
+       * First show the driver a confirmation modal.
+       *
+       * The driver does NOT go directly into the ride.
+       *
+       * The next screen is a waiting screen where the driver's offer
+       * remains active until the rider accepts, counters or cancels.
+       */
+      final bool? continueToWaitingScreen = await showModalBottomSheet<bool>(
+        context: context,
+        isDismissible: false,
+        enableDrag: false,
+        backgroundColor: Colors.transparent,
+        builder: (modalContext) {
+          return Container(
+            padding: const EdgeInsets.fromLTRB(
+              24,
+              14,
+              24,
+              28,
+            ),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(28),
+              ),
+            ),
+            child: SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 45,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  Container(
+                    width: 58,
+                    height: 58,
+                    decoration: BoxDecoration(
+                      color: Colors.green[50],
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.local_taxi_rounded,
+                      color: Colors.green,
+                      size: 30,
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+                  const Text(
+                    'Offer Sent',
+                    style: TextStyle(
+                      fontSize: 21,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Your offer of ₦${price.toStringAsFixed(2)} '
+                    'has been sent to the rider.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Wait for the rider to accept or make a counter offer.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.black54,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(
+                          modalContext,
+                          true,
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.black,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(25),
+                        ),
+                      ),
+                      child: const Text(
+                        'Continue',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+
+      if (continueToWaitingScreen != true) {
+        return;
+      }
+
+      if (!mounted) return;
+
+      /*
+       * Navigate to DriverBookedScreen.
+       *
+       * The important difference is that this page is now a WAITING page.
+       * It must listen to the ride document instead of assuming the rider
+       * already accepted.
+       */
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => DriverBookedScreen(
+            riderName: data['userName']?.toString() ?? 'Unknown',
+
+            pickup: _cleanAddress(
+              data['Pickup Location'],
+            ),
+
+            destination: _cleanAddress(
+              data['Destination'],
+            ),
+
+            price: price,
+
+            paymentMethod: 'Cash',
+
+            rideId: rideId,
+
+            // Exact rider coordinates.
+            pickupLat: pickupLat ?? 0.0,
+            pickupLng: pickupLng ?? 0.0,
+            destinationLat: destinationLat ?? 0.0,
+            destinationLng: destinationLng ?? 0.0,
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint(
+        'Error sending driver offer: $e',
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not send offer: $e',
+          ),
+        ),
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // READ NUMBER SAFELY
+  // ---------------------------------------------------------------------------
+
+  double? _readDouble(dynamic value) {
+    if (value == null) {
+      return null;
+    }
+
+    if (value is num) {
+      return value.toDouble();
+    }
+
+    return double.tryParse(
+      value.toString(),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // BUILD
+  // ---------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
-
         leading: Padding(
-          padding: const EdgeInsets.only(left: 10),
+          padding: const EdgeInsets.only(
+            left: 10,
+          ),
           child: GestureDetector(
             onTap: () => Navigator.pop(context),
             child: Container(
               width: 25,
               height: 25,
               decoration: BoxDecoration(
-                color: Colors.grey[100], // ✅ grey 50 look
+                color: Colors.grey[100],
                 shape: BoxShape.circle,
               ),
               child: const Icon(
@@ -44544,9 +47006,8 @@ class _DriverHomePageState extends State<DriverHomePage> {
             ),
           ),
         ),
-
         title: const Padding(
-          padding: EdgeInsets.only(left: 8), // ✅ spacing from icon
+          padding: EdgeInsets.only(left: 8),
           child: Text(
             'Partner',
             style: TextStyle(
@@ -44559,338 +47020,466 @@ class _DriverHomePageState extends State<DriverHomePage> {
       ),
       body: RefreshIndicator(
         onRefresh: _refresh,
-        child: Column(children: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Container(
-              height: 180,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.grey[850],
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.black54),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          driverImageUrl != null && driverImageUrl!.isNotEmpty
-                              ? CircleAvatar(
-                                  radius: 18,
-                                  backgroundImage:
-                                      NetworkImage(driverImageUrl!),
-                                )
-                              : const CircleAvatar(
-                                  radius: 18,
-                                  backgroundImage:
-                                      AssetImage('assets/images/driver.png'),
-                                ),
-                          const SizedBox(width: 8),
-                          Text(
-                            driverName ?? 'Driver',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
+        child: Column(
+          children: [
+            // -----------------------------------------------------------------
+            // DRIVER SUMMARY CARD
+            // -----------------------------------------------------------------
+
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Container(
+                height: 180,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[850],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.black54,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            driverImageUrl != null && driverImageUrl!.isNotEmpty
+                                ? CircleAvatar(
+                                    radius: 18,
+                                    backgroundImage: NetworkImage(
+                                      driverImageUrl!,
+                                    ),
+                                  )
+                                : const CircleAvatar(
+                                    radius: 18,
+                                    backgroundImage: AssetImage(
+                                      'assets/images/driver.png',
+                                    ),
+                                  ),
+                            const SizedBox(
+                              width: 8,
+                            ),
+                            Text(
+                              driverName ?? 'Driver',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.green[600],
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text(
+                            "Online",
+                            style: TextStyle(
+                              fontSize: 12,
                               color: Colors.white,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
-                        ],
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.green[600],
-                          borderRadius: BorderRadius.circular(6),
                         ),
-                        child: const Text(
-                          "Online",
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      )
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Column(
-                        children: [
-                          const Text('Total Rides',
+                      ],
+                    ),
+                    const SizedBox(
+                      height: 20,
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
+                          children: [
+                            const Text(
+                              'Total Rides',
                               style: TextStyle(
                                 color: Colors.white,
                                 fontSize: 16,
-                              )),
-                          const SizedBox(height: 4),
-                          Container(
-                            height: 60,
-                            width: 100,
-                            decoration: BoxDecoration(
-                              color: Colors.grey,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Center(
-                              child: Text(
-                                "  $completedRides",
-                                style: const TextStyle(
-                                    color: Colors.white, fontSize: 16),
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                      Column(
-                        children: [
-                          const Text('Earnings',
+                            const SizedBox(
+                              height: 4,
+                            ),
+                            Container(
+                              height: 60,
+                              width: 100,
+                              decoration: BoxDecoration(
+                                color: Colors.grey,
+                                borderRadius: BorderRadius.circular(
+                                  8,
+                                ),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  "$completedRides",
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        Column(
+                          children: [
+                            const Text(
+                              'Earnings',
                               style: TextStyle(
                                 color: Colors.white,
                                 fontSize: 16,
-                              )),
-                          const SizedBox(height: 4),
-                          Container(
-                            height: 60,
-                            width: 100,
-                            decoration: BoxDecoration(
-                              color: Colors.grey,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Center(
-                              child: Text(
-                                " ₦${totalEarnings.toStringAsFixed(2)}",
-                                style: const TextStyle(
-                                    fontSize: 16, color: Colors.white),
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
+                            const SizedBox(
+                              height: 4,
+                            ),
+                            Container(
+                              height: 60,
+                              width: 100,
+                              decoration: BoxDecoration(
+                                color: Colors.grey,
+                                borderRadius: BorderRadius.circular(
+                                  8,
+                                ),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  "₦${totalEarnings.toStringAsFixed(2)}",
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: rideRequestsStream,
-              builder: (context, snapshot) {
-                if (!snapshot.hasData)
-                  return const Center(child: CircularProgressIndicator());
 
-                final requests = snapshot.data!.docs;
+            // -----------------------------------------------------------------
+            // RIDE REQUESTS
+            // -----------------------------------------------------------------
 
-                if (requests.isEmpty) {
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: rideRequestsStream,
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return Center(
+                      child: Text(
+                        'Unable to load ride requests',
+                        style: TextStyle(
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                    );
+                  }
+
+                  if (!snapshot.hasData) {
+                    return const Center(
+                      child: CircularProgressIndicator(),
+                    );
+                  }
+
+                  final requests = snapshot.data!.docs;
+
+                  if (requests.isEmpty) {
+                    return ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: const [
+                        SizedBox(
+                          height: 200,
+                        ),
+                        Center(
+                          child: Text(
+                            "No pending ride requests.",
+                          ),
+                        ),
+                      ],
+                    );
+                  }
+
                   return ListView(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    children: [
-                      const SizedBox(height: 200),
-                      const Center(child: Text("No pending ride requests."))
-                    ],
-                  );
-                }
-                return ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  children: [
-                    ...requests.map((ride) {
-                      final data = ride.data() as Map<String, dynamic>;
-                      final rideId = ride.id;
-                      final timestamp = data['Time'] as Timestamp?;
-                      final timeAgo = _getTimeAgo(timestamp);
+                    children: requests.map(
+                      (ride) {
+                        final data = ride.data() as Map<String, dynamic>;
 
-                      _priceControllers.putIfAbsent(
-                          rideId, () => TextEditingController());
+                        final String rideId = ride.id;
 
-                      return Card(
-                        margin: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        elevation: 8,
-                        color: Colors.grey[500],
-                        shadowColor: Colors.black12,
-                        child: Padding(
-                          padding: const EdgeInsets.all(20.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Center(
-                                child: Text(
-                                  "New Ride Request",
+                        final Timestamp? timestamp = data['Time'] as Timestamp?;
+
+                        final String timeAgo = _getTimeAgo(
+                          timestamp,
+                        );
+
+                        _priceControllers.putIfAbsent(
+                          rideId,
+                          () => TextEditingController(),
+                        );
+
+                        final String pickup = _cleanAddress(
+                          data['Pickup Location'],
+                        );
+
+                        final String destination = _cleanAddress(
+                          data['Destination'],
+                        );
+
+                        return Card(
+                          margin: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(
+                              20,
+                            ),
+                          ),
+                          elevation: 8,
+                          color: Colors.grey[500],
+                          shadowColor: Colors.black12,
+                          child: Padding(
+                            padding: const EdgeInsets.all(20.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Center(
+                                  child: Text(
+                                    "New Ride Request",
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(
+                                  height: 16,
+                                ),
+                                const Text(
+                                  'Pickup Location',
                                   style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.black87,
+                                    color: Colors.white,
                                   ),
                                 ),
-                              ),
-                              const SizedBox(height: 16),
-                              const Text(
-                                'Pickup Location',
-                                style: TextStyle(
-                                  color: Colors.white,
+                                const SizedBox(
+                                  height: 2,
                                 ),
-                              ),
-                              const SizedBox(height: 2),
-                              _buildInfoRow("Pickup", data['Pickup Location']),
-                              const SizedBox(height: 5),
-                              const Text(
-                                'Destination',
-                                style: TextStyle(
-                                  color: Colors.white,
+                                _buildInfoRow(
+                                  "Pickup",
+                                  pickup,
                                 ),
-                              ),
-                              _buildInfoRow("Destination", data['Destination']),
-                              const SizedBox(height: 10),
-                              Text(
-                                "Booked by: ${data['userName'] ?? 'Unknown'}",
-                                style: const TextStyle(
+                                const SizedBox(
+                                  height: 5,
+                                ),
+                                const Text(
+                                  'Destination',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                _buildInfoRow(
+                                  "Destination",
+                                  destination,
+                                ),
+                                const SizedBox(
+                                  height: 10,
+                                ),
+                                Text(
+                                  "Booked by: ${data['userName'] ?? 'Unknown'}",
+                                  style: const TextStyle(
                                     fontWeight: FontWeight.bold,
-                                    color: Colors.white),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                "Requested: $timeAgo",
-                                style: TextStyle(
-                                  color: Colors.green[700],
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              TextField(
-                                controller: _priceControllers[rideId],
-                                keyboardType: TextInputType.number,
-                                decoration: InputDecoration(
-                                  labelText: 'Enter your price',
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(10),
+                                    color: Colors.white,
                                   ),
                                 ),
-                              ),
-                              const SizedBox(height: 16),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: ElevatedButton.icon(
-                                      onPressed: () async {
-                                        final priceText =
-                                            _priceControllers[rideId]?.text ??
-                                                '';
-                                        final price =
-                                            double.tryParse(priceText);
-                                        if (price == null || price <= 0) {
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
-                                            const SnackBar(
-                                                content: Text(
-                                                    "Please enter a valid price")),
+                                const SizedBox(
+                                  height: 4,
+                                ),
+                                Text(
+                                  "Requested: $timeAgo",
+                                  style: TextStyle(
+                                    color: Colors.green[700],
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(
+                                  height: 16,
+                                ),
+                                TextField(
+                                  controller: _priceControllers[rideId],
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                                  decoration: InputDecoration(
+                                    labelText: 'Enter your price',
+                                    prefixText: '₦ ',
+                                    filled: true,
+                                    fillColor: Colors.white,
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(
+                                        10,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(
+                                  height: 16,
+                                ),
+                                Row(
+                                  children: [
+                                    // ------------------------------------------------
+                                    // OFFER BUTTON
+                                    // ------------------------------------------------
+
+                                    Expanded(
+                                      child: ElevatedButton.icon(
+                                        onPressed: () {
+                                          _sendDriverOffer(
+                                            context: context,
+                                            rideId: rideId,
+                                            data: data,
                                           );
-                                          return;
-                                        }
-
-                                        await FirebaseFirestore.instance
-                                            .collection('ride_requests')
-                                            .doc(rideId)
-                                            .update({
-                                          'Status': 'driver_accepted',
-                                          'driverId': driverName ?? 'Unknown',
-                                          'price': price,
-                                          'vehicleType':
-                                              vehicleType ?? 'Not specified',
-                                          'vehicle':
-                                              vehicle ?? 'No description',
-                                        });
-
-                                        _stopSound();
-
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (_) => DriverBookedScreen(
-                                              riderName:
-                                                  data['userName'] ?? 'Unknown',
-                                              pickup: data['Pickup Location'] ??
-                                                  'Unknown',
-                                              destination:
-                                                  data['Destination'] ??
-                                                      'Unknown',
-                                              price: price,
-                                              paymentMethod: 'Cash',
-                                              rideId: rideId,
+                                        },
+                                        label: const Text(
+                                          "Offer",
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.black,
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 14,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              10,
                                             ),
                                           ),
-                                        );
-                                      },
-                                      label: const Text("Accept",
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.bold,
-                                          )),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.black,
-                                        padding: const EdgeInsets.symmetric(
-                                            vertical: 14),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(10),
                                         ),
                                       ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: ElevatedButton.icon(
-                                      onPressed: () {
-                                        _stopSound();
-                                        notifiedRequests.add(rideId);
-                                        setState(() {});
-                                      },
-                                      label: const Text("Reject",
+
+                                    const SizedBox(
+                                      width: 12,
+                                    ),
+
+                                    // ------------------------------------------------
+                                    // REJECT BUTTON
+                                    // ------------------------------------------------
+
+                                    Expanded(
+                                      child: ElevatedButton.icon(
+                                        onPressed: () async {
+                                          await _stopSound();
+
+                                          notifiedRequests.add(
+                                            rideId,
+                                          );
+
+                                          try {
+                                            /*
+                                             * Rejecting a request from the
+                                             * pending list removes it from
+                                             * this driver's visible list.
+                                             */
+                                            await FirebaseFirestore.instance
+                                                .collection(
+                                                  'ride_requests',
+                                                )
+                                                .doc(
+                                                  rideId,
+                                                )
+                                                .update({
+                                              'Status': 'driver_rejected',
+                                              'driverRejectedBy':
+                                                  driverName ?? 'Unknown',
+                                              'driverRejectedAt':
+                                                  FieldValue.serverTimestamp(),
+                                            });
+                                          } catch (e) {
+                                            debugPrint(
+                                              'Reject error: $e',
+                                            );
+                                          }
+
+                                          if (mounted) {
+                                            setState(
+                                              () {},
+                                            );
+                                          }
+                                        },
+                                        label: const Text(
+                                          "Reject",
                                           style: TextStyle(
                                             color: Colors.white,
                                             fontWeight: FontWeight.bold,
                                             fontSize: 16,
-                                          )),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.red[900],
-                                        padding: const EdgeInsets.symmetric(
-                                            vertical: 14),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(10),
+                                          ),
+                                        ),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.red[900],
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 14,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
+                                          ),
                                         ),
                                       ),
                                     ),
-                                  ),
-                                ],
-                              )
-                            ],
+                                  ],
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      );
-                    }).toList(),
-                  ],
-                );
-              },
+                        );
+                      },
+                    ).toList(),
+                  );
+                },
+              ),
             ),
-          )
-        ]),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
+  // ---------------------------------------------------------------------------
+  // INFO ROW
+  // ---------------------------------------------------------------------------
+
+  Widget _buildInfoRow(
+    String label,
+    String value,
+  ) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(
+        horizontal: 12,
+        vertical: 10,
+      ),
       decoration: BoxDecoration(
         color: Colors.grey[100],
         borderRadius: BorderRadius.circular(10),
@@ -44899,14 +47488,21 @@ class _DriverHomePageState extends State<DriverHomePage> {
         children: [
           Icon(
             label == "Pickup" ? Icons.my_location : Icons.location_on,
-            color: Colors.deepPurple,
+            color: Colors.green[700],
             size: 20,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(
+            width: 8,
+          ),
           Expanded(
             child: Text(
-              "$label: $value",
-              style: const TextStyle(fontSize: 14),
+              value,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],
@@ -44914,14 +47510,35 @@ class _DriverHomePageState extends State<DriverHomePage> {
     );
   }
 
-  String _getTimeAgo(Timestamp? timestamp) {
-    if (timestamp == null) return "Unknown time";
+  // ---------------------------------------------------------------------------
+  // TIME AGO
+  // ---------------------------------------------------------------------------
+
+  String _getTimeAgo(
+    Timestamp? timestamp,
+  ) {
+    if (timestamp == null) {
+      return "Unknown time";
+    }
+
     final now = DateTime.now();
+
     final rideTime = timestamp.toDate();
+
     final difference = now.difference(rideTime);
-    if (difference.inMinutes < 1) return "Just now";
-    if (difference.inMinutes < 60) return "${difference.inMinutes} mins ago";
-    if (difference.inHours < 24) return "${difference.inHours} hrs ago";
+
+    if (difference.inMinutes < 1) {
+      return "Just now";
+    }
+
+    if (difference.inMinutes < 60) {
+      return "${difference.inMinutes} mins ago";
+    }
+
+    if (difference.inHours < 24) {
+      return "${difference.inHours} hrs ago";
+    }
+
     return "${difference.inDays} days ago";
   }
 }
