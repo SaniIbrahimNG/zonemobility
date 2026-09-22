@@ -164,6 +164,11 @@ flutter:
     - assets/images/tss1.jpg
     - assets/images/on.jpg
     - assets/images/tm.jpg
+    - assets/images/soft-drink.png
+    - assets/images/pizza.png
+    - assets/images/shawarma.png
+    - assets/images/tuwo-shinkafa.png
+    - assets/images/fried-rice.png
     - assets/data/nigerian-states.json
 
 

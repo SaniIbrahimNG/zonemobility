@@ -28195,6 +28195,17 @@ class _FoodSectionPageState extends State<FoodSectionPage>
     'Pastries'
   ];
 
+  final Map<String, String> _categoryImages = {
+    'Drinks': 'assets/images/soft-drink.png',
+    'Spaghetti': 'assets/images/fried-rice.png', // temporary
+    'Rice': 'assets/images/fried-rice.png',
+    'Swallow': 'assets/images/tuwo-shinkafa.png',
+    'Shawarma': 'assets/images/shawarma.png',
+    'Pizza': 'assets/images/pizza.png',
+    'Small Chops': 'assets/images/shawarma.png', // temporary
+    'Pastries': 'assets/images/pizza.png', // temporary
+  };
+
   @override
   void initState() {
     super.initState();
@@ -30556,14 +30567,23 @@ class _FoodSectionPageState extends State<FoodSectionPage>
             const SizedBox(height: 10),
 
             SizedBox(
-              height: 40,
+              height: 46,
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 children: [
                   // 🔹 ALL CHIP
                   Padding(
-                    padding: const EdgeInsets.only(right: 6),
+                    padding: const EdgeInsets.only(right: 8),
                     child: FilterChip(
+                      avatar: ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: Image.asset(
+                          'assets/images/fried-rice.png',
+                          width: 28,
+                          height: 28,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
                       label: const Text("All"),
                       selected: _selectedCategories.isEmpty,
                       onSelected: (_) {
@@ -30583,15 +30603,32 @@ class _FoodSectionPageState extends State<FoodSectionPage>
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 4,
+                      ),
                     ),
                   ),
 
                   // 🔹 CATEGORY CHIPS
                   ..._allCategories.map((cat) {
                     final isSelected = _selectedCategories.contains(cat);
+
+                    final categoryImage =
+                        _categoryImages[cat] ?? 'assets/images/fried-rice.png';
+
                     return Padding(
-                      padding: const EdgeInsets.only(right: 6),
+                      padding: const EdgeInsets.only(right: 8),
                       child: FilterChip(
+                        avatar: ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: Image.asset(
+                            categoryImage,
+                            width: 28,
+                            height: 28,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
                         label: Text(cat),
                         selected: isSelected,
                         onSelected: (v) {
@@ -30606,7 +30643,7 @@ class _FoodSectionPageState extends State<FoodSectionPage>
                         },
                         selectedColor: Colors.black,
                         backgroundColor: Colors.grey[100],
-                        checkmarkColor: Colors.white,
+                        checkmarkColor: Colors.transparent,
                         labelStyle: TextStyle(
                           color: isSelected ? Colors.white : Colors.black,
                           fontWeight: FontWeight.w500,
@@ -30614,12 +30651,17 @@ class _FoodSectionPageState extends State<FoodSectionPage>
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 4,
+                        ),
                       ),
                     );
                   }).toList(),
                 ],
               ),
             ),
+
             SizedBox(height: 10),
 
             /// SWIPABLE VENDORS + PRODUCTS
