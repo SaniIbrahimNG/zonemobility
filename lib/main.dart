@@ -37085,2039 +37085,6 @@ class PaystackWebView extends StatelessWidget {
   }
 }
 
-class DriverOfferScreen extends StatefulWidget {
-  final String rideId;
-  final String driverName;
-  final double price;
-  final String vehicleType;
-  final String vehicleDescription;
-  final String pickup;
-  final String destination;
-  final String rideType;
-
-  // ============================================================
-  // EXACT RIDE COORDINATES
-  // ============================================================
-
-  final double pickupLat;
-  final double pickupLng;
-  final double destinationLat;
-  final double destinationLng;
-
-  const DriverOfferScreen({
-    Key? key,
-    required this.rideId,
-    required this.driverName,
-    required this.price,
-    required this.vehicleType,
-    required this.vehicleDescription,
-    required this.pickup,
-    required this.destination,
-    required this.rideType,
-    required this.pickupLat,
-    required this.pickupLng,
-    required this.destinationLat,
-    required this.destinationLng,
-  }) : super(key: key);
-
-  @override
-  State<DriverOfferScreen> createState() => _DriverOfferScreenState();
-}
-
-class _DriverOfferScreenState extends State<DriverOfferScreen> {
-  // ============================================================
-  // FIRESTORE LISTENER
-  // ============================================================
-
-  StreamSubscription<DocumentSnapshot>? _rideSubscription;
-
-  // ============================================================
-  // NEGOTIATION STATE
-  // ============================================================
-
-  bool _isSubmitting = false;
-
-  bool _waitingForDriver = false;
-
-  double? _currentOfferPrice;
-
-  String _waitingMessage = 'Waiting for driver response...';
-
-  // ============================================================
-  // COUNTER PRICE CONTROLLER
-  // ============================================================
-
-  final TextEditingController _counterPriceController = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-
-    _currentOfferPrice = widget.price;
-
-    // ==========================================================
-    // LISTEN FOR DRIVER RESPONSE
-    // ==========================================================
-
-    _listenForDriverResponse();
-  }
-
-  // ============================================================
-  // LISTEN TO RIDE REQUEST
-  // ============================================================
-
-  void _listenForDriverResponse() {
-    _rideSubscription = FirebaseFirestore.instance
-        .collection('ride_requests')
-        .doc(widget.rideId)
-        .snapshots()
-        .listen(
-          _handleRideUpdate,
-        );
-  }
-
-// ============================================================
-// NAVIGATION GUARD
-// ============================================================
-
-  bool _hasNavigatedToRideStarted = false;
-
-// ============================================================
-// HANDLE DRIVER RESPONSE
-// ============================================================
-
-  void _handleRideUpdate(
-    DocumentSnapshot snapshot,
-  ) {
-    if (!mounted || _hasNavigatedToRideStarted) return;
-
-    final data = snapshot.data() as Map<String, dynamic>?;
-
-    if (data == null) return;
-
-    final String status = data['Status']?.toString() ?? '';
-
-    debugPrint(
-      'DriverOfferScreen ride ${widget.rideId} status changed to: $status',
-    );
-
-    // ==========================================================
-    // DRIVER COUNTERED USER'S COUNTER OFFER
-    // ==========================================================
-
-    if (status == 'driver_countered') {
-      final dynamic driverPrice = data['price'];
-
-      double? parsedPrice;
-
-      if (driverPrice is num) {
-        parsedPrice = driverPrice.toDouble();
-      } else {
-        parsedPrice = double.tryParse(
-          driverPrice?.toString() ?? '',
-        );
-      }
-
-      setState(() {
-        _waitingForDriver = false;
-        _isSubmitting = false;
-
-        if (parsedPrice != null) {
-          _currentOfferPrice = parsedPrice;
-        }
-
-        _waitingMessage = 'Driver sent a new offer.';
-      });
-
-      return;
-    }
-
-    // ==========================================================
-    // DRIVER ACCEPTED USER'S COUNTER OFFER
-    // ==========================================================
-
-    if (status == 'counter_accepted') {
-      final dynamic finalPrice = data['price'] ??
-          data['finalPrice'] ??
-          data['driverPrice'] ??
-          data['userCounterPrice'];
-
-      double ridePrice = _currentOfferPrice ?? widget.price;
-
-      if (finalPrice is num) {
-        ridePrice = finalPrice.toDouble();
-      } else {
-        final double? parsed = double.tryParse(
-          finalPrice?.toString() ?? '',
-        );
-
-        if (parsed != null) {
-          ridePrice = parsed;
-        }
-      }
-
-      _navigateToRideStarted(ridePrice);
-
-      return;
-    }
-
-    // ==========================================================
-    // DRIVER CONFIRMED USER ACCEPTANCE
-    // ==========================================================
-
-    if (status == 'ride_confirmed' ||
-        status == 'driver_confirmed' ||
-        status == 'ride_accepted') {
-      final dynamic finalPrice = data['price'] ??
-          data['finalPrice'] ??
-          data['driverPrice'] ??
-          data['userCounterPrice'];
-
-      double ridePrice = _currentOfferPrice ?? widget.price;
-
-      if (finalPrice is num) {
-        ridePrice = finalPrice.toDouble();
-      } else {
-        final double? parsed = double.tryParse(
-          finalPrice?.toString() ?? '',
-        );
-
-        if (parsed != null) {
-          ridePrice = parsed;
-        }
-      }
-
-      _navigateToRideStarted(ridePrice);
-
-      return;
-    }
-
-    // ==========================================================
-    // IMPORTANT:
-    // DRIVER HAS ALREADY STARTED / CONFIRMED THE RIDE
-    //
-    // This covers the situation where the driver accepts the
-    // counter offer and the driver side immediately changes
-    // the ride status to ride_started.
-    // ==========================================================
-
-    if (status == 'ride_started' ||
-        status == 'started' ||
-        status == 'driver_started') {
-      final dynamic finalPrice = data['price'] ??
-          data['finalPrice'] ??
-          data['driverPrice'] ??
-          data['userCounterPrice'] ??
-          data['userAcceptedPrice'] ??
-          data['driverOfferPrice'];
-
-      double ridePrice = _currentOfferPrice ?? widget.price;
-
-      if (finalPrice is num) {
-        ridePrice = finalPrice.toDouble();
-      } else {
-        final double? parsed = double.tryParse(
-          finalPrice?.toString() ?? '',
-        );
-
-        if (parsed != null) {
-          ridePrice = parsed;
-        }
-      }
-
-      _navigateToRideStarted(ridePrice);
-
-      return;
-    }
-
-    // ==========================================================
-    // RIDE CANCELLED
-    // ==========================================================
-
-    if (status == 'cancelled') {
-      setState(() {
-        _waitingForDriver = false;
-        _isSubmitting = false;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'The ride offer has been cancelled.',
-          ),
-        ),
-      );
-
-      Navigator.pop(context);
-    }
-  }
-
-// ============================================================
-// NAVIGATE TO RIDE STARTED
-// ============================================================
-
-  void _navigateToRideStarted(
-    double finalPrice,
-  ) {
-    if (!mounted || _hasNavigatedToRideStarted) return;
-
-    // Prevent duplicate navigation if Firestore sends another
-    // snapshot immediately after this one.
-    _hasNavigatedToRideStarted = true;
-
-    _rideSubscription?.cancel();
-
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => RideStartedScreen(
-          rideId: widget.rideId,
-
-          pickup: widget.pickup,
-
-          destination: widget.destination,
-
-          rideType: widget.rideType,
-
-          price: finalPrice,
-
-          driverName: widget.driverName,
-
-          vehicleType: widget.vehicleType,
-
-          vehicleDescription: widget.vehicleDescription,
-
-          // ==================================================
-          // EXACT COORDINATES
-          // ==================================================
-
-          pickupLat: widget.pickupLat,
-
-          pickupLng: widget.pickupLng,
-
-          destinationLat: widget.destinationLat,
-
-          destinationLng: widget.destinationLng,
-        ),
-      ),
-    );
-  }
-
-  // ============================================================
-  // ACCEPT DRIVER'S OFFER
-  // ============================================================
-
-  Future<void> _acceptOffer() async {
-    if (_isSubmitting || _waitingForDriver) {
-      return;
-    }
-
-    setState(() {
-      _isSubmitting = true;
-      _waitingForDriver = true;
-      _waitingMessage = 'Waiting for driver to confirm...';
-    });
-
-    try {
-      await FirebaseFirestore.instance
-          .collection('ride_requests')
-          .doc(widget.rideId)
-          .update({
-        // ======================================================
-        // USER HAS ACCEPTED THE DRIVER'S PRICE
-        // ======================================================
-
-        'Status': 'user_accepted_offer',
-
-        'userAcceptedPrice': _currentOfferPrice ?? widget.price,
-
-        'userAcceptedAt': FieldValue.serverTimestamp(),
-      });
-    } catch (e) {
-      debugPrint(
-        'Error accepting driver offer: $e',
-      );
-
-      if (!mounted) return;
-
-      setState(() {
-        _isSubmitting = false;
-        _waitingForDriver = false;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Unable to send acceptance. Please try again.',
-          ),
-        ),
-      );
-    }
-  }
-
-  // ============================================================
-  // OPEN COUNTER OFFER SHEET
-  // ============================================================
-
-  void _showCounterOfferSheet() {
-    if (_isSubmitting || _waitingForDriver) {
-      return;
-    }
-
-    _counterPriceController.text =
-        (_currentOfferPrice ?? widget.price).toStringAsFixed(0);
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) {
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(
-              sheetContext,
-            ).viewInsets.bottom,
-          ),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(
-              20,
-              12,
-              20,
-              25,
-            ),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(
-                top: Radius.circular(
-                  28,
-                ),
-              ),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // ==================================================
-                // HANDLE
-                // ==================================================
-
-                Center(
-                  child: Container(
-                    width: 45,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(
-                        20,
-                      ),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(
-                  height: 22,
-                ),
-
-                const Text(
-                  'Counter Offer',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black,
-                  ),
-                ),
-
-                const SizedBox(
-                  height: 6,
-                ),
-
-                Text(
-                  'Enter the price you would like to offer the driver.',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey.shade600,
-                  ),
-                ),
-
-                const SizedBox(
-                  height: 20,
-                ),
-
-                // ==================================================
-                // PRICE FIELD
-                // ==================================================
-
-                TextField(
-                  controller: _counterPriceController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  autofocus: true,
-                  decoration: InputDecoration(
-                    prefixText: '₦ ',
-                    hintText: 'Enter your price',
-                    filled: true,
-                    fillColor: Colors.grey.shade100,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(
-                        14,
-                      ),
-                      borderSide: BorderSide.none,
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(
-                        14,
-                      ),
-                      borderSide: const BorderSide(
-                        color: Colors.black,
-                        width: 1.5,
-                      ),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(
-                  height: 20,
-                ),
-
-                // ==================================================
-                // SEND COUNTER OFFER
-                // ==================================================
-
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      final String value = _counterPriceController.text.trim();
-
-                      final double? counterPrice = double.tryParse(
-                        value,
-                      );
-
-                      if (counterPrice == null || counterPrice <= 0) {
-                        ScaffoldMessenger.of(
-                          sheetContext,
-                        ).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Enter a valid price.',
-                            ),
-                          ),
-                        );
-
-                        return;
-                      }
-
-                      Navigator.pop(
-                        sheetContext,
-                      );
-
-                      await _submitCounterOffer(
-                        counterPrice,
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.black,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(
-                          28,
-                        ),
-                      ),
-                    ),
-                    child: const Text(
-                      'Send Counter Offer',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  // ============================================================
-  // SUBMIT COUNTER OFFER
-  // ============================================================
-
-  Future<void> _submitCounterOffer(
-    double counterPrice,
-  ) async {
-    if (_isSubmitting || _waitingForDriver) {
-      return;
-    }
-
-    setState(() {
-      _isSubmitting = true;
-      _waitingForDriver = true;
-      _currentOfferPrice = counterPrice;
-      _waitingMessage =
-          'Waiting for driver to respond to your counter offer...';
-    });
-
-    try {
-      await FirebaseFirestore.instance
-          .collection('ride_requests')
-          .doc(widget.rideId)
-          .update({
-        // ======================================================
-        // USER COUNTER OFFER
-        // ======================================================
-
-        'Status': 'counter_offer',
-
-        'userCounterPrice': counterPrice,
-
-        'userCounterAt': FieldValue.serverTimestamp(),
-      });
-    } catch (e) {
-      debugPrint(
-        'Error sending counter offer: $e',
-      );
-
-      if (!mounted) return;
-
-      setState(() {
-        _isSubmitting = false;
-        _waitingForDriver = false;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Unable to send counter offer. Please try again.',
-          ),
-        ),
-      );
-    }
-  }
-
-  // ============================================================
-  // BUILD WAITING PANEL
-  // ============================================================
-
-  Widget _buildWaitingPanel() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 14,
-      ),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(
-          16,
-        ),
-      ),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 25,
-            height: 25,
-            child: CircularProgressIndicator(
-              strokeWidth: 2.5,
-              valueColor: AlwaysStoppedAnimation<Color>(
-                Colors.green.shade700,
-              ),
-            ),
-          ),
-          const SizedBox(
-            width: 12,
-          ),
-          Expanded(
-            child: Text(
-              _waitingMessage,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: Colors.black,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ============================================================
-  // DISPOSE
-  // ============================================================
-
-  @override
-  void dispose() {
-    _rideSubscription?.cancel();
-
-    _counterPriceController.dispose();
-
-    super.dispose();
-  }
-
-  // ============================================================
-  // BUILD
-  // ============================================================
-
-  @override
-  Widget build(
-    BuildContext context,
-  ) {
-    final double displayedPrice = _currentOfferPrice ?? widget.price;
-
-    return Scaffold(
-      backgroundColor: Colors.grey.shade100,
-      appBar: AppBar(
-        backgroundColor: Colors.grey.shade100,
-        elevation: 0,
-        leading: Padding(
-          padding: const EdgeInsets.only(
-            left: 10,
-          ),
-          child: GestureDetector(
-            onTap: _waitingForDriver
-                ? null
-                : () => Navigator.pop(
-                      context,
-                    ),
-            child: Opacity(
-              opacity: _waitingForDriver ? .35 : 1,
-              child: Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(
-                        .06,
-                      ),
-                      blurRadius: 8,
-                    ),
-                  ],
-                ),
-                child: const Icon(
-                  Icons.arrow_back_ios_new,
-                  size: 16,
-                  color: Colors.black,
-                ),
-              ),
-            ),
-          ),
-        ),
-        title: const Text(
-          "",
-          style: TextStyle(
-            color: Colors.black,
-          ),
-        ),
-      ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 20,
-            vertical: 10,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // =====================================================
-              // OFFERS HEADER
-              // =====================================================
-
-              Row(
-                children: [
-                  const Text(
-                    "Offers",
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black,
-                    ),
-                  ),
-                  const SizedBox(
-                    width: 10,
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black,
-                      borderRadius: BorderRadius.circular(
-                        20,
-                      ),
-                    ),
-                    child: const Text(
-                      "1",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(
-                height: 18,
-              ),
-
-              // =====================================================
-              // DRIVER OFFER CARD
-              // =====================================================
-
-              Center(
-                child: Container(
-                  width: 350,
-                  height: _waitingForDriver ? 250 : 200,
-                  padding: const EdgeInsets.all(
-                    14,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(
-                      22,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(
-                          .07,
-                        ),
-                        blurRadius: 18,
-                        offset: const Offset(
-                          0,
-                          6,
-                        ),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    children: [
-                      // =================================================
-                      // DRIVER INFORMATION
-                      // =================================================
-
-                      Expanded(
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            // =============================================
-                            // DRIVER IMAGE
-                            // =============================================
-
-                            Container(
-                              width: 82,
-                              height: 82,
-                              decoration: BoxDecoration(
-                                color: Colors.grey.shade100,
-                                borderRadius: BorderRadius.circular(
-                                  18,
-                                ),
-                              ),
-                              clipBehavior: Clip.antiAlias,
-                              child: Image.asset(
-                                'assets/images/driver.png',
-                                fit: BoxFit.cover,
-                                errorBuilder: (
-                                  context,
-                                  error,
-                                  stackTrace,
-                                ) {
-                                  return Container(
-                                    color: Colors.grey.shade200,
-                                    child: const Icon(
-                                      Icons.person,
-                                      size: 42,
-                                      color: Colors.grey,
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-
-                            const SizedBox(
-                              width: 14,
-                            ),
-
-                            // =============================================
-                            // DRIVER DETAILS
-                            // =============================================
-
-                            Expanded(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    widget.driverName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 17,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.black,
-                                    ),
-                                  ),
-                                  const SizedBox(
-                                    height: 5,
-                                  ),
-                                  Text(
-                                    widget.vehicleType,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.grey.shade700,
-                                    ),
-                                  ),
-                                  const SizedBox(
-                                    height: 3,
-                                  ),
-                                  Text(
-                                    widget.vehicleDescription,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey.shade500,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                            const SizedBox(
-                              width: 8,
-                            ),
-
-                            // =============================================
-                            // OFFER PRICE
-                            // =============================================
-
-                            Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(
-                                  "Offer",
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.grey.shade500,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                                const SizedBox(
-                                  height: 3,
-                                ),
-                                Text(
-                                  "₦${displayedPrice.toStringAsFixed(0)}",
-                                  style: const TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.black,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(
-                        height: 10,
-                      ),
-
-                      // =================================================
-                      // WAITING FOR DRIVER
-                      // =================================================
-
-                      if (_waitingForDriver) _buildWaitingPanel(),
-
-                      if (_waitingForDriver)
-                        const SizedBox(
-                          height: 10,
-                        ),
-
-                      // =================================================
-                      // COUNTER + ACCEPT BUTTONS
-                      // =================================================
-
-                      if (!_waitingForDriver)
-                        Row(
-                          children: [
-                            // =========================================
-                            // COUNTER
-                            // =========================================
-
-                            Expanded(
-                              child: SizedBox(
-                                height: 48,
-                                child: OutlinedButton(
-                                  onPressed: _isSubmitting
-                                      ? null
-                                      : _showCounterOfferSheet,
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: Colors.black,
-                                    side: const BorderSide(
-                                      color: Colors.black,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(
-                                        30,
-                                      ),
-                                    ),
-                                  ),
-                                  child: const Text(
-                                    "Counter",
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-
-                            const SizedBox(
-                              width: 10,
-                            ),
-
-                            // =========================================
-                            // ACCEPT
-                            // =========================================
-
-                            Expanded(
-                              flex: 2,
-                              child: SizedBox(
-                                height: 48,
-                                child: ElevatedButton(
-                                  onPressed:
-                                      _isSubmitting ? null : _acceptOffer,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.black,
-                                    foregroundColor: Colors.white,
-                                    elevation: 0,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(
-                                        30,
-                                      ),
-                                    ),
-                                  ),
-                                  child: _isSubmitting
-                                      ? const SizedBox(
-                                          width: 18,
-                                          height: 18,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            valueColor:
-                                                AlwaysStoppedAnimation<Color>(
-                                              Colors.white,
-                                            ),
-                                          ),
-                                        )
-                                      : const Text(
-                                          "Accept Offer",
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class TransportDriverPage extends StatelessWidget {
-  const TransportDriverPage({super.key});
-
-  void _updateRequestStatus(String docId, String status) {
-    FirebaseFirestore.instance
-        .collection('transport_requests')
-        .doc(docId)
-        .update({
-      'status': status,
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
-        backgroundColor: Colors.white,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 10),
-          child: GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              width: 25,
-              height: 25,
-              decoration: BoxDecoration(
-                color: Colors.grey[100], // ✅ grey 50 look
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.arrow_back_ios,
-                size: 14,
-                color: Colors.black,
-              ),
-            ),
-          ),
-        ),
-
-        title: const Padding(
-          padding: EdgeInsets.only(left: 8), // ✅ spacing from icon
-          child: Text(
-            'Transport Requests',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: Colors.black,
-            ),
-          ),
-        ),
-      ),
-      backgroundColor: Colors.white,
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('transport_requests')
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return const Center(child: Text("Error fetching requests"));
-          }
-
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-                child: CircularProgressIndicator(color: Colors.purple));
-          }
-
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return const Center(child: Text("No transport requests available"));
-          }
-
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: snapshot.data!.docs.map((doc) {
-              final data = doc.data() as Map<String, dynamic>;
-              return Card(
-                elevation: 4,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-                margin: const EdgeInsets.only(bottom: 16),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text("Name: ${data['name']}",
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 6),
-                      Text(
-                          "From: ${data['pickupCity']} → To: ${data['destinationCity']}"),
-                      const SizedBox(height: 6),
-                      Text("Vehicle Type: ${data['vehicleType']}"),
-                      const SizedBox(height: 12),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          ElevatedButton(
-                            onPressed: () =>
-                                _updateRequestStatus(doc.id, 'Accepted'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.purple,
-                              foregroundColor: Colors.white,
-                            ),
-                            child: const Text("Accept"),
-                          ),
-                          OutlinedButton(
-                            onPressed: () =>
-                                _updateRequestStatus(doc.id, 'Declined'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.black,
-                            ),
-                            child: const Text("Decline"),
-                          ),
-                        ],
-                      )
-                    ],
-                  ),
-                ),
-              );
-            }).toList(),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class PackageTrackingViewPage extends StatelessWidget {
-  final Map<String, dynamic> packageData;
-
-  const PackageTrackingViewPage({Key? key, required this.packageData})
-      : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
-        backgroundColor: Colors.white,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 10),
-          child: GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              width: 25,
-              height: 25,
-              decoration: BoxDecoration(
-                color: Colors.grey[100], // ✅ grey 50 look
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.arrow_back_ios,
-                size: 14,
-                color: Colors.black,
-              ),
-            ),
-          ),
-        ),
-
-        title: const Padding(
-          padding: EdgeInsets.only(left: 8), // ✅ spacing from icon
-          child: Text(
-            'Track Package',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: Colors.black,
-            ),
-          ),
-        ),
-      ),
-      body: Center(
-        child: Container(
-          margin: const EdgeInsets.all(16),
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              const BoxShadow(
-                color: Colors.black12,
-                blurRadius: 8,
-                offset: Offset(0, 3),
-              ),
-            ],
-          ),
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              const Text("Package Information",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 12),
-              _buildInfo("Service Type", packageData['serviceType']),
-              _buildInfo("Package Name", packageData['packageName']),
-              _buildInfo("Category", packageData['category']),
-              _buildInfo("Pickup Address", packageData['pickupAddress']),
-              _buildInfo("Delivery Address", packageData['deliveryAddress']),
-              _buildInfo("Sender Name", packageData['senderName']),
-              _buildInfo("Sender Contact", packageData['senderContact']),
-              _buildInfo("Receiver Name", packageData['receiverName']),
-              _buildInfo("Receiver Contact", packageData['receiverContact']),
-              _buildInfo("Status", packageData['status']),
-              if (packageData.containsKey('trackingId'))
-                _buildInfo("Tracking ID", packageData['trackingId']),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInfo(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text("$label: ", style: const TextStyle(fontWeight: FontWeight.bold)),
-          Expanded(child: Text(value, softWrap: true)),
-        ],
-      ),
-    );
-  }
-}
-
-enum SenderCategory {
-  business,
-  personal,
-}
-
-class LogisticsEntryPage extends StatefulWidget {
-  final String serviceType;
-
-  const LogisticsEntryPage({
-    Key? key,
-    required this.serviceType,
-  }) : super(key: key);
-
-  @override
-  State<LogisticsEntryPage> createState() => _LogisticsEntryPageState();
-}
-
-class _LogisticsEntryPageState extends State<LogisticsEntryPage>
-    with SingleTickerProviderStateMixin {
-  bool _checkingUser = true;
-
-  SenderCategory? _selectedCategory;
-
-  @override
-  void initState() {
-    super.initState();
-    _checkUserStatus();
-  }
-
-  Future<void> _checkUserStatus() async {
-    final uid = FirebaseAuth.instance.currentUser!.uid;
-
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('logistics')
-          .doc('profile')
-          .get();
-
-      if (!mounted) return;
-
-      if (doc.exists) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => PackageDetailsPage(
-              serviceType: widget.serviceType,
-            ),
-          ),
-        );
-
-        return;
-      }
-
-      setState(() {
-        _checkingUser = false;
-      });
-    } catch (e) {
-      setState(() {
-        _checkingUser = false;
-      });
-    }
-  }
-
-  Future<void> _continue() async {
-    if (_selectedCategory == null) return;
-
-    try {
-      final uid = FirebaseAuth.instance.currentUser!.uid;
-
-      await FirebaseFirestore.instance
-          .collection("users")
-          .doc(uid)
-          .collection("logistics")
-          .doc("profile")
-          .set({
-        "senderType": _selectedCategory == SenderCategory.business
-            ? "business"
-            : "personal",
-        "createdAt": FieldValue.serverTimestamp(),
-      });
-
-      if (!mounted) return;
-
-      if (_selectedCategory == SenderCategory.business) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => BusinessDetailsPage(
-              serviceType: widget.serviceType,
-            ),
-          ),
-        );
-      } else {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => PackageDetailsPage(
-              serviceType: widget.serviceType,
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      debugPrint("Logistics onboarding error: $e");
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_checkingUser) {
-      return const Scaffold(
-        backgroundColor: Colors.white,
-        body: Center(
-          child: CircularProgressIndicator(
-            color: Colors.black,
-          ),
-        ),
-      );
-    }
-
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 22,
-            vertical: 18,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              GestureDetector(
-                onTap: () => Navigator.pop(context),
-                child: Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.arrow_back_ios_new_rounded,
-                    size: 18,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 35),
-              const Text(
-                "Select your category",
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                "Select your category to get a tailored experience according to your needs.",
-                style: TextStyle(
-                  fontSize: 15,
-                  color: Colors.grey.shade700,
-                  height: 1.5,
-                ),
-              ),
-              const SizedBox(height: 35),
-              _categoryCard(
-                title: "Business",
-                description:
-                    "Perfect for businesses, online stores and SMEs that send packages regularly.",
-                icon: Icons.business_center_rounded,
-                accentColor: Colors.deepPurple,
-                selected: _selectedCategory == SenderCategory.business,
-                onTap: () {
-                  setState(() {
-                    _selectedCategory = SenderCategory.business;
-                  });
-                },
-              ),
-              const SizedBox(height: 18),
-              _categoryCard(
-                title: "Personal",
-                description:
-                    "For personal deliveries to family, friends or occasional customers.",
-                icon: Icons.person_outline_rounded,
-                accentColor: Colors.green,
-                selected: _selectedCategory == SenderCategory.personal,
-                onTap: () {
-                  setState(() {
-                    _selectedCategory = SenderCategory.personal;
-                  });
-                },
-              ),
-              const Spacer(),
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: _selectedCategory == null ? null : _continue,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.black,
-                    disabledBackgroundColor: Colors.grey.shade300,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                  child: const Text(
-                    "Continue",
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ================= CATEGORY CARD =================
-  Widget _categoryCard({
-    required String title,
-    required String description,
-    required IconData icon,
-    required Color accentColor,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeInOut,
-        width: double.infinity,
-        height: 150,
-        decoration: BoxDecoration(
-          color: selected ? Colors.white : Colors.grey[100],
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: selected ? Colors.black : Colors.grey.shade200,
-            width: selected ? 1.5 : 1,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(selected ? 0.08 : 0.04),
-              blurRadius: selected ? 18 : 10,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            // Accent strip
-
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: accentColor.withOpacity(0.12),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: Icon(
-                            icon,
-                            color: accentColor,
-                            size: 24,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            title,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                        AnimatedOpacity(
-                          duration: const Duration(milliseconds: 200),
-                          opacity: selected ? 1 : 0,
-                          child: Container(
-                            width: 28,
-                            height: 28,
-                            decoration: const BoxDecoration(
-                              color: Colors.black,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.check,
-                              size: 16,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    Text(
-                      description,
-                      style: TextStyle(
-                        fontSize: 14,
-                        height: 1.5,
-                        color: Colors.grey.shade700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class BusinessDetailsPage extends StatefulWidget {
-  final String serviceType;
-
-  const BusinessDetailsPage({
-    Key? key,
-    required this.serviceType,
-  }) : super(key: key);
-
-  @override
-  State<BusinessDetailsPage> createState() => _BusinessDetailsPageState();
-}
-
-class _BusinessDetailsPageState extends State<BusinessDetailsPage> {
-  final _formKey = GlobalKey<FormState>();
-
-  final _businessNameController = TextEditingController();
-  // final _cityController = TextEditingController();
-  final _addressController = TextEditingController();
-  final _phoneController = TextEditingController();
-
-  bool _loading = false;
-
-  String? _selectedLocation;
-
-  List<String> _locations = [];
-
-  bool _loadingLocations = false;
-
-  String? _selectedState;
-
-  Future<void> _onboardBusiness() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    if (_selectedState == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Please select a state."),
-        ),
-      );
-      return;
-    }
-
-    setState(() {
-      _loading = true;
-    });
-
-    final uid = FirebaseAuth.instance.currentUser!.uid;
-
-    try {
-      await FirebaseFirestore.instance
-          .collection("users")
-          .doc(uid)
-          .collection("logistics")
-          .doc("profile")
-          .set({
-        "senderType": "business",
-        "businessName": _businessNameController.text.trim(),
-        "state": _selectedState,
-        "location": _selectedLocation,
-        "address": _addressController.text.trim(),
-        "phone": _phoneController.text.trim(),
-        "profileCompleted": true,
-        "createdAt": FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-
-      if (!mounted) return;
-
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => PackageDetailsPage(
-            serviceType: widget.serviceType,
-          ),
-        ),
-      );
-    } catch (e) {
-      setState(() {
-        _loading = false;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.toString()),
-        ),
-      );
-    }
-  }
-
-  Widget _locationDropdown() {
-    return DropdownButtonFormField<String>(
-      value: _selectedLocation,
-      isExpanded: true,
-      decoration: _inputDecoration("City / LGA"),
-      items: _locations.map((location) {
-        return DropdownMenuItem(
-          value: location,
-          child: Text(location),
-        );
-      }).toList(),
-      onChanged: (value) {
-        setState(() {
-          _selectedLocation = value;
-        });
-      },
-      validator: (value) {
-        if (value == null) {
-          return "Please select a location";
-        }
-        return null;
-      },
-    );
-  }
-
-  Future<void> _loadStates() async {
-    try {
-      final states = await LocationService.getStates();
-
-      if (!mounted) return;
-
-      setState(() {
-        _states = states;
-        _loadingStates = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-
-      setState(() {
-        _loadingStates = false;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
-    }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _loadStates();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 22,
-            vertical: 18,
-          ),
-          child: Form(
-            key: _formKey,
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.arrow_back_ios_new_rounded,
-                        size: 18,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 35),
-                  const Text(
-                    "Business Details",
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    "Fill out your business details to get a tailored logistics experience according to your needs.",
-                    style: TextStyle(
-                      color: Colors.grey.shade700,
-                      height: 1.5,
-                      fontSize: 15,
-                    ),
-                  ),
-                  const SizedBox(height: 35),
-                  _buildField(
-                    controller: _businessNameController,
-                    label: "Business Name",
-                  ),
-                  const SizedBox(height: 18),
-                  _loadingStates
-                      ? const Center(
-                          child: CircularProgressIndicator(
-                            color: Colors.black,
-                          ),
-                        )
-                      : _stateDropdown(),
-                  const SizedBox(height: 18),
-                  _loadingLocations
-                      ? const Center(
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(vertical: 20),
-                            child: CircularProgressIndicator(
-                              color: Colors.black,
-                            ),
-                          ),
-                        )
-                      : _locationDropdown(),
-                  const SizedBox(height: 18),
-                  _buildField(
-                    controller: _addressController,
-                    label: "Business Address",
-                    maxLines: 3,
-                  ),
-                  const SizedBox(height: 18),
-                  _buildField(
-                    controller: _phoneController,
-                    label: "Phone Number",
-                    keyboardType: TextInputType.phone,
-                  ),
-                  const SizedBox(height: 40),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: ElevatedButton(
-                      onPressed: _loading ? null : _onboardBusiness,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.black,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                      child: _loading
-                          ? const SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Text(
-                              "Onboard",
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                    ),
-                  ),
-                  const SizedBox(height: 25),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ================= STATES =================
-
-  List<String> _states = [];
-
-  bool _loadingStates = true;
-  // ================= STATE DROPDOWN =================
-
-  Widget _stateDropdown() {
-    return DropdownButtonFormField<String>(
-      value: _selectedState,
-      isExpanded: true,
-      decoration: _inputDecoration("State"),
-      borderRadius: BorderRadius.circular(16),
-      icon: const Icon(Icons.keyboard_arrow_down_rounded),
-      items: _states
-          .map(
-            (state) => DropdownMenuItem(
-              value: state,
-              child: Text(state),
-            ),
-          )
-          .toList(),
-      onChanged: (value) async {
-        if (value == null) return;
-
-        setState(() {
-          _selectedState = value;
-          _selectedLocation = null;
-          _locations = [];
-          _loadingLocations = true;
-        });
-
-        try {
-          final locations = await LocationService.getLocations(value);
-
-          locations.sort();
-
-          if (!mounted) return;
-
-          setState(() {
-            _locations = locations;
-            _loadingLocations = false;
-          });
-        } catch (e) {
-          setState(() {
-            _loadingLocations = false;
-          });
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(e.toString())),
-          );
-        }
-      },
-      validator: (value) {
-        if (value == null) {
-          return "Please select a state";
-        }
-        return null;
-      },
-    );
-  }
-
-  // ================= TEXT FIELD =================
-
-  Widget _buildField({
-    required TextEditingController controller,
-    required String label,
-    int maxLines = 1,
-    TextInputType keyboardType = TextInputType.text,
-  }) {
-    return TextFormField(
-      controller: controller,
-      keyboardType: keyboardType,
-      maxLines: maxLines,
-      validator: (value) {
-        if (value == null || value.trim().isEmpty) {
-          return "Required";
-        }
-        return null;
-      },
-      decoration: _inputDecoration(label),
-    );
-  }
-
-  // ================= INPUT DECORATION =================
-
-  InputDecoration _inputDecoration(String label) {
-    return InputDecoration(
-      labelText: label,
-      labelStyle: TextStyle(
-        color: Colors.grey.shade700,
-      ),
-      filled: true,
-      fillColor: Colors.white,
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: 18,
-        vertical: 18,
-      ),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide.none,
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide.none,
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(
-          color: Colors.black,
-          width: 1.2,
-        ),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(
-          color: Colors.red,
-        ),
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(
-          color: Colors.red,
-          width: 1.2,
-        ),
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    _businessNameController.dispose();
-    // _cityController.dispose();
-    _addressController.dispose();
-    _phoneController.dispose();
-    super.dispose();
-  }
-}
-
 class LocationService {
   static Map<String, dynamic>? _cache;
 
@@ -46580,8 +44547,10 @@ class _DriverOnboardingFormState extends State<DriverOnboardingForm> {
 }
 
 class DriverHomePage extends StatefulWidget {
+  const DriverHomePage({Key? key}) : super(key: key);
+
   @override
-  _DriverHomePageState createState() => _DriverHomePageState();
+  State<DriverHomePage> createState() => _DriverHomePageState();
 }
 
 class _DriverHomePageState extends State<DriverHomePage> {
@@ -46592,7 +44561,6 @@ class _DriverHomePageState extends State<DriverHomePage> {
 
   final Map<String, TextEditingController> _priceControllers = {};
   final Set<String> notifiedRequests = {};
-
   final AudioPlayer _audioPlayer = AudioPlayer();
 
   String? driverId;
@@ -46617,18 +44585,19 @@ class _DriverHomePageState extends State<DriverHomePage> {
     }
 
     _audioPlayer.dispose();
-
     super.dispose();
   }
 
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
   // DRIVER INFORMATION
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
 
   Future<void> _loadDriverInfo() async {
     final currentUser = FirebaseAuth.instance.currentUser;
 
-    if (currentUser == null) return;
+    if (currentUser == null) {
+      return;
+    }
 
     try {
       final doc = await FirebaseFirestore.instance
@@ -46637,47 +44606,63 @@ class _DriverHomePageState extends State<DriverHomePage> {
           .get();
 
       if (doc.exists) {
-        final data = doc.data()!;
+        final data = doc.data() ?? {};
 
         driverId = currentUser.uid;
-        driverName = data['name'] ?? 'Unknown';
-        vehicleType = data['vehicle'] ?? 'Not specified';
-        vehicle = data['vehicleType'] ?? 'No description';
-        driverImageUrl = data['profileImage'];
+        driverName = data['name']?.toString() ?? 'Unknown';
+        vehicleType = data['vehicle']?.toString() ?? 'Not specified';
+        vehicle = data['vehicleType']?.toString() ?? 'No description';
+        driverImageUrl = data['profileImage']?.toString();
       }
 
-      // Fetch completed rides
-      final ridesSnapshot = await FirebaseFirestore.instance
-          .collection('ride_requests')
-          .where('driverId', isEqualTo: driverName)
-          .where('Status', isEqualTo: 'driver_accepted')
-          .get();
+      // -----------------------------------------------------------------------
+      // Completed rides
+      //
+      // The new flow uses Status == completed.
+      // -----------------------------------------------------------------------
 
-      double earnings = 0.0;
+      if (driverName != null) {
+        final ridesSnapshot = await FirebaseFirestore.instance
+            .collection('ride_requests')
+            .where('driverId', isEqualTo: driverName)
+            .where('Status', isEqualTo: 'completed')
+            .get();
 
-      for (final ride in ridesSnapshot.docs) {
-        final data = ride.data();
-        final price = data['price'];
+        double earnings = 0.0;
 
-        if (price is num) {
-          earnings += price.toDouble();
+        for (final ride in ridesSnapshot.docs) {
+          final data = ride.data();
+
+          final price = data['price'];
+
+          if (price is num) {
+            earnings += price.toDouble();
+          } else {
+            final parsed = double.tryParse(price?.toString() ?? '');
+
+            if (parsed != null) {
+              earnings += parsed;
+            }
+          }
         }
+
+        if (!mounted) {
+          return;
+        }
+
+        setState(() {
+          completedRides = ridesSnapshot.docs.length;
+          totalEarnings = earnings;
+        });
       }
-
-      if (!mounted) return;
-
-      setState(() {
-        completedRides = ridesSnapshot.docs.length;
-        totalEarnings = earnings;
-      });
     } catch (e) {
       debugPrint('Error loading driver information: $e');
     }
   }
 
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
   // NOTIFICATION SOUND
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
 
   Future<void> _playNotificationSound() async {
     try {
@@ -46697,9 +44682,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
     }
   }
 
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
   // REFRESH
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
 
   Future<void> _refresh() async {
     if (mounted) {
@@ -46711,23 +44696,10 @@ class _DriverHomePageState extends State<DriverHomePage> {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // CLEAN LOCATION TEXT
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
+  // CLEAN LOCATION
+  // ===========================================================================
 
-  /*
-   * This removes coordinate information from the displayed address if the
-   * address was stored in a format such as:
-   *
-   * "ATBU Gubi Campus, Bauchi (10.3158, 9.8442)"
-   *
-   * or:
-   *
-   * "Some Address - 10.3158, 9.8442"
-   *
-   * The actual coordinates remain untouched in Firestore and are passed
-   * separately to the next page.
-   */
   String _cleanAddress(dynamic value) {
     if (value == null) {
       return 'Unknown';
@@ -46739,8 +44711,6 @@ class _DriverHomePageState extends State<DriverHomePage> {
       return 'Unknown';
     }
 
-    // Remove coordinates inside parentheses:
-    // (10.3158, 9.8442)
     address = address.replaceAll(
       RegExp(
         r'\(\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*\)',
@@ -46748,7 +44718,6 @@ class _DriverHomePageState extends State<DriverHomePage> {
       '',
     );
 
-    // Remove coordinate pairs after common separators.
     address = address.replaceAll(
       RegExp(
         r'\s*[-|•]\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?',
@@ -46756,7 +44725,6 @@ class _DriverHomePageState extends State<DriverHomePage> {
       '',
     );
 
-    // Remove a coordinate pair at the very end of the string.
     address = address.replaceAll(
       RegExp(
         r'\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*$',
@@ -46770,9 +44738,27 @@ class _DriverHomePageState extends State<DriverHomePage> {
         );
   }
 
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
+  // READ NUMBER SAFELY
+  // ===========================================================================
+
+  double? _readDouble(dynamic value) {
+    if (value == null) {
+      return null;
+    }
+
+    if (value is num) {
+      return value.toDouble();
+    }
+
+    return double.tryParse(
+      value.toString(),
+    );
+  }
+
+  // ===========================================================================
   // SEND DRIVER OFFER
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
 
   Future<void> _sendDriverOffer({
     required BuildContext context,
@@ -46786,16 +44772,12 @@ class _DriverHomePageState extends State<DriverHomePage> {
     if (price == null || price <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            "Please enter a valid price",
-          ),
+          content: Text('Please enter a valid price.'),
         ),
       );
-
       return;
     }
 
-    // Get exact coordinates from Firestore.
     final double? pickupLat = _readDouble(data['pickupLat']);
 
     final double? pickupLng = _readDouble(data['pickupLng']);
@@ -46805,19 +44787,18 @@ class _DriverHomePageState extends State<DriverHomePage> {
     final double? destinationLng = _readDouble(data['destinationLng']);
 
     try {
-      /*
-       * IMPORTANT:
-       *
-       * We DO NOT use driver_accepted here.
-       *
-       * The driver has only made an offer. The rider has not accepted yet.
-       *
-       * DriverBookedScreen will listen to this ride and wait for:
-       *
-       * user_accepted_offer
-       * counter_offer
-       * cancelled
-       */
+      // -----------------------------------------------------------------------
+      // IMPORTANT:
+      //
+      // This is only an offer.
+      //
+      // The rider has NOT accepted yet.
+      //
+      // Therefore:
+      //
+      // Status = driver_offered
+      // -----------------------------------------------------------------------
+
       await FirebaseFirestore.instance
           .collection('ride_requests')
           .doc(rideId)
@@ -46825,20 +44806,24 @@ class _DriverHomePageState extends State<DriverHomePage> {
         'Status': 'driver_offered',
 
         'driverId': driverName ?? 'Unknown',
-
         'driverUid': driverId,
 
         'price': price,
-
         'driverOfferPrice': price,
-
         'driverOfferAt': FieldValue.serverTimestamp(),
 
         'vehicleType': vehicleType ?? 'Not specified',
 
         'vehicle': vehicle ?? 'No description',
 
-        // Keep exact coordinates on the ride document.
+        // Clear any stale negotiation values.
+        'userCounterPrice': FieldValue.delete(),
+        'userCounterAt': FieldValue.delete(),
+        'lastNegotiationActor': FieldValue.delete(),
+        'lastNegotiationType': FieldValue.delete(),
+        'lastNegotiationPrice': FieldValue.delete(),
+        'lastNegotiationAt': FieldValue.delete(),
+
         if (pickupLat != null) 'pickupLat': pickupLat,
 
         if (pickupLng != null) 'pickupLng': pickupLng,
@@ -46850,17 +44835,17 @@ class _DriverHomePageState extends State<DriverHomePage> {
 
       await _stopSound();
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
-      /*
-       * First show the driver a confirmation modal.
-       *
-       * The driver does NOT go directly into the ride.
-       *
-       * The next screen is a waiting screen where the driver's offer
-       * remains active until the rider accepts, counters or cancels.
-       */
-      final bool? continueToWaitingScreen = await showModalBottomSheet<bool>(
+      // -----------------------------------------------------------------------
+      // Offer sent confirmation.
+      //
+      // This is NOT a waiting screen.
+      // -----------------------------------------------------------------------
+
+      final bool? continueToRide = await showModalBottomSheet<bool>(
         context: context,
         isDismissible: false,
         enableDrag: false,
@@ -46911,12 +44896,12 @@ class _DriverHomePageState extends State<DriverHomePage> {
                     style: TextStyle(
                       fontSize: 21,
                       fontWeight: FontWeight.bold,
-                      color: Colors.black,
                     ),
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Your offer of ₦${price.toStringAsFixed(2)} '
+                    'Your offer of '
+                    '₦${price.toStringAsFixed(2)} '
                     'has been sent to the rider.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
@@ -46926,7 +44911,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Wait for the rider to accept or make a counter offer.',
+                    'Continue to the ride to respond '
+                    'to the rider or begin the ride when '
+                    'the offer is accepted.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.black54,
@@ -46967,40 +44954,30 @@ class _DriverHomePageState extends State<DriverHomePage> {
         },
       );
 
-      if (continueToWaitingScreen != true) {
+      if (continueToRide != true || !mounted) {
         return;
       }
 
-      if (!mounted) return;
+      // -----------------------------------------------------------------------
+      // Driver now stays on DriverBookedScreen.
+      //
+      // DriverBookedScreen listens to the SAME ride document.
+      // -----------------------------------------------------------------------
 
-      /*
-       * Navigate to DriverBookedScreen.
-       *
-       * The important difference is that this page is now a WAITING page.
-       * It must listen to the ride document instead of assuming the rider
-       * already accepted.
-       */
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => DriverBookedScreen(
             riderName: data['userName']?.toString() ?? 'Unknown',
-
             pickup: _cleanAddress(
               data['Pickup Location'],
             ),
-
             destination: _cleanAddress(
               data['Destination'],
             ),
-
             price: price,
-
             paymentMethod: 'Cash',
-
             rideId: rideId,
-
-            // Exact rider coordinates.
             pickupLat: pickupLat ?? 0.0,
             pickupLng: pickupLng ?? 0.0,
             destinationLat: destinationLat ?? 0.0,
@@ -47013,7 +44990,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
         'Error sending driver offer: $e',
       );
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -47025,27 +45004,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // READ NUMBER SAFELY
-  // ---------------------------------------------------------------------------
-
-  double? _readDouble(dynamic value) {
-    if (value == null) {
-      return null;
-    }
-
-    if (value is num) {
-      return value.toDouble();
-    }
-
-    return double.tryParse(
-      value.toString(),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
   // BUILD
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
 
   @override
   Widget build(BuildContext context) {
@@ -47055,9 +45016,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
         backgroundColor: Colors.white,
         elevation: 0,
         leading: Padding(
-          padding: const EdgeInsets.only(
-            left: 10,
-          ),
+          padding: const EdgeInsets.only(left: 10),
           child: GestureDetector(
             onTap: () => Navigator.pop(context),
             child: Container(
@@ -47091,12 +45050,12 @@ class _DriverHomePageState extends State<DriverHomePage> {
         onRefresh: _refresh,
         child: Column(
           children: [
-            // -----------------------------------------------------------------
-            // DRIVER SUMMARY CARD
-            // -----------------------------------------------------------------
+            // =================================================================
+            // DRIVER SUMMARY
+            // =================================================================
 
             Padding(
-              padding: const EdgeInsets.all(16.0),
+              padding: const EdgeInsets.all(16),
               child: Container(
                 height: 180,
                 padding: const EdgeInsets.all(16),
@@ -47151,7 +45110,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: const Text(
-                            "Online",
+                            'Online',
                             style: TextStyle(
                               fontSize: 12,
                               color: Colors.white,
@@ -47161,9 +45120,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
                         ),
                       ],
                     ),
-                    const SizedBox(
-                      height: 20,
-                    ),
+                    const SizedBox(height: 20),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -47176,21 +45133,17 @@ class _DriverHomePageState extends State<DriverHomePage> {
                                 fontSize: 16,
                               ),
                             ),
-                            const SizedBox(
-                              height: 4,
-                            ),
+                            const SizedBox(height: 4),
                             Container(
                               height: 60,
                               width: 100,
                               decoration: BoxDecoration(
                                 color: Colors.grey,
-                                borderRadius: BorderRadius.circular(
-                                  8,
-                                ),
+                                borderRadius: BorderRadius.circular(8),
                               ),
                               child: Center(
                                 child: Text(
-                                  "$completedRides",
+                                  '$completedRides',
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 16,
@@ -47209,21 +45162,17 @@ class _DriverHomePageState extends State<DriverHomePage> {
                                 fontSize: 16,
                               ),
                             ),
-                            const SizedBox(
-                              height: 4,
-                            ),
+                            const SizedBox(height: 4),
                             Container(
                               height: 60,
                               width: 100,
                               decoration: BoxDecoration(
                                 color: Colors.grey,
-                                borderRadius: BorderRadius.circular(
-                                  8,
-                                ),
+                                borderRadius: BorderRadius.circular(8),
                               ),
                               child: Center(
                                 child: Text(
-                                  "₦${totalEarnings.toStringAsFixed(2)}",
+                                  '₦${totalEarnings.toStringAsFixed(2)}',
                                   style: const TextStyle(
                                     fontSize: 16,
                                     color: Colors.white,
@@ -47240,9 +45189,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
               ),
             ),
 
-            // -----------------------------------------------------------------
+            // =================================================================
             // RIDE REQUESTS
-            // -----------------------------------------------------------------
+            // =================================================================
 
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
@@ -47271,12 +45220,10 @@ class _DriverHomePageState extends State<DriverHomePage> {
                     return ListView(
                       physics: const AlwaysScrollableScrollPhysics(),
                       children: const [
-                        SizedBox(
-                          height: 200,
-                        ),
+                        SizedBox(height: 200),
                         Center(
                           child: Text(
-                            "No pending ride requests.",
+                            'No pending ride requests.',
                           ),
                         ),
                       ],
@@ -47316,21 +45263,19 @@ class _DriverHomePageState extends State<DriverHomePage> {
                             vertical: 12,
                           ),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(
-                              20,
-                            ),
+                            borderRadius: BorderRadius.circular(20),
                           ),
                           elevation: 8,
                           color: Colors.grey[500],
                           shadowColor: Colors.black12,
                           child: Padding(
-                            padding: const EdgeInsets.all(20.0),
+                            padding: const EdgeInsets.all(20),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 const Center(
                                   child: Text(
-                                    "New Ride Request",
+                                    'New Ride Request',
                                     style: TextStyle(
                                       fontSize: 18,
                                       fontWeight: FontWeight.w600,
@@ -47338,25 +45283,19 @@ class _DriverHomePageState extends State<DriverHomePage> {
                                     ),
                                   ),
                                 ),
-                                const SizedBox(
-                                  height: 16,
-                                ),
+                                const SizedBox(height: 16),
                                 const Text(
                                   'Pickup Location',
                                   style: TextStyle(
                                     color: Colors.white,
                                   ),
                                 ),
-                                const SizedBox(
-                                  height: 2,
-                                ),
+                                const SizedBox(height: 2),
                                 _buildInfoRow(
-                                  "Pickup",
+                                  'Pickup',
                                   pickup,
                                 ),
-                                const SizedBox(
-                                  height: 5,
-                                ),
+                                const SizedBox(height: 5),
                                 const Text(
                                   'Destination',
                                   style: TextStyle(
@@ -47364,32 +45303,28 @@ class _DriverHomePageState extends State<DriverHomePage> {
                                   ),
                                 ),
                                 _buildInfoRow(
-                                  "Destination",
+                                  'Destination',
                                   destination,
                                 ),
-                                const SizedBox(
-                                  height: 10,
-                                ),
+                                const SizedBox(height: 10),
                                 Text(
-                                  "Booked by: ${data['userName'] ?? 'Unknown'}",
+                                  'Booked by: '
+                                  '${data['userName'] ?? 'Unknown'}',
                                   style: const TextStyle(
                                     fontWeight: FontWeight.bold,
                                     color: Colors.white,
                                   ),
                                 ),
-                                const SizedBox(
-                                  height: 4,
-                                ),
+                                const SizedBox(height: 4),
                                 Text(
-                                  "Requested: $timeAgo",
+                                  'Requested: '
+                                  '$timeAgo',
                                   style: TextStyle(
                                     color: Colors.green[700],
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
-                                const SizedBox(
-                                  height: 16,
-                                ),
+                                const SizedBox(height: 16),
                                 TextField(
                                   controller: _priceControllers[rideId],
                                   keyboardType:
@@ -47402,23 +45337,15 @@ class _DriverHomePageState extends State<DriverHomePage> {
                                     filled: true,
                                     fillColor: Colors.white,
                                     border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(
-                                        10,
-                                      ),
+                                      borderRadius: BorderRadius.circular(10),
                                     ),
                                   ),
                                 ),
-                                const SizedBox(
-                                  height: 16,
-                                ),
+                                const SizedBox(height: 16),
                                 Row(
                                   children: [
-                                    // ------------------------------------------------
-                                    // OFFER BUTTON
-                                    // ------------------------------------------------
-
                                     Expanded(
-                                      child: ElevatedButton.icon(
+                                      child: ElevatedButton(
                                         onPressed: () {
                                           _sendDriverOffer(
                                             context: context,
@@ -47426,38 +45353,29 @@ class _DriverHomePageState extends State<DriverHomePage> {
                                             data: data,
                                           );
                                         },
-                                        label: const Text(
-                                          "Offer",
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
                                         style: ElevatedButton.styleFrom(
                                           backgroundColor: Colors.black,
                                           padding: const EdgeInsets.symmetric(
                                             vertical: 14,
                                           ),
                                           shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              10,
-                                            ),
+                                            borderRadius:
+                                                BorderRadius.circular(10),
+                                          ),
+                                        ),
+                                        child: const Text(
+                                          'Offer',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
                                           ),
                                         ),
                                       ),
                                     ),
-
-                                    const SizedBox(
-                                      width: 12,
-                                    ),
-
-                                    // ------------------------------------------------
-                                    // REJECT BUTTON
-                                    // ------------------------------------------------
-
+                                    const SizedBox(width: 12),
                                     Expanded(
-                                      child: ElevatedButton.icon(
+                                      child: ElevatedButton(
                                         onPressed: () async {
                                           await _stopSound();
 
@@ -47466,18 +45384,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
                                           );
 
                                           try {
-                                            /*
-                                             * Rejecting a request from the
-                                             * pending list removes it from
-                                             * this driver's visible list.
-                                             */
                                             await FirebaseFirestore.instance
-                                                .collection(
-                                                  'ride_requests',
-                                                )
-                                                .doc(
-                                                  rideId,
-                                                )
+                                                .collection('ride_requests')
+                                                .doc(rideId)
                                                 .update({
                                               'Status': 'driver_rejected',
                                               'driverRejectedBy':
@@ -47492,28 +45401,25 @@ class _DriverHomePageState extends State<DriverHomePage> {
                                           }
 
                                           if (mounted) {
-                                            setState(
-                                              () {},
-                                            );
+                                            setState(() {});
                                           }
                                         },
-                                        label: const Text(
-                                          "Reject",
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 16,
-                                          ),
-                                        ),
                                         style: ElevatedButton.styleFrom(
                                           backgroundColor: Colors.red[900],
                                           padding: const EdgeInsets.symmetric(
                                             vertical: 14,
                                           ),
                                           shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              10,
-                                            ),
+                                            borderRadius:
+                                                BorderRadius.circular(10),
+                                          ),
+                                        ),
+                                        child: const Text(
+                                          'Reject',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16,
                                           ),
                                         ),
                                       ),
@@ -47536,9 +45442,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
     );
   }
 
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
   // INFO ROW
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
 
   Widget _buildInfoRow(
     String label,
@@ -47556,13 +45462,11 @@ class _DriverHomePageState extends State<DriverHomePage> {
       child: Row(
         children: [
           Icon(
-            label == "Pickup" ? Icons.my_location : Icons.location_on,
+            label == 'Pickup' ? Icons.my_location : Icons.location_on,
             color: Colors.green[700],
             size: 20,
           ),
-          const SizedBox(
-            width: 8,
-          ),
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
               value,
@@ -47579,36 +45483,2090 @@ class _DriverHomePageState extends State<DriverHomePage> {
     );
   }
 
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
   // TIME AGO
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
 
   String _getTimeAgo(
     Timestamp? timestamp,
   ) {
     if (timestamp == null) {
-      return "Unknown time";
+      return 'Unknown time';
     }
 
     final now = DateTime.now();
-
     final rideTime = timestamp.toDate();
 
     final difference = now.difference(rideTime);
 
     if (difference.inMinutes < 1) {
-      return "Just now";
+      return 'Just now';
     }
 
     if (difference.inMinutes < 60) {
-      return "${difference.inMinutes} mins ago";
+      return '${difference.inMinutes} mins ago';
     }
 
     if (difference.inHours < 24) {
-      return "${difference.inHours} hrs ago";
+      return '${difference.inHours} hrs ago';
     }
 
-    return "${difference.inDays} days ago";
+    return '${difference.inDays} days ago';
+  }
+}
+
+class LogisticsEntryPage extends StatefulWidget {
+  final String serviceType;
+
+  const LogisticsEntryPage({
+    Key? key,
+    required this.serviceType,
+  }) : super(key: key);
+
+  @override
+  State<LogisticsEntryPage> createState() => _LogisticsEntryPageState();
+}
+
+class _LogisticsEntryPageState extends State<LogisticsEntryPage>
+    with SingleTickerProviderStateMixin {
+  bool _checkingUser = true;
+
+  SenderCategory? _selectedCategory;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkUserStatus();
+  }
+
+  Future<void> _checkUserStatus() async {
+    final uid = FirebaseAuth.instance.currentUser!.uid;
+
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('logistics')
+          .doc('profile')
+          .get();
+
+      if (!mounted) return;
+
+      if (doc.exists) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PackageDetailsPage(
+              serviceType: widget.serviceType,
+            ),
+          ),
+        );
+
+        return;
+      }
+
+      setState(() {
+        _checkingUser = false;
+      });
+    } catch (e) {
+      setState(() {
+        _checkingUser = false;
+      });
+    }
+  }
+
+  Future<void> _continue() async {
+    if (_selectedCategory == null) return;
+
+    try {
+      final uid = FirebaseAuth.instance.currentUser!.uid;
+
+      await FirebaseFirestore.instance
+          .collection("users")
+          .doc(uid)
+          .collection("logistics")
+          .doc("profile")
+          .set({
+        "senderType": _selectedCategory == SenderCategory.business
+            ? "business"
+            : "personal",
+        "createdAt": FieldValue.serverTimestamp(),
+      });
+
+      if (!mounted) return;
+
+      if (_selectedCategory == SenderCategory.business) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => BusinessDetailsPage(
+              serviceType: widget.serviceType,
+            ),
+          ),
+        );
+      } else {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PackageDetailsPage(
+              serviceType: widget.serviceType,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint("Logistics onboarding error: $e");
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_checkingUser) {
+      return const Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(
+          child: CircularProgressIndicator(
+            color: Colors.black,
+          ),
+        ),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 22,
+            vertical: 18,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    size: 18,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 35),
+              const Text(
+                "Select your category",
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                "Select your category to get a tailored experience according to your needs.",
+                style: TextStyle(
+                  fontSize: 15,
+                  color: Colors.grey.shade700,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 35),
+              _categoryCard(
+                title: "Business",
+                description:
+                    "Perfect for businesses, online stores and SMEs that send packages regularly.",
+                icon: Icons.business_center_rounded,
+                accentColor: Colors.deepPurple,
+                selected: _selectedCategory == SenderCategory.business,
+                onTap: () {
+                  setState(() {
+                    _selectedCategory = SenderCategory.business;
+                  });
+                },
+              ),
+              const SizedBox(height: 18),
+              _categoryCard(
+                title: "Personal",
+                description:
+                    "For personal deliveries to family, friends or occasional customers.",
+                icon: Icons.person_outline_rounded,
+                accentColor: Colors.green,
+                selected: _selectedCategory == SenderCategory.personal,
+                onTap: () {
+                  setState(() {
+                    _selectedCategory = SenderCategory.personal;
+                  });
+                },
+              ),
+              const Spacer(),
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  onPressed: _selectedCategory == null ? null : _continue,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.black,
+                    disabledBackgroundColor: Colors.grey.shade300,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: const Text(
+                    "Continue",
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ================= CATEGORY CARD =================
+  Widget _categoryCard({
+    required String title,
+    required String description,
+    required IconData icon,
+    required Color accentColor,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeInOut,
+        width: double.infinity,
+        height: 150,
+        decoration: BoxDecoration(
+          color: selected ? Colors.white : Colors.grey[100],
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? Colors.black : Colors.grey.shade200,
+            width: selected ? 1.5 : 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(selected ? 0.08 : 0.04),
+              blurRadius: selected ? 18 : 10,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            // Accent strip
+
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: accentColor.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Icon(
+                            icon,
+                            color: accentColor,
+                            size: 24,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        AnimatedOpacity(
+                          duration: const Duration(milliseconds: 200),
+                          opacity: selected ? 1 : 0,
+                          child: Container(
+                            width: 28,
+                            height: 28,
+                            decoration: const BoxDecoration(
+                              color: Colors.black,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.check,
+                              size: 16,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      description,
+                      style: TextStyle(
+                        fontSize: 14,
+                        height: 1.5,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class PackageTrackingViewPage extends StatelessWidget {
+  final Map<String, dynamic> packageData;
+
+  const PackageTrackingViewPage({Key? key, required this.packageData})
+      : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
+        backgroundColor: Colors.white,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 10),
+          child: GestureDetector(
+            onTap: () => Navigator.pop(context),
+            child: Container(
+              width: 25,
+              height: 25,
+              decoration: BoxDecoration(
+                color: Colors.grey[100], // ✅ grey 50 look
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.arrow_back_ios,
+                size: 14,
+                color: Colors.black,
+              ),
+            ),
+          ),
+        ),
+
+        title: const Padding(
+          padding: EdgeInsets.only(left: 8), // ✅ spacing from icon
+          child: Text(
+            'Track Package',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: Colors.black,
+            ),
+          ),
+        ),
+      ),
+      body: Center(
+        child: Container(
+          margin: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              const BoxShadow(
+                color: Colors.black12,
+                blurRadius: 8,
+                offset: Offset(0, 3),
+              ),
+            ],
+          ),
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              const Text("Package Information",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
+              _buildInfo("Service Type", packageData['serviceType']),
+              _buildInfo("Package Name", packageData['packageName']),
+              _buildInfo("Category", packageData['category']),
+              _buildInfo("Pickup Address", packageData['pickupAddress']),
+              _buildInfo("Delivery Address", packageData['deliveryAddress']),
+              _buildInfo("Sender Name", packageData['senderName']),
+              _buildInfo("Sender Contact", packageData['senderContact']),
+              _buildInfo("Receiver Name", packageData['receiverName']),
+              _buildInfo("Receiver Contact", packageData['receiverContact']),
+              _buildInfo("Status", packageData['status']),
+              if (packageData.containsKey('trackingId'))
+                _buildInfo("Tracking ID", packageData['trackingId']),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfo(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("$label: ", style: const TextStyle(fontWeight: FontWeight.bold)),
+          Expanded(child: Text(value, softWrap: true)),
+        ],
+      ),
+    );
+  }
+}
+
+enum SenderCategory {
+  business,
+  personal,
+}
+
+class BusinessDetailsPage extends StatefulWidget {
+  final String serviceType;
+
+  const BusinessDetailsPage({
+    Key? key,
+    required this.serviceType,
+  }) : super(key: key);
+
+  @override
+  State<BusinessDetailsPage> createState() => _BusinessDetailsPageState();
+}
+
+class _BusinessDetailsPageState extends State<BusinessDetailsPage> {
+  final _formKey = GlobalKey<FormState>();
+
+  final _businessNameController = TextEditingController();
+  // final _cityController = TextEditingController();
+  final _addressController = TextEditingController();
+  final _phoneController = TextEditingController();
+
+  bool _loading = false;
+
+  String? _selectedLocation;
+
+  List<String> _locations = [];
+
+  bool _loadingLocations = false;
+
+  String? _selectedState;
+
+  Future<void> _onboardBusiness() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    if (_selectedState == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Please select a state."),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+    });
+
+    final uid = FirebaseAuth.instance.currentUser!.uid;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection("users")
+          .doc(uid)
+          .collection("logistics")
+          .doc("profile")
+          .set({
+        "senderType": "business",
+        "businessName": _businessNameController.text.trim(),
+        "state": _selectedState,
+        "location": _selectedLocation,
+        "address": _addressController.text.trim(),
+        "phone": _phoneController.text.trim(),
+        "profileCompleted": true,
+        "createdAt": FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      if (!mounted) return;
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PackageDetailsPage(
+            serviceType: widget.serviceType,
+          ),
+        ),
+      );
+    } catch (e) {
+      setState(() {
+        _loading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString()),
+        ),
+      );
+    }
+  }
+
+  Widget _locationDropdown() {
+    return DropdownButtonFormField<String>(
+      value: _selectedLocation,
+      isExpanded: true,
+      decoration: _inputDecoration("City / LGA"),
+      items: _locations.map((location) {
+        return DropdownMenuItem(
+          value: location,
+          child: Text(location),
+        );
+      }).toList(),
+      onChanged: (value) {
+        setState(() {
+          _selectedLocation = value;
+        });
+      },
+      validator: (value) {
+        if (value == null) {
+          return "Please select a location";
+        }
+        return null;
+      },
+    );
+  }
+
+  Future<void> _loadStates() async {
+    try {
+      final states = await LocationService.getStates();
+
+      if (!mounted) return;
+
+      setState(() {
+        _states = states;
+        _loadingStates = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _loadingStates = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStates();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 22,
+            vertical: 18,
+          ),
+          child: Form(
+            key: _formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.arrow_back_ios_new_rounded,
+                        size: 18,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 35),
+                  const Text(
+                    "Business Details",
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    "Fill out your business details to get a tailored logistics experience according to your needs.",
+                    style: TextStyle(
+                      color: Colors.grey.shade700,
+                      height: 1.5,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const SizedBox(height: 35),
+                  _buildField(
+                    controller: _businessNameController,
+                    label: "Business Name",
+                  ),
+                  const SizedBox(height: 18),
+                  _loadingStates
+                      ? const Center(
+                          child: CircularProgressIndicator(
+                            color: Colors.black,
+                          ),
+                        )
+                      : _stateDropdown(),
+                  const SizedBox(height: 18),
+                  _loadingLocations
+                      ? const Center(
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(vertical: 20),
+                            child: CircularProgressIndicator(
+                              color: Colors.black,
+                            ),
+                          ),
+                        )
+                      : _locationDropdown(),
+                  const SizedBox(height: 18),
+                  _buildField(
+                    controller: _addressController,
+                    label: "Business Address",
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 18),
+                  _buildField(
+                    controller: _phoneController,
+                    label: "Phone Number",
+                    keyboardType: TextInputType.phone,
+                  ),
+                  const SizedBox(height: 40),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: ElevatedButton(
+                      onPressed: _loading ? null : _onboardBusiness,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.black,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: _loading
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text(
+                              "Onboard",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 25),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ================= STATES =================
+
+  List<String> _states = [];
+
+  bool _loadingStates = true;
+  // ================= STATE DROPDOWN =================
+
+  Widget _stateDropdown() {
+    return DropdownButtonFormField<String>(
+      value: _selectedState,
+      isExpanded: true,
+      decoration: _inputDecoration("State"),
+      borderRadius: BorderRadius.circular(16),
+      icon: const Icon(Icons.keyboard_arrow_down_rounded),
+      items: _states
+          .map(
+            (state) => DropdownMenuItem(
+              value: state,
+              child: Text(state),
+            ),
+          )
+          .toList(),
+      onChanged: (value) async {
+        if (value == null) return;
+
+        setState(() {
+          _selectedState = value;
+          _selectedLocation = null;
+          _locations = [];
+          _loadingLocations = true;
+        });
+
+        try {
+          final locations = await LocationService.getLocations(value);
+
+          locations.sort();
+
+          if (!mounted) return;
+
+          setState(() {
+            _locations = locations;
+            _loadingLocations = false;
+          });
+        } catch (e) {
+          setState(() {
+            _loadingLocations = false;
+          });
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(e.toString())),
+          );
+        }
+      },
+      validator: (value) {
+        if (value == null) {
+          return "Please select a state";
+        }
+        return null;
+      },
+    );
+  }
+
+  // ================= TEXT FIELD =================
+
+  Widget _buildField({
+    required TextEditingController controller,
+    required String label,
+    int maxLines = 1,
+    TextInputType keyboardType = TextInputType.text,
+  }) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: keyboardType,
+      maxLines: maxLines,
+      validator: (value) {
+        if (value == null || value.trim().isEmpty) {
+          return "Required";
+        }
+        return null;
+      },
+      decoration: _inputDecoration(label),
+    );
+  }
+
+  // ================= INPUT DECORATION =================
+
+  InputDecoration _inputDecoration(String label) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: TextStyle(
+        color: Colors.grey.shade700,
+      ),
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: 18,
+        vertical: 18,
+      ),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(
+          color: Colors.black,
+          width: 1.2,
+        ),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(
+          color: Colors.red,
+        ),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(
+          color: Colors.red,
+          width: 1.2,
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _businessNameController.dispose();
+    // _cityController.dispose();
+    _addressController.dispose();
+    _phoneController.dispose();
+    super.dispose();
+  }
+}
+
+class DriverOfferScreen extends StatefulWidget {
+  final String rideId;
+  final String driverName;
+  final double price;
+  final String vehicleType;
+  final String vehicleDescription;
+  final String pickup;
+  final String destination;
+  final String rideType;
+
+  final double pickupLat;
+  final double pickupLng;
+  final double destinationLat;
+  final double destinationLng;
+
+  const DriverOfferScreen({
+    Key? key,
+    required this.rideId,
+    required this.driverName,
+    required this.price,
+    required this.vehicleType,
+    required this.vehicleDescription,
+    required this.pickup,
+    required this.destination,
+    required this.rideType,
+    required this.pickupLat,
+    required this.pickupLng,
+    required this.destinationLat,
+    required this.destinationLng,
+  }) : super(key: key);
+
+  @override
+  State<DriverOfferScreen> createState() => _DriverOfferScreenState();
+}
+
+class _DriverOfferScreenState extends State<DriverOfferScreen> {
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _rideSubscription;
+
+  bool _isSubmitting = false;
+  bool _hasNavigatedToRideStarted = false;
+
+  double? _currentDriverOffer;
+  double? _myCounterOffer;
+
+  String _lastNegotiationActor = '';
+  String _lastNegotiationType = '';
+
+  final TextEditingController _counterPriceController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+
+    _currentDriverOffer = widget.price;
+
+    _listenForRide();
+  }
+
+  // ===========================================================================
+  // FIRESTORE LISTENER
+  // ===========================================================================
+
+  void _listenForRide() {
+    _rideSubscription = FirebaseFirestore.instance
+        .collection('ride_requests')
+        .doc(widget.rideId)
+        .snapshots()
+        .listen(
+      _handleRideUpdate,
+      onError: (error) {
+        debugPrint(
+          'DriverOfferScreen listener error: $error',
+        );
+      },
+    );
+  }
+
+  // ===========================================================================
+  // SAFE DOUBLE
+  // ===========================================================================
+
+  double? _readDouble(dynamic value) {
+    if (value == null) {
+      return null;
+    }
+
+    if (value is num) {
+      return value.toDouble();
+    }
+
+    return double.tryParse(
+      value.toString(),
+    );
+  }
+
+  // ===========================================================================
+  // HANDLE FIRESTORE
+  // ===========================================================================
+
+  void _handleRideUpdate(
+    DocumentSnapshot<Map<String, dynamic>> snapshot,
+  ) {
+    if (!mounted || _hasNavigatedToRideStarted) {
+      return;
+    }
+
+    if (!snapshot.exists) {
+      return;
+    }
+
+    final data = snapshot.data();
+
+    if (data == null) {
+      return;
+    }
+
+    final String status = data['Status']?.toString() ?? '';
+
+    final double? driverOffer = _readDouble(
+      data['driverOfferPrice'] ?? data['price'],
+    );
+
+    final double? riderCounter = _readDouble(
+      data['userCounterPrice'],
+    );
+
+    final String actor = data['lastNegotiationActor']?.toString() ?? '';
+
+    final String type = data['lastNegotiationType']?.toString() ?? '';
+
+    if (driverOffer != null) {
+      _currentDriverOffer = driverOffer;
+    }
+
+    if (riderCounter != null) {
+      _myCounterOffer = riderCounter;
+    }
+
+    // -------------------------------------------------------------------------
+    // RIDE STARTED
+    //
+    // This is now the ONLY acceptance state.
+    // -------------------------------------------------------------------------
+
+    if (status == 'ride_started') {
+      final double finalPrice = _readDouble(
+            data['price'] ?? data['finalPrice'],
+          ) ??
+          _currentDriverOffer ??
+          widget.price;
+
+      _navigateToRideStarted(
+        finalPrice,
+      );
+
+      return;
+    }
+
+    // -------------------------------------------------------------------------
+    // CANCELLED
+    // -------------------------------------------------------------------------
+
+    if (status == 'cancelled') {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'The ride offer has been cancelled.',
+          ),
+        ),
+      );
+
+      Future.delayed(
+        const Duration(milliseconds: 300),
+        () {
+          if (mounted && !_hasNavigatedToRideStarted) {
+            Navigator.pop(context);
+          }
+        },
+      );
+
+      return;
+    }
+
+    // -------------------------------------------------------------------------
+    // NEW NEGOTIATION EVENT
+    //
+    // If the driver sent another offer, update the rider UI immediately.
+    // -------------------------------------------------------------------------
+
+    if (status == 'innegotiation' && actor == 'driver' && type == 'offer') {
+      if (driverOffer != null) {
+        setState(() {
+          _currentDriverOffer = driverOffer;
+          _isSubmitting = false;
+        });
+      }
+
+      return;
+    }
+
+    // -------------------------------------------------------------------------
+    // OUR OWN COUNTER WAS SAVED
+    // -------------------------------------------------------------------------
+
+    if (status == 'innegotiation' && actor == 'rider' && type == 'counter') {
+      if (riderCounter != null) {
+        setState(() {
+          _myCounterOffer = riderCounter;
+          _isSubmitting = false;
+        });
+      }
+
+      return;
+    }
+  }
+
+  // ===========================================================================
+  // NAVIGATE TO RIDE STARTED
+  // ===========================================================================
+
+  void _navigateToRideStarted(
+    double finalPrice,
+  ) {
+    if (!mounted || _hasNavigatedToRideStarted) {
+      return;
+    }
+
+    _hasNavigatedToRideStarted = true;
+
+    _rideSubscription?.cancel();
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RideStartedScreen(
+          rideId: widget.rideId,
+          pickup: widget.pickup,
+          destination: widget.destination,
+          rideType: widget.rideType,
+          price: finalPrice,
+          driverName: widget.driverName,
+          vehicleType: widget.vehicleType,
+          vehicleDescription: widget.vehicleDescription,
+          pickupLat: widget.pickupLat,
+          pickupLng: widget.pickupLng,
+          destinationLat: widget.destinationLat,
+          destinationLng: widget.destinationLng,
+        ),
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // ACCEPT CURRENT DRIVER OFFER
+  //
+  // IMPORTANT:
+  // No confirmation from driver is required.
+  // ===========================================================================
+
+  Future<void> _acceptOffer() async {
+    if (_isSubmitting) {
+      return;
+    }
+
+    final double offer = _currentDriverOffer ?? widget.price;
+
+    setState(() {
+      _isSubmitting = true;
+    });
+
+    try {
+      bool accepted = false;
+
+      await FirebaseFirestore.instance.runTransaction(
+        (transaction) async {
+          final ref = FirebaseFirestore.instance
+              .collection('ride_requests')
+              .doc(widget.rideId);
+
+          final snapshot = await transaction.get(ref);
+
+          if (!snapshot.exists) {
+            return;
+          }
+
+          final data = snapshot.data() as Map<String, dynamic>?;
+
+          if (data == null) {
+            return;
+          }
+
+          final status = data['Status']?.toString();
+
+          if (status != 'driver_offered' && status != 'innegotiation') {
+            return;
+          }
+
+          final currentPrice = _readDouble(
+                data['driverOfferPrice'],
+              ) ??
+              _readDouble(
+                data['price'],
+              ) ??
+              offer;
+
+          // Prevent accepting a stale offer.
+          if ((currentPrice - offer).abs() > 0.01) {
+            return;
+          }
+
+          transaction.update(
+            ref,
+            {
+              'Status': 'ride_started',
+              'price': currentPrice,
+              'finalPrice': currentPrice,
+              'acceptedBy': 'rider',
+              'acceptedAt': FieldValue.serverTimestamp(),
+              'rideStartedAt': FieldValue.serverTimestamp(),
+              'DriverStatus': 'driver_booked',
+            },
+          );
+
+          accepted = true;
+        },
+      );
+
+      if (!accepted) {
+        if (!mounted) {
+          return;
+        }
+
+        setState(() {
+          _isSubmitting = false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'That offer has changed. Please review the latest offer.',
+            ),
+          ),
+        );
+
+        return;
+      }
+
+      // Firestore listener will navigate both sides.
+    } catch (e) {
+      debugPrint(
+        'Accept offer error: $e',
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isSubmitting = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Unable to accept this offer. Please try again.',
+          ),
+        ),
+      );
+    }
+  }
+
+  // ===========================================================================
+  // COUNTER OFFER
+  // ===========================================================================
+
+  void _showCounterOfferSheet() {
+    if (_isSubmitting) {
+      return;
+    }
+
+    _counterPriceController.text =
+        (_currentDriverOffer ?? widget.price).toStringAsFixed(0);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(
+              sheetContext,
+            ).viewInsets.bottom,
+          ),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(
+              20,
+              12,
+              20,
+              25,
+            ),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(28),
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 45,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 22),
+                const Text(
+                  'Counter Offer',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Make a new offer to the driver.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: _counterPriceController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    prefixText: '₦ ',
+                    hintText: 'Enter your price',
+                    filled: true,
+                    fillColor: Colors.grey.shade100,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide.none,
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(
+                        color: Colors.black,
+                        width: 1.5,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      final value = _counterPriceController.text.trim();
+
+                      final price = double.tryParse(
+                        value,
+                      );
+
+                      if (price == null || price <= 0) {
+                        ScaffoldMessenger.of(
+                          sheetContext,
+                        ).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Enter a valid price.',
+                            ),
+                          ),
+                        );
+                        return;
+                      }
+
+                      Navigator.pop(
+                        sheetContext,
+                      );
+
+                      await _submitCounterOffer(
+                        price,
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.black,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(28),
+                      ),
+                    ),
+                    child: const Text(
+                      'Send Counter Offer',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ===========================================================================
+  // SUBMIT COUNTER
+  // ===========================================================================
+
+  Future<void> _submitCounterOffer(
+    double counterPrice,
+  ) async {
+    if (_isSubmitting) {
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+      _myCounterOffer = counterPrice;
+    });
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('ride_requests')
+          .doc(widget.rideId)
+          .update({
+        'Status': 'innegotiation',
+        'userCounterPrice': counterPrice,
+        'userCounterAt': FieldValue.serverTimestamp(),
+        'lastNegotiationActor': 'rider',
+        'lastNegotiationType': 'counter',
+        'lastNegotiationPrice': counterPrice,
+        'lastNegotiationAt': FieldValue.serverTimestamp(),
+      });
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isSubmitting = false;
+      });
+    } catch (e) {
+      debugPrint(
+        'Counter offer error: $e',
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isSubmitting = false;
+        _myCounterOffer = null;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Unable to send counter offer. Please try again.',
+          ),
+        ),
+      );
+    }
+  }
+
+  // ===========================================================================
+  // FOUR-DOT SKELETON
+  // ===========================================================================
+
+  Widget _buildFourDotLoader() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(
+        4,
+        (index) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 2,
+            ),
+            child: Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade400,
+                shape: BoxShape.circle,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // NEGOTIATION MODAL
+  // ===========================================================================
+
+  void _openNegotiationChat() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (modalContext) {
+        return StatefulBuilder(
+          builder: (context, modalSetState) {
+            return Container(
+              height: MediaQuery.of(context).size.height * .55,
+              padding: const EdgeInsets.fromLTRB(
+                18,
+                12,
+                18,
+                20,
+              ),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(
+                  top: Radius.circular(28),
+                ),
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Row(
+                    children: [
+                      Icon(
+                        Icons.chat_bubble_outline,
+                        size: 21,
+                      ),
+                      SizedBox(width: 8),
+                      Text(
+                        'Price negotiation',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          // ---------------------------------------------------
+                          // DRIVER OFFER
+                          // ---------------------------------------------------
+
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: _buildChatBubble(
+                              label: 'Driver offer',
+                              price: _currentDriverOffer ?? widget.price,
+                              isDriver: true,
+                            ),
+                          ),
+
+                          // ---------------------------------------------------
+                          // RIDER COUNTER
+                          // ---------------------------------------------------
+
+                          if (_myCounterOffer != null) ...[
+                            const SizedBox(height: 12),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: _buildChatBubble(
+                                label: 'Your counter',
+                                price: _myCounterOffer!,
+                                isDriver: false,
+                              ),
+                            ),
+                          ],
+
+                          // ---------------------------------------------------
+                          // WAITING INDICATOR
+                          // ---------------------------------------------------
+
+                          if (_isSubmitting) ...[
+                            const SizedBox(height: 16),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 10,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade100,
+                                  borderRadius: BorderRadius.circular(
+                                    18,
+                                  ),
+                                ),
+                                child: _buildFourDotLoader(),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: _isSubmitting
+                              ? null
+                              : () {
+                                  Navigator.pop(modalContext);
+                                  _showCounterOfferSheet();
+                                },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.black,
+                            side: const BorderSide(
+                              color: Colors.black,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(
+                                28,
+                              ),
+                            ),
+                          ),
+                          child: const Text(
+                            'Counter',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        flex: 2,
+                        child: ElevatedButton(
+                          onPressed: _isSubmitting
+                              ? null
+                              : () {
+                                  Navigator.pop(modalContext);
+                                  _acceptOffer();
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.black,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(
+                                28,
+                              ),
+                            ),
+                          ),
+                          child: const Text(
+                            'Accept Offer',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildChatBubble({
+    required String label,
+    required double price,
+    required bool isDriver,
+  }) {
+    return Container(
+      constraints: const BoxConstraints(
+        maxWidth: 250,
+      ),
+      padding: const EdgeInsets.symmetric(
+        horizontal: 15,
+        vertical: 11,
+      ),
+      decoration: BoxDecoration(
+        color: isDriver ? Colors.grey.shade100 : Colors.green.shade50,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.grey.shade600,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            '₦${price.toStringAsFixed(0)}',
+            style: TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.bold,
+              color: isDriver ? Colors.black : Colors.green.shade700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // DISPOSE
+  // ===========================================================================
+
+  @override
+  void dispose() {
+    _rideSubscription?.cancel();
+    _counterPriceController.dispose();
+    super.dispose();
+  }
+
+  // ===========================================================================
+  // BUILD
+  // ===========================================================================
+
+  @override
+  Widget build(BuildContext context) {
+    final displayedPrice = _currentDriverOffer ?? widget.price;
+
+    final bool negotiating = _myCounterOffer != null;
+
+    return Scaffold(
+      backgroundColor: Colors.grey.shade100,
+      appBar: AppBar(
+        backgroundColor: Colors.grey.shade100,
+        elevation: 0,
+        leading: Padding(
+          padding: const EdgeInsets.only(
+            left: 10,
+          ),
+          child: GestureDetector(
+            onTap: _isSubmitting ? null : () => Navigator.pop(context),
+            child: Opacity(
+              opacity: _isSubmitting ? .35 : 1,
+              child: Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(.06),
+                      blurRadius: 8,
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.arrow_back_ios_new,
+                  size: 16,
+                  color: Colors.black,
+                ),
+              ),
+            ),
+          ),
+        ),
+        title: const Text(
+          '',
+          style: TextStyle(color: Colors.black),
+        ),
+      ),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 10,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Text(
+                    'Offers',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Text(
+                      '1',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+
+              // ===============================================================
+              // DRIVER OFFER CARD
+              // ===============================================================
+
+              Center(
+                child: Container(
+                  width: 350,
+                  padding: const EdgeInsets.all(
+                    14,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(22),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(.07),
+                        blurRadius: 18,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 82,
+                            height: 82,
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade100,
+                              borderRadius: BorderRadius.circular(
+                                18,
+                              ),
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: Image.asset(
+                              'assets/images/driver.png',
+                              fit: BoxFit.cover,
+                              errorBuilder: (
+                                context,
+                                error,
+                                stackTrace,
+                              ) {
+                                return Container(
+                                  color: Colors.grey.shade200,
+                                  child: const Icon(
+                                    Icons.person,
+                                    size: 42,
+                                    color: Colors.grey,
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  widget.driverName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 5),
+                                Text(
+                                  widget.vehicleType,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  widget.vehicleDescription,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                'Offer',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey.shade500,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                '₦${displayedPrice.toStringAsFixed(0)}',
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 14),
+
+                      // -------------------------------------------------------
+                      // NEGOTIATION BUTTON
+                      // -------------------------------------------------------
+
+                      if (negotiating)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.green.shade50,
+                            borderRadius: BorderRadius.circular(
+                              15,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.swap_horiz,
+                                color: Colors.green.shade700,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Your counter: '
+                                  '₦${_myCounterOffer!.toStringAsFixed(0)}',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.green.shade800,
+                                  ),
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: _openNegotiationChat,
+                                child: const Text(
+                                  'View',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                      const SizedBox(height: 12),
+
+                      Row(
+                        children: [
+                          Expanded(
+                            child: SizedBox(
+                              height: 48,
+                              child: OutlinedButton(
+                                onPressed: _isSubmitting
+                                    ? null
+                                    : _showCounterOfferSheet,
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.black,
+                                  side: const BorderSide(
+                                    color: Colors.black,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(
+                                      30,
+                                    ),
+                                  ),
+                                ),
+                                child: const Text(
+                                  'Counter',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            flex: 2,
+                            child: SizedBox(
+                              height: 48,
+                              child: ElevatedButton(
+                                onPressed: _isSubmitting ? null : _acceptOffer,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.black,
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(
+                                      30,
+                                    ),
+                                  ),
+                                ),
+                                child: _isSubmitting
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : const Text(
+                                        'Accept Offer',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 18),
+
+              // ===============================================================
+              // NEGOTIATION CHAT BUTTON
+              // ===============================================================
+
+              if (negotiating)
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton.icon(
+                    onPressed: _openNegotiationChat,
+                    icon: const Icon(
+                      Icons.chat_bubble_outline,
+                    ),
+                    label: const Text(
+                      'Open Negotiation',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.black,
+                      elevation: 0,
+                      side: const BorderSide(
+                        color: Colors.black12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(
+                          26,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
