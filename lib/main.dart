@@ -35223,7 +35223,7 @@ class _SearchingScreenState extends State<SearchingScreen> {
     // DRIVER ACCEPTED
     // ==========================================================
 
-    if (data['Status'] == 'driver_accepted') {
+    if (data['Status'] == 'driver_offered') {
       timer?.cancel();
 
       final currentRideId = rideId;
@@ -37176,20 +37176,30 @@ class _DriverOfferScreenState extends State<DriverOfferScreen> {
         );
   }
 
-  // ============================================================
-  // HANDLE DRIVER RESPONSE
-  // ============================================================
+// ============================================================
+// NAVIGATION GUARD
+// ============================================================
+
+  bool _hasNavigatedToRideStarted = false;
+
+// ============================================================
+// HANDLE DRIVER RESPONSE
+// ============================================================
 
   void _handleRideUpdate(
     DocumentSnapshot snapshot,
   ) {
-    if (!mounted) return;
+    if (!mounted || _hasNavigatedToRideStarted) return;
 
     final data = snapshot.data() as Map<String, dynamic>?;
 
     if (data == null) return;
 
     final String status = data['Status']?.toString() ?? '';
+
+    debugPrint(
+      'DriverOfferScreen ride ${widget.rideId} status changed to: $status',
+    );
 
     // ==========================================================
     // DRIVER COUNTERED USER'S COUNTER OFFER
@@ -37227,8 +37237,10 @@ class _DriverOfferScreenState extends State<DriverOfferScreen> {
     // ==========================================================
 
     if (status == 'counter_accepted') {
-      final dynamic finalPrice =
-          data['price'] ?? data['finalPrice'] ?? data['driverPrice'];
+      final dynamic finalPrice = data['price'] ??
+          data['finalPrice'] ??
+          data['driverPrice'] ??
+          data['userCounterPrice'];
 
       double ridePrice = _currentOfferPrice ?? widget.price;
 
@@ -37244,9 +37256,7 @@ class _DriverOfferScreenState extends State<DriverOfferScreen> {
         }
       }
 
-      _navigateToRideStarted(
-        ridePrice,
-      );
+      _navigateToRideStarted(ridePrice);
 
       return;
     }
@@ -37255,8 +37265,13 @@ class _DriverOfferScreenState extends State<DriverOfferScreen> {
     // DRIVER CONFIRMED USER ACCEPTANCE
     // ==========================================================
 
-    if (status == 'ride_confirmed' || status == 'driver_confirmed') {
-      final dynamic finalPrice = data['price'];
+    if (status == 'ride_confirmed' ||
+        status == 'driver_confirmed' ||
+        status == 'ride_accepted') {
+      final dynamic finalPrice = data['price'] ??
+          data['finalPrice'] ??
+          data['driverPrice'] ??
+          data['userCounterPrice'];
 
       double ridePrice = _currentOfferPrice ?? widget.price;
 
@@ -37272,19 +37287,29 @@ class _DriverOfferScreenState extends State<DriverOfferScreen> {
         }
       }
 
-      _navigateToRideStarted(
-        ridePrice,
-      );
+      _navigateToRideStarted(ridePrice);
 
       return;
     }
 
     // ==========================================================
-    // RIDE ACCEPTED
+    // IMPORTANT:
+    // DRIVER HAS ALREADY STARTED / CONFIRMED THE RIDE
+    //
+    // This covers the situation where the driver accepts the
+    // counter offer and the driver side immediately changes
+    // the ride status to ride_started.
     // ==========================================================
 
-    if (status == 'ride_accepted') {
-      final dynamic finalPrice = data['price'];
+    if (status == 'ride_started' ||
+        status == 'started' ||
+        status == 'driver_started') {
+      final dynamic finalPrice = data['price'] ??
+          data['finalPrice'] ??
+          data['driverPrice'] ??
+          data['userCounterPrice'] ??
+          data['userAcceptedPrice'] ??
+          data['driverOfferPrice'];
 
       double ridePrice = _currentOfferPrice ?? widget.price;
 
@@ -37300,9 +37325,7 @@ class _DriverOfferScreenState extends State<DriverOfferScreen> {
         }
       }
 
-      _navigateToRideStarted(
-        ridePrice,
-      );
+      _navigateToRideStarted(ridePrice);
 
       return;
     }
@@ -37329,14 +37352,18 @@ class _DriverOfferScreenState extends State<DriverOfferScreen> {
     }
   }
 
-  // ============================================================
-  // NAVIGATE TO RIDE STARTED
-  // ============================================================
+// ============================================================
+// NAVIGATE TO RIDE STARTED
+// ============================================================
 
   void _navigateToRideStarted(
     double finalPrice,
   ) {
-    if (!mounted) return;
+    if (!mounted || _hasNavigatedToRideStarted) return;
+
+    // Prevent duplicate navigation if Firestore sends another
+    // snapshot immediately after this one.
+    _hasNavigatedToRideStarted = true;
 
     _rideSubscription?.cancel();
 
@@ -37361,7 +37388,7 @@ class _DriverOfferScreenState extends State<DriverOfferScreen> {
           vehicleDescription: widget.vehicleDescription,
 
           // ==================================================
-          // PASS EXACT COORDINATES TO RIDE STARTED
+          // EXACT COORDINATES
           // ==================================================
 
           pickupLat: widget.pickupLat,
