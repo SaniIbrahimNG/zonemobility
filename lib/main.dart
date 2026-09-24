@@ -44554,14 +44554,28 @@ class DriverHomePage extends StatefulWidget {
 }
 
 class _DriverHomePageState extends State<DriverHomePage> {
-  Stream<QuerySnapshot> rideRequestsStream = FirebaseFirestore.instance
+  // ===========================================================================
+  // PENDING RIDE REQUESTS
+  // ===========================================================================
+
+  final Stream<QuerySnapshot> rideRequestsStream = FirebaseFirestore.instance
       .collection('ride_requests')
       .where('Status', isEqualTo: 'pending')
       .snapshots();
 
+  // ===========================================================================
+  // CONTROLLERS / AUDIO
+  // ===========================================================================
+
   final Map<String, TextEditingController> _priceControllers = {};
+
   final Set<String> notifiedRequests = {};
+
   final AudioPlayer _audioPlayer = AudioPlayer();
+
+  // ===========================================================================
+  // DRIVER INFORMATION
+  // ===========================================================================
 
   String? driverId;
   String? driverName;
@@ -44572,9 +44586,31 @@ class _DriverHomePageState extends State<DriverHomePage> {
   int completedRides = 0;
   double totalEarnings = 0.0;
 
+  // ===========================================================================
+  // ACTIVE NEGOTIATION
+  //
+  // This is the ride that the driver has already offered a price for.
+  //
+  // IMPORTANT:
+  // The driver stays on DriverHomePage during negotiation.
+  // We only navigate to DriverBookedScreen after Status == accepted.
+  // ===========================================================================
+
+  String? _activeNegotiationRideId;
+
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+      _activeRideSubscription;
+
+  Map<String, dynamic>? _activeRideData;
+
+  bool _negotiationModalOpen = false;
+
+  bool _isNavigatingToBooked = false;
+
   @override
   void initState() {
     super.initState();
+
     _loadDriverInfo();
   }
 
@@ -44584,7 +44620,10 @@ class _DriverHomePageState extends State<DriverHomePage> {
       controller.dispose();
     }
 
+    _activeRideSubscription?.cancel();
+
     _audioPlayer.dispose();
+
     super.dispose();
   }
 
@@ -44609,23 +44648,31 @@ class _DriverHomePageState extends State<DriverHomePage> {
         final data = doc.data() ?? {};
 
         driverId = currentUser.uid;
+
         driverName = data['name']?.toString() ?? 'Unknown';
+
         vehicleType = data['vehicle']?.toString() ?? 'Not specified';
+
         vehicle = data['vehicleType']?.toString() ?? 'No description';
+
         driverImageUrl = data['profileImage']?.toString();
       }
 
       // -----------------------------------------------------------------------
-      // Completed rides
-      //
-      // The new flow uses Status == completed.
+      // COMPLETED RIDES
       // -----------------------------------------------------------------------
 
       if (driverName != null) {
         final ridesSnapshot = await FirebaseFirestore.instance
             .collection('ride_requests')
-            .where('driverId', isEqualTo: driverName)
-            .where('Status', isEqualTo: 'completed')
+            .where(
+              'driverId',
+              isEqualTo: driverName,
+            )
+            .where(
+              'Status',
+              isEqualTo: 'completed',
+            )
             .get();
 
         double earnings = 0.0;
@@ -44638,7 +44685,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
           if (price is num) {
             earnings += price.toDouble();
           } else {
-            final parsed = double.tryParse(price?.toString() ?? '');
+            final parsed = double.tryParse(
+              price?.toString() ?? '',
+            );
 
             if (parsed != null) {
               earnings += parsed;
@@ -44656,7 +44705,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
         });
       }
     } catch (e) {
-      debugPrint('Error loading driver information: $e');
+      debugPrint(
+        'Error loading driver information: $e',
+      );
     }
   }
 
@@ -44667,10 +44718,14 @@ class _DriverHomePageState extends State<DriverHomePage> {
   Future<void> _playNotificationSound() async {
     try {
       await _audioPlayer.play(
-        AssetSource('sounds/notification_sound.mp3'),
+        AssetSource(
+          'sounds/notification_sound.mp3',
+        ),
       );
     } catch (e) {
-      debugPrint('Notification sound error: $e');
+      debugPrint(
+        'Notification sound error: $e',
+      );
     }
   }
 
@@ -44678,7 +44733,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
     try {
       await _audioPlayer.stop();
     } catch (e) {
-      debugPrint('Stop sound error: $e');
+      debugPrint(
+        'Stop sound error: $e',
+      );
     }
   }
 
@@ -44692,12 +44749,14 @@ class _DriverHomePageState extends State<DriverHomePage> {
     }
 
     await Future.delayed(
-      const Duration(milliseconds: 500),
+      const Duration(
+        milliseconds: 500,
+      ),
     );
   }
 
   // ===========================================================================
-  // CLEAN LOCATION
+  // CLEAN ADDRESS
   // ===========================================================================
 
   String _cleanAddress(dynamic value) {
@@ -44757,7 +44816,30 @@ class _DriverHomePageState extends State<DriverHomePage> {
   }
 
   // ===========================================================================
-  // SEND DRIVER OFFER
+  // PRICE SAFELY
+  // ===========================================================================
+
+  double? _readPrice(dynamic value) {
+    if (value == null) {
+      return null;
+    }
+
+    if (value is num) {
+      return value.toDouble();
+    }
+
+    return double.tryParse(
+      value.toString().replaceAll(',', '').trim(),
+    );
+  }
+
+  // ===========================================================================
+  // SEND FIRST DRIVER OFFER
+  //
+  // IMPORTANT:
+  // We DO NOT navigate to DriverBookedScreen here.
+  //
+  // The driver remains on DriverHomePage and a live negotiation modal opens.
   // ===========================================================================
 
   Future<void> _sendDriverOffer({
@@ -44767,14 +44849,32 @@ class _DriverHomePageState extends State<DriverHomePage> {
   }) async {
     final priceText = _priceControllers[rideId]?.text.trim() ?? '';
 
-    final double? price = double.tryParse(priceText);
+    final double? price = double.tryParse(
+      priceText.replaceAll(',', ''),
+    );
 
     if (price == null || price <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please enter a valid price.'),
+          content: Text(
+            'Please enter a valid price.',
+          ),
         ),
       );
+
+      return;
+    }
+
+    // Prevent accidentally opening another negotiation.
+    if (_activeNegotiationRideId != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'You already have an active ride negotiation.',
+          ),
+        ),
+      );
+
       return;
     }
 
@@ -44788,15 +44888,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
 
     try {
       // -----------------------------------------------------------------------
-      // IMPORTANT:
-      //
-      // This is only an offer.
-      //
-      // The rider has NOT accepted yet.
-      //
-      // Therefore:
-      //
-      // Status = driver_offered
+      // First driver offer.
       // -----------------------------------------------------------------------
 
       await FirebaseFirestore.instance
@@ -44806,23 +44898,31 @@ class _DriverHomePageState extends State<DriverHomePage> {
         'Status': 'driver_offered',
 
         'driverId': driverName ?? 'Unknown',
+
         'driverUid': driverId,
 
         'price': price,
+
         'driverOfferPrice': price,
+
         'driverOfferAt': FieldValue.serverTimestamp(),
+
+        'lastNegotiationActor': 'driver',
+
+        'lastNegotiationType': 'offer',
+
+        'lastNegotiationPrice': price,
+
+        'lastNegotiationAt': FieldValue.serverTimestamp(),
 
         'vehicleType': vehicleType ?? 'Not specified',
 
         'vehicle': vehicle ?? 'No description',
 
-        // Clear any stale negotiation values.
+        // Clear previous negotiation values.
         'userCounterPrice': FieldValue.delete(),
+
         'userCounterAt': FieldValue.delete(),
-        'lastNegotiationActor': FieldValue.delete(),
-        'lastNegotiationType': FieldValue.delete(),
-        'lastNegotiationPrice': FieldValue.delete(),
-        'lastNegotiationAt': FieldValue.delete(),
 
         if (pickupLat != null) 'pickupLat': pickupLat,
 
@@ -44840,150 +44940,19 @@ class _DriverHomePageState extends State<DriverHomePage> {
       }
 
       // -----------------------------------------------------------------------
-      // Offer sent confirmation.
-      //
-      // This is NOT a waiting screen.
+      // Start listening to this exact ride.
       // -----------------------------------------------------------------------
 
-      final bool? continueToRide = await showModalBottomSheet<bool>(
-        context: context,
-        isDismissible: false,
-        enableDrag: false,
-        backgroundColor: Colors.transparent,
-        builder: (modalContext) {
-          return Container(
-            padding: const EdgeInsets.fromLTRB(
-              24,
-              14,
-              24,
-              28,
-            ),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(
-                top: Radius.circular(28),
-              ),
-            ),
-            child: SafeArea(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 45,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                  ),
-                  const SizedBox(height: 22),
-                  Container(
-                    width: 58,
-                    height: 58,
-                    decoration: BoxDecoration(
-                      color: Colors.green[50],
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.local_taxi_rounded,
-                      color: Colors.green,
-                      size: 30,
-                    ),
-                  ),
-                  const SizedBox(height: 15),
-                  const Text(
-                    'Offer Sent',
-                    style: TextStyle(
-                      fontSize: 21,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Your offer of '
-                    '₦${price.toStringAsFixed(2)} '
-                    'has been sent to the rider.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 14,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Continue to the ride to respond '
-                    'to the rider or begin the ride when '
-                    'the offer is accepted.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.black54,
-                      fontSize: 13,
-                    ),
-                  ),
-                  const SizedBox(height: 22),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.pop(
-                          modalContext,
-                          true,
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.black,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(25),
-                        ),
-                      ),
-                      child: const Text(
-                        'Continue',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
+      await _startActiveNegotiation(
+        rideId: rideId,
       );
 
-      if (continueToRide != true || !mounted) {
-        return;
-      }
-
       // -----------------------------------------------------------------------
-      // Driver now stays on DriverBookedScreen.
-      //
-      // DriverBookedScreen listens to the SAME ride document.
+      // Open negotiation modal.
       // -----------------------------------------------------------------------
 
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => DriverBookedScreen(
-            riderName: data['userName']?.toString() ?? 'Unknown',
-            pickup: _cleanAddress(
-              data['Pickup Location'],
-            ),
-            destination: _cleanAddress(
-              data['Destination'],
-            ),
-            price: price,
-            paymentMethod: 'Cash',
-            rideId: rideId,
-            pickupLat: pickupLat ?? 0.0,
-            pickupLng: pickupLng ?? 0.0,
-            destinationLat: destinationLat ?? 0.0,
-            destinationLng: destinationLng ?? 0.0,
-          ),
-        ),
+      await _openNegotiationModal(
+        rideId: rideId,
       );
     } catch (e) {
       debugPrint(
@@ -45001,6 +44970,491 @@ class _DriverHomePageState extends State<DriverHomePage> {
           ),
         ),
       );
+    }
+  }
+
+  // ===========================================================================
+  // START LISTENER FOR ACTIVE NEGOTIATION
+  // ===========================================================================
+
+  Future<void> _startActiveNegotiation({
+    required String rideId,
+  }) async {
+    await _activeRideSubscription?.cancel();
+
+    _activeNegotiationRideId = rideId;
+
+    _activeRideSubscription = FirebaseFirestore.instance
+        .collection('ride_requests')
+        .doc(rideId)
+        .snapshots()
+        .listen(
+      (snapshot) {
+        if (!snapshot.exists) {
+          return;
+        }
+
+        final data = snapshot.data() ?? <String, dynamic>{};
+
+        _handleActiveRideUpdate(
+          rideId,
+          data,
+        );
+      },
+      onError: (error) {
+        debugPrint(
+          'Active ride listener error: $error',
+        );
+      },
+    );
+  }
+
+  // ===========================================================================
+  // ACTIVE RIDE LISTENER
+  // ===========================================================================
+
+  void _handleActiveRideUpdate(
+    String rideId,
+    Map<String, dynamic> data,
+  ) {
+    if (!mounted) {
+      return;
+    }
+
+    final status = data['Status']?.toString() ?? '';
+
+    setState(() {
+      _activeRideData = Map<String, dynamic>.from(data);
+    });
+
+    // -------------------------------------------------------------------------
+    // ACCEPTED
+    //
+    // THIS is the ONLY point where DriverHomePage navigates to
+    // DriverBookedScreen.
+    // -------------------------------------------------------------------------
+
+    if (status == 'accepted') {
+      _navigateToDriverBooked(
+        rideId: rideId,
+        data: data,
+      );
+
+      return;
+    }
+
+    // -------------------------------------------------------------------------
+    // Compatibility:
+    //
+    // If another page writes ride_started instead of accepted, we still
+    // handle it so the driver does not become stuck.
+    // -------------------------------------------------------------------------
+
+    if (status == 'ride_started') {
+      _navigateToDriverBooked(
+        rideId: rideId,
+        data: data,
+      );
+
+      return;
+    }
+
+    // -------------------------------------------------------------------------
+    // CANCELLED
+    // -------------------------------------------------------------------------
+
+    if (status == 'cancelled' || status == 'driver_rejected') {
+      _closeNegotiationIfOpen();
+
+      _clearActiveNegotiation();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              status == 'cancelled'
+                  ? 'Ride was cancelled.'
+                  : 'Ride was rejected.',
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  // ===========================================================================
+  // NAVIGATE TO DRIVER BOOKED
+  // ===========================================================================
+
+  Future<void> _navigateToDriverBooked({
+    required String rideId,
+    required Map<String, dynamic> data,
+  }) async {
+    if (_isNavigatingToBooked) {
+      return;
+    }
+
+    _isNavigatingToBooked = true;
+
+    await _stopSound();
+
+    _closeNegotiationIfOpen();
+
+    final double finalPrice = _readPrice(
+          data['finalPrice'],
+        ) ??
+        _readPrice(
+          data['price'],
+        ) ??
+        _readPrice(
+          data['driverOfferPrice'],
+        ) ??
+        0.0;
+
+    final double pickupLat = _readDouble(
+          data['pickupLat'],
+        ) ??
+        0.0;
+
+    final double pickupLng = _readDouble(
+          data['pickupLng'],
+        ) ??
+        0.0;
+
+    final double destinationLat = _readDouble(
+          data['destinationLat'],
+        ) ??
+        0.0;
+
+    final double destinationLng = _readDouble(
+          data['destinationLng'],
+        ) ??
+        0.0;
+
+    if (!mounted) {
+      return;
+    }
+
+    _activeRideSubscription?.cancel();
+
+    _activeRideSubscription = null;
+
+    _activeNegotiationRideId = null;
+
+    _activeRideData = null;
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DriverBookedScreen(
+          riderName: data['userName']?.toString() ?? 'Unknown',
+          pickup: _cleanAddress(
+            data['Pickup Location'],
+          ),
+          destination: _cleanAddress(
+            data['Destination'],
+          ),
+          price: finalPrice,
+          paymentMethod: data['paymentMethod']?.toString() ?? 'Cash',
+          rideId: rideId,
+          pickupLat: pickupLat,
+          pickupLng: pickupLng,
+          destinationLat: destinationLat,
+          destinationLng: destinationLng,
+        ),
+      ),
+    );
+
+    if (mounted) {
+      setState(() {
+        _isNavigatingToBooked = false;
+      });
+    }
+  }
+
+  // ===========================================================================
+  // CLOSE ACTIVE MODAL
+  // ===========================================================================
+
+  void _closeNegotiationIfOpen() {
+    if (!_negotiationModalOpen || !mounted) {
+      return;
+    }
+
+    final navigator = Navigator.of(context);
+
+    if (navigator.canPop()) {
+      navigator.pop();
+    }
+
+    _negotiationModalOpen = false;
+  }
+
+  // ===========================================================================
+  // CLEAR ACTIVE NEGOTIATION
+  // ===========================================================================
+
+  Future<void> _clearActiveNegotiation() async {
+    await _activeRideSubscription?.cancel();
+
+    _activeRideSubscription = null;
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _activeNegotiationRideId = null;
+      _activeRideData = null;
+    });
+  }
+
+  // ===========================================================================
+  // DRIVER ACCEPTS RIDER'S COUNTER
+  //
+  // Transaction prevents an old counter from being accepted if the rider has
+  // already received/made another negotiation update.
+  // ===========================================================================
+
+  Future<void> _acceptRiderCounter({
+    required String rideId,
+  }) async {
+    try {
+      final rideRef =
+          FirebaseFirestore.instance.collection('ride_requests').doc(rideId);
+
+      await FirebaseFirestore.instance.runTransaction(
+        (transaction) async {
+          final snapshot = await transaction.get(
+            rideRef,
+          );
+
+          if (!snapshot.exists) {
+            throw Exception(
+              'Ride no longer exists.',
+            );
+          }
+
+          final data = snapshot.data() ?? {};
+
+          final status = data['Status']?.toString() ?? '';
+
+          final actor = data['lastNegotiationActor']?.toString();
+
+          final counterPrice = _readPrice(
+            data['userCounterPrice'],
+          );
+
+          if (status != 'innegotiation') {
+            throw Exception(
+              'This negotiation is no longer active.',
+            );
+          }
+
+          if (actor != 'rider') {
+            throw Exception(
+              'There is no current rider counter offer.',
+            );
+          }
+
+          if (counterPrice == null || counterPrice <= 0) {
+            throw Exception(
+              'Invalid rider counter offer.',
+            );
+          }
+
+          transaction.update(
+            rideRef,
+            {
+              'Status': 'accepted',
+              'price': counterPrice,
+              'finalPrice': counterPrice,
+              'acceptedBy': 'driver',
+              'acceptedAt': FieldValue.serverTimestamp(),
+              'lastNegotiationActor': 'driver',
+              'lastNegotiationType': 'accepted',
+              'lastNegotiationPrice': counterPrice,
+              'lastNegotiationAt': FieldValue.serverTimestamp(),
+            },
+          );
+        },
+      );
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.toString().replaceFirst(
+                  'Exception: ',
+                  '',
+                ),
+          ),
+        ),
+      );
+    }
+  }
+
+  // ===========================================================================
+  // DRIVER MAKES ANOTHER OFFER
+  //
+  // This does NOT navigate.
+  //
+  // It keeps Status == innegotiation and updates the current driver offer.
+  // ===========================================================================
+
+  Future<void> _makeDriverCounterOffer({
+    required String rideId,
+    required double price,
+  }) async {
+    if (price <= 0) {
+      return;
+    }
+
+    try {
+      final rideRef =
+          FirebaseFirestore.instance.collection('ride_requests').doc(rideId);
+
+      await FirebaseFirestore.instance.runTransaction(
+        (transaction) async {
+          final snapshot = await transaction.get(
+            rideRef,
+          );
+
+          if (!snapshot.exists) {
+            throw Exception(
+              'Ride no longer exists.',
+            );
+          }
+
+          final data = snapshot.data() ?? {};
+
+          final status = data['Status']?.toString() ?? '';
+
+          if (status != 'innegotiation' && status != 'driver_offered') {
+            throw Exception(
+              'This negotiation is no longer active.',
+            );
+          }
+
+          transaction.update(
+            rideRef,
+            {
+              'Status': 'innegotiation',
+              'price': price,
+              'driverOfferPrice': price,
+              'driverOfferAt': FieldValue.serverTimestamp(),
+              'lastNegotiationActor': 'driver',
+              'lastNegotiationType': 'offer',
+              'lastNegotiationPrice': price,
+              'lastNegotiationAt': FieldValue.serverTimestamp(),
+            },
+          );
+        },
+      );
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.toString().replaceFirst(
+                  'Exception: ',
+                  '',
+                ),
+          ),
+        ),
+      );
+    }
+  }
+
+  // ===========================================================================
+  // OPEN NEGOTIATION MODAL
+  // ===========================================================================
+
+  Future<void> _openNegotiationModal({
+    required String rideId,
+  }) async {
+    if (!mounted || _negotiationModalOpen) {
+      return;
+    }
+
+    _negotiationModalOpen = true;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: Colors.transparent,
+      builder: (_) {
+        return _DriverNegotiationSheet(
+          rideId: rideId,
+          driverName: driverName ?? 'Driver',
+          driverImageUrl: driverImageUrl,
+          driverOfferCallback: _makeDriverCounterOffer,
+          acceptCounterCallback: _acceptRiderCounter,
+          stopSound: _stopSound,
+        );
+      },
+    );
+
+    _negotiationModalOpen = false;
+
+    // -------------------------------------------------------------------------
+    // IMPORTANT:
+    //
+    // Do not clear the active negotiation simply because the modal was closed
+    // by the accepted/cancelled listener.
+    // -------------------------------------------------------------------------
+
+    if (mounted && _activeNegotiationRideId == rideId) {
+      final currentStatus = _activeRideData?['Status']?.toString();
+
+      if (currentStatus != 'accepted' &&
+          currentStatus != 'ride_started' &&
+          currentStatus != 'cancelled' &&
+          currentStatus != 'driver_rejected') {
+        // The modal should normally not close here because it is
+        // non-dismissible.
+      }
+    }
+  }
+
+  // ===========================================================================
+  // REJECT RIDE
+  // ===========================================================================
+
+  Future<void> _rejectRide({
+    required String rideId,
+  }) async {
+    await _stopSound();
+
+    notifiedRequests.add(
+      rideId,
+    );
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('ride_requests')
+          .doc(rideId)
+          .update({
+        'Status': 'driver_rejected',
+        'driverRejectedBy': driverName ?? 'Unknown',
+        'driverRejectedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      debugPrint(
+        'Reject error: $e',
+      );
+    }
+
+    if (mounted) {
+      setState(() {});
     }
   }
 
@@ -45120,7 +45574,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(
+                      height: 20,
+                    ),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -45133,13 +45589,17 @@ class _DriverHomePageState extends State<DriverHomePage> {
                                 fontSize: 16,
                               ),
                             ),
-                            const SizedBox(height: 4),
+                            const SizedBox(
+                              height: 4,
+                            ),
                             Container(
                               height: 60,
                               width: 100,
                               decoration: BoxDecoration(
                                 color: Colors.grey,
-                                borderRadius: BorderRadius.circular(8),
+                                borderRadius: BorderRadius.circular(
+                                  8,
+                                ),
                               ),
                               child: Center(
                                 child: Text(
@@ -45162,13 +45622,17 @@ class _DriverHomePageState extends State<DriverHomePage> {
                                 fontSize: 16,
                               ),
                             ),
-                            const SizedBox(height: 4),
+                            const SizedBox(
+                              height: 4,
+                            ),
                             Container(
                               height: 60,
                               width: 100,
                               decoration: BoxDecoration(
                                 color: Colors.grey,
-                                borderRadius: BorderRadius.circular(8),
+                                borderRadius: BorderRadius.circular(
+                                  8,
+                                ),
                               ),
                               child: Center(
                                 child: Text(
@@ -45220,7 +45684,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
                     return ListView(
                       physics: const AlwaysScrollableScrollPhysics(),
                       children: const [
-                        SizedBox(height: 200),
+                        SizedBox(
+                          height: 200,
+                        ),
                         Center(
                           child: Text(
                             'No pending ride requests.',
@@ -45263,7 +45729,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
                             vertical: 12,
                           ),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
+                            borderRadius: BorderRadius.circular(
+                              20,
+                            ),
                           ),
                           elevation: 8,
                           color: Colors.grey[500],
@@ -45283,19 +45751,25 @@ class _DriverHomePageState extends State<DriverHomePage> {
                                     ),
                                   ),
                                 ),
-                                const SizedBox(height: 16),
+                                const SizedBox(
+                                  height: 16,
+                                ),
                                 const Text(
                                   'Pickup Location',
                                   style: TextStyle(
                                     color: Colors.white,
                                   ),
                                 ),
-                                const SizedBox(height: 2),
+                                const SizedBox(
+                                  height: 2,
+                                ),
                                 _buildInfoRow(
                                   'Pickup',
                                   pickup,
                                 ),
-                                const SizedBox(height: 5),
+                                const SizedBox(
+                                  height: 5,
+                                ),
                                 const Text(
                                   'Destination',
                                   style: TextStyle(
@@ -45306,7 +45780,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
                                   'Destination',
                                   destination,
                                 ),
-                                const SizedBox(height: 10),
+                                const SizedBox(
+                                  height: 10,
+                                ),
                                 Text(
                                   'Booked by: '
                                   '${data['userName'] ?? 'Unknown'}',
@@ -45315,7 +45791,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
                                     color: Colors.white,
                                   ),
                                 ),
-                                const SizedBox(height: 4),
+                                const SizedBox(
+                                  height: 4,
+                                ),
                                 Text(
                                   'Requested: '
                                   '$timeAgo',
@@ -45324,7 +45802,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
-                                const SizedBox(height: 16),
+                                const SizedBox(
+                                  height: 16,
+                                ),
                                 TextField(
                                   controller: _priceControllers[rideId],
                                   keyboardType:
@@ -45337,11 +45817,15 @@ class _DriverHomePageState extends State<DriverHomePage> {
                                     filled: true,
                                     fillColor: Colors.white,
                                     border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(10),
+                                      borderRadius: BorderRadius.circular(
+                                        10,
+                                      ),
                                     ),
                                   ),
                                 ),
-                                const SizedBox(height: 16),
+                                const SizedBox(
+                                  height: 16,
+                                ),
                                 Row(
                                   children: [
                                     Expanded(
@@ -45359,8 +45843,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
                                             vertical: 14,
                                           ),
                                           shape: RoundedRectangleBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(10),
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
                                           ),
                                         ),
                                         child: const Text(
@@ -45373,36 +45858,15 @@ class _DriverHomePageState extends State<DriverHomePage> {
                                         ),
                                       ),
                                     ),
-                                    const SizedBox(width: 12),
+                                    const SizedBox(
+                                      width: 12,
+                                    ),
                                     Expanded(
                                       child: ElevatedButton(
-                                        onPressed: () async {
-                                          await _stopSound();
-
-                                          notifiedRequests.add(
-                                            rideId,
+                                        onPressed: () {
+                                          _rejectRide(
+                                            rideId: rideId,
                                           );
-
-                                          try {
-                                            await FirebaseFirestore.instance
-                                                .collection('ride_requests')
-                                                .doc(rideId)
-                                                .update({
-                                              'Status': 'driver_rejected',
-                                              'driverRejectedBy':
-                                                  driverName ?? 'Unknown',
-                                              'driverRejectedAt':
-                                                  FieldValue.serverTimestamp(),
-                                            });
-                                          } catch (e) {
-                                            debugPrint(
-                                              'Reject error: $e',
-                                            );
-                                          }
-
-                                          if (mounted) {
-                                            setState(() {});
-                                          }
                                         },
                                         style: ElevatedButton.styleFrom(
                                           backgroundColor: Colors.red[900],
@@ -45410,8 +45874,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
                                             vertical: 14,
                                           ),
                                           shape: RoundedRectangleBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(10),
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
                                           ),
                                         ),
                                         child: const Text(
@@ -45466,7 +45931,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
             color: Colors.green[700],
             size: 20,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(
+            width: 8,
+          ),
           Expanded(
             child: Text(
               value,
@@ -45495,9 +45962,12 @@ class _DriverHomePageState extends State<DriverHomePage> {
     }
 
     final now = DateTime.now();
+
     final rideTime = timestamp.toDate();
 
-    final difference = now.difference(rideTime);
+    final difference = now.difference(
+      rideTime,
+    );
 
     if (difference.inMinutes < 1) {
       return 'Just now';
@@ -45512,6 +45982,848 @@ class _DriverHomePageState extends State<DriverHomePage> {
     }
 
     return '${difference.inDays} days ago';
+  }
+}
+
+// ============================================================================
+// DRIVER NEGOTIATION SHEET
+//
+// This is a live Firestore listener.
+// It does not depend on the parent DriverHomePage rebuilding.
+//
+// The modal remains open during:
+// driver_offered
+//        ↓
+// rider counter
+//        ↓
+// innegotiation
+//        ↓
+// driver counter
+//        ↓
+// innegotiation
+//        ↓
+// either accepts
+//        ↓
+// accepted
+//        ↓
+// DriverHomePage navigates to DriverBookedScreen
+// ============================================================================
+
+class _DriverNegotiationSheet extends StatefulWidget {
+  final String rideId;
+  final String driverName;
+  final String? driverImageUrl;
+
+  final Future<void> Function({
+    required String rideId,
+    required double price,
+  }) driverOfferCallback;
+
+  final Future<void> Function({
+    required String rideId,
+  }) acceptCounterCallback;
+
+  final Future<void> Function() stopSound;
+
+  const _DriverNegotiationSheet({
+    required this.rideId,
+    required this.driverName,
+    required this.driverImageUrl,
+    required this.driverOfferCallback,
+    required this.acceptCounterCallback,
+    required this.stopSound,
+  });
+
+  @override
+  State<_DriverNegotiationSheet> createState() =>
+      _DriverNegotiationSheetState();
+}
+
+class _DriverNegotiationSheetState extends State<_DriverNegotiationSheet> {
+  late final Stream<DocumentSnapshot<Map<String, dynamic>>> _rideStream;
+
+  final TextEditingController _offerController = TextEditingController();
+
+  bool _sendingOffer = false;
+  bool _acceptingCounter = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _rideStream = FirebaseFirestore.instance
+        .collection('ride_requests')
+        .doc(widget.rideId)
+        .snapshots();
+  }
+
+  @override
+  void dispose() {
+    _offerController.dispose();
+    super.dispose();
+  }
+
+  // ===========================================================================
+  // READ PRICE
+  // ===========================================================================
+
+  double? _price(dynamic value) {
+    if (value == null) {
+      return null;
+    }
+
+    if (value is num) {
+      return value.toDouble();
+    }
+
+    return double.tryParse(
+      value.toString().replaceAll(',', ''),
+    );
+  }
+
+  // ===========================================================================
+  // DRIVER MAKES ANOTHER OFFER
+  // ===========================================================================
+
+  Future<void> _sendDriverOffer(
+    double price,
+  ) async {
+    if (_sendingOffer) {
+      return;
+    }
+
+    if (price <= 0) {
+      return;
+    }
+
+    setState(() {
+      _sendingOffer = true;
+    });
+
+    try {
+      await widget.driverOfferCallback(
+        rideId: widget.rideId,
+        price: price,
+      );
+
+      _offerController.clear();
+
+      if (mounted) {
+        FocusScope.of(context).unfocus();
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _sendingOffer = false;
+        });
+      }
+    }
+  }
+
+  // ===========================================================================
+  // ACCEPT RIDER COUNTER
+  // ===========================================================================
+
+  Future<void> _acceptCounter() async {
+    if (_acceptingCounter) {
+      return;
+    }
+
+    setState(() {
+      _acceptingCounter = true;
+    });
+
+    try {
+      await widget.acceptCounterCallback(
+        rideId: widget.rideId,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _acceptingCounter = false;
+        });
+      }
+    }
+  }
+
+  // ===========================================================================
+  // PRICE BUBBLE
+  // ===========================================================================
+
+  Widget _priceBubble({
+    required double price,
+    required bool isDriver,
+    required String label,
+  }) {
+    return Align(
+      alignment: isDriver ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        constraints: const BoxConstraints(
+          maxWidth: 280,
+        ),
+        margin: const EdgeInsets.only(
+          bottom: 12,
+        ),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 15,
+          vertical: 12,
+        ),
+        decoration: BoxDecoration(
+          color: isDriver ? Colors.black : Colors.grey[100],
+          borderRadius: BorderRadius.circular(
+            18,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                color: isDriver ? Colors.white70 : Colors.black54,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(
+              height: 3,
+            ),
+            Text(
+              '₦${price.toStringAsFixed(2)}',
+              style: TextStyle(
+                color: isDriver ? Colors.white : Colors.black,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // TYPING DOTS
+  // ===========================================================================
+
+  Widget _waitingDots() {
+    return const _FourDotTypingIndicator();
+  }
+
+  // ===========================================================================
+  // BUILD
+  // ===========================================================================
+
+  @override
+  Widget build(
+    BuildContext context,
+  ) {
+    return SafeArea(
+      child: Container(
+        height: MediaQuery.of(context).size.height * 0.78,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(28),
+          ),
+        ),
+        child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          stream: _rideStream,
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              return const Center(
+                child: CircularProgressIndicator(),
+              );
+            }
+
+            if (!snapshot.data!.exists) {
+              return const Center(
+                child: Text(
+                  'Ride no longer exists.',
+                ),
+              );
+            }
+
+            final data = snapshot.data!.data() ?? <String, dynamic>{};
+
+            final status = data['Status']?.toString() ?? '';
+
+            final driverOffer = _price(
+                  data['driverOfferPrice'],
+                ) ??
+                _price(
+                  data['price'],
+                );
+
+            final riderCounter = _price(
+              data['userCounterPrice'],
+            );
+
+            final actor = data['lastNegotiationActor']?.toString();
+
+            // -----------------------------------------------------------------
+            // If accepted, let DriverHomePage handle navigation.
+            // -----------------------------------------------------------------
+
+            if (status == 'accepted' || status == 'ride_started') {
+              return _buildAcceptedState();
+            }
+
+            // -----------------------------------------------------------------
+            // Cancelled.
+            // -----------------------------------------------------------------
+
+            if (status == 'cancelled' || status == 'driver_rejected') {
+              return _buildCancelledState();
+            }
+
+            // -----------------------------------------------------------------
+            // Current negotiation state.
+            // -----------------------------------------------------------------
+
+            final bool riderIsWaiting =
+                status == 'innegotiation' && actor == 'rider';
+
+            final bool driverIsWaiting =
+                status == 'innegotiation' && actor == 'driver';
+
+            final bool firstOffer = status == 'driver_offered';
+
+            return Column(
+              children: [
+                // -------------------------------------------------------------
+                // HANDLE
+                // -------------------------------------------------------------
+
+                const SizedBox(
+                  height: 10,
+                ),
+
+                Container(
+                  width: 45,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(
+                      20,
+                    ),
+                  ),
+                ),
+
+                const SizedBox(
+                  height: 18,
+                ),
+
+                // -------------------------------------------------------------
+                // HEADER
+                // -------------------------------------------------------------
+
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                  ),
+                  child: Row(
+                    children: [
+                      driverOffer != null
+                          ? Container(
+                              width: 46,
+                              height: 46,
+                              decoration: BoxDecoration(
+                                color: Colors.grey[100],
+                                shape: BoxShape.circle,
+                                image: widget.driverImageUrl != null &&
+                                        widget.driverImageUrl!.isNotEmpty
+                                    ? DecorationImage(
+                                        image: NetworkImage(
+                                          widget.driverImageUrl!,
+                                        ),
+                                        fit: BoxFit.cover,
+                                      )
+                                    : null,
+                              ),
+                              child: widget.driverImageUrl == null ||
+                                      widget.driverImageUrl!.isEmpty
+                                  ? const Icon(
+                                      Icons.person,
+                                      color: Colors.black54,
+                                    )
+                                  : null,
+                            )
+                          : const SizedBox(),
+                      const SizedBox(
+                        width: 12,
+                      ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Ride negotiation',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              widget.driverName,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.green[50],
+                          borderRadius: BorderRadius.circular(
+                            20,
+                          ),
+                        ),
+                        child: Text(
+                          firstOffer ? 'Offer' : 'Negotiating',
+                          style: TextStyle(
+                            color: Colors.green[700],
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(
+                  height: 15,
+                ),
+
+                const Divider(
+                  height: 1,
+                ),
+
+                // -------------------------------------------------------------
+                // CHAT AREA
+                // -------------------------------------------------------------
+
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.all(
+                      20,
+                    ),
+                    children: [
+                      if (driverOffer != null)
+                        _priceBubble(
+                          price: driverOffer,
+                          isDriver: true,
+                          label: 'Your offer',
+                        ),
+                      if (riderCounter != null)
+                        _priceBubble(
+                          price: riderCounter,
+                          isDriver: false,
+                          label: 'Rider counter offer',
+                        ),
+                      if (riderIsWaiting) ...[
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 11,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.grey[100],
+                                borderRadius: BorderRadius.circular(
+                                  18,
+                                ),
+                              ),
+                              child: _waitingDots(),
+                            ),
+                            const SizedBox(
+                              width: 10,
+                            ),
+                            Text(
+                              'Rider is waiting for your response',
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                      if (driverIsWaiting) ...[
+                        const SizedBox(
+                          height: 4,
+                        ),
+                        Row(
+                          children: [
+                            _waitingDots(),
+                            const SizedBox(
+                              width: 10,
+                            ),
+                            Text(
+                              'Waiting for rider response...',
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                      if (firstOffer) ...[
+                        const SizedBox(
+                          height: 4,
+                        ),
+                        Row(
+                          children: [
+                            _waitingDots(),
+                            const SizedBox(
+                              width: 10,
+                            ),
+                            Text(
+                              'Waiting for rider response...',
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+
+                // -------------------------------------------------------------
+                // ACTION AREA
+                // -------------------------------------------------------------
+
+                if (riderIsWaiting && riderCounter != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      18,
+                      8,
+                      18,
+                      18,
+                    ),
+                    child: Column(
+                      children: [
+                        // Accept rider counter.
+                        SizedBox(
+                          width: double.infinity,
+                          height: 50,
+                          child: ElevatedButton(
+                            onPressed:
+                                _acceptingCounter ? null : _acceptCounter,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green[700],
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(
+                                  25,
+                                ),
+                              ),
+                            ),
+                            child: _acceptingCounter
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : Text(
+                                    'Accept ₦${riderCounter.toStringAsFixed(2)}',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                          ),
+                        ),
+
+                        const SizedBox(
+                          height: 10,
+                        ),
+
+                        // Make another driver offer.
+                        _buildOfferInput(),
+                      ],
+                    ),
+                  ),
+
+                if (driverIsWaiting)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      18,
+                      8,
+                      18,
+                      18,
+                    ),
+                    child: _buildOfferInput(),
+                  ),
+
+                if (firstOffer)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      18,
+                      8,
+                      18,
+                      18,
+                    ),
+                    child: _buildOfferInput(),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // OFFER INPUT
+  // ===========================================================================
+
+  Widget _buildOfferInput() {
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: _offerController,
+            keyboardType: const TextInputType.numberWithOptions(
+              decimal: true,
+            ),
+            decoration: InputDecoration(
+              hintText: 'Make another offer',
+              prefixText: '₦ ',
+              filled: true,
+              fillColor: Colors.grey[100],
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(
+                  25,
+                ),
+                borderSide: BorderSide.none,
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 18,
+                vertical: 14,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(
+          width: 8,
+        ),
+        Container(
+          width: 50,
+          height: 50,
+          decoration: const BoxDecoration(
+            color: Colors.black,
+            shape: BoxShape.circle,
+          ),
+          child: IconButton(
+            onPressed: _sendingOffer
+                ? null
+                : () {
+                    final price = double.tryParse(
+                      _offerController.text
+                          .replaceAll(
+                            ',',
+                            '',
+                          )
+                          .trim(),
+                    );
+
+                    if (price == null || price <= 0) {
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Enter a valid offer.',
+                          ),
+                        ),
+                      );
+
+                      return;
+                    }
+
+                    _sendDriverOffer(
+                      price,
+                    );
+                  },
+            icon: _sendingOffer
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(
+                    Icons.send_rounded,
+                    color: Colors.white,
+                    size: 21,
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ===========================================================================
+  // ACCEPTED STATE
+  // ===========================================================================
+
+  Widget _buildAcceptedState() {
+    return const Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.check_circle,
+            color: Colors.green,
+            size: 55,
+          ),
+          SizedBox(
+            height: 14,
+          ),
+          Text(
+            'Ride accepted',
+            style: TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          SizedBox(
+            height: 6,
+          ),
+          Text(
+            'Opening your ride...',
+            style: TextStyle(
+              color: Colors.black54,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // CANCELLED STATE
+  // ===========================================================================
+
+  Widget _buildCancelledState() {
+    return const Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.cancel_outlined,
+            color: Colors.red,
+            size: 50,
+          ),
+          SizedBox(
+            height: 12,
+          ),
+          Text(
+            'Ride is no longer available',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// FOUR DOT TYPING INDICATOR
+// ============================================================================
+
+class _FourDotTypingIndicator extends StatefulWidget {
+  const _FourDotTypingIndicator();
+
+  @override
+  State<_FourDotTypingIndicator> createState() =>
+      _FourDotTypingIndicatorState();
+}
+
+class _FourDotTypingIndicatorState extends State<_FourDotTypingIndicator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(
+        milliseconds: 1100,
+      ),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(
+    BuildContext context,
+  ) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final value = _controller.value;
+
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(
+            4,
+            (index) {
+              final phase = ((value * 4) - index).clamp(
+                0.0,
+                1.0,
+              );
+
+              final scale = 0.75 + (phase * 0.35);
+
+              return Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 2,
+                ),
+                child: Transform.scale(
+                  scale: scale,
+                  child: Container(
+                    width: 6,
+                    height: 6,
+                    decoration: const BoxDecoration(
+                      color: Colors.black54,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
   }
 }
 
