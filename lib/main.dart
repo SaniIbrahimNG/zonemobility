@@ -47708,6 +47708,8 @@ class _DriverOfferScreenState extends State<DriverOfferScreen> {
 
   bool _isSubmitting = false;
   bool _hasNavigatedToRideStarted = false;
+  bool _negotiationSheetOpen = false;
+  //bool _negotiationSheetOpen = false;
 
   double? _currentDriverOffer;
   double? _myCounterOffer;
@@ -47812,16 +47814,20 @@ class _DriverOfferScreenState extends State<DriverOfferScreen> {
     // This is now the ONLY acceptance state.
     // -------------------------------------------------------------------------
 
-    if (status == 'ride_started') {
+    // Navigate immediately when either party has accepted
+// the negotiated price.
+    if (status == 'accepted' || status == 'ride_started') {
       final double finalPrice = _readDouble(
-            data['price'] ?? data['finalPrice'],
+            data['finalPrice'] ??
+                data['price'] ??
+                data['driverOfferPrice'] ??
+                data['userCounterPrice'],
           ) ??
+          _myCounterOffer ??
           _currentDriverOffer ??
           widget.price;
 
-      _navigateToRideStarted(
-        finalPrice,
-      );
+      _navigateToRideStarted(finalPrice);
 
       return;
     }
@@ -47851,6 +47857,21 @@ class _DriverOfferScreenState extends State<DriverOfferScreen> {
       );
 
       return;
+    }
+
+    // Automatically open the negotiation modal whenever
+// the ride enters negotiation.
+    if (status == 'innegotiation' &&
+        !_negotiationSheetOpen &&
+        mounted &&
+        !_hasNavigatedToRideStarted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _hasNavigatedToRideStarted || _negotiationSheetOpen) {
+          return;
+        }
+
+        _openNegotiationChat();
+      });
     }
 
     // -------------------------------------------------------------------------
@@ -48284,6 +48305,12 @@ class _DriverOfferScreenState extends State<DriverOfferScreen> {
   // ===========================================================================
 
   void _openNegotiationChat() {
+    if (!mounted || _negotiationSheetOpen || _hasNavigatedToRideStarted) {
+      return;
+    }
+
+    _negotiationSheetOpen = true;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -48459,7 +48486,9 @@ class _DriverOfferScreenState extends State<DriverOfferScreen> {
           },
         );
       },
-    );
+    ).whenComplete(() {
+      _negotiationSheetOpen = false;
+    });
   }
 
   Widget _buildChatBubble({
@@ -48838,42 +48867,7 @@ class _DriverOfferScreenState extends State<DriverOfferScreen> {
                 ),
               ),
 
-              const SizedBox(height: 18),
-
-              // ===============================================================
-              // NEGOTIATION CHAT BUTTON
-              // ===============================================================
-
-              if (negotiating)
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton.icon(
-                    onPressed: _openNegotiationChat,
-                    icon: const Icon(
-                      Icons.chat_bubble_outline,
-                    ),
-                    label: const Text(
-                      'Open Negotiation',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: Colors.black,
-                      elevation: 0,
-                      side: const BorderSide(
-                        color: Colors.black12,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(
-                          26,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+              //  const SizedBox(height: 18),
             ],
           ),
         ),
