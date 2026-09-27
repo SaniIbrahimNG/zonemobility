@@ -31456,7 +31456,8 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
 
   // Set this to the same Google Directions API key used
   // by the other route-enabled pages in your project.
-  static const String _googleDirectionsApiKey = 'YOUR_GOOGLE_MAPS_API_KEY';
+  static const String _googleDirectionsApiKey =
+      'AIzaSyAxmD8Gvtn1KGomBFy3pWXRFgvw0c4a-48';
 
   @override
   void initState() {
@@ -31687,7 +31688,8 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
       return;
     }
 
-    if (_googleDirectionsApiKey == 'YOUR_GOOGLE_MAPS_API_KEY') {
+    if (_googleDirectionsApiKey.isEmpty ||
+        _googleDirectionsApiKey == 'YOUR_GOOGLE_MAPS_API_KEY') {
       debugPrint(
         'Please configure your Google Directions API key.',
       );
@@ -34767,7 +34769,8 @@ class _RideStartedScreenState extends State<RideStartedScreen>
    * If you already have a global constant for your Google API key,
    * use that instead.
    */
-  static const String _googleMapsApiKey = 'YOUR_GOOGLE_MAPS_API_KEY';
+  static const String _googleMapsApiKey =
+      'AIzaSyAxmD8Gvtn1KGomBFy3pWXRFgvw0c4a-48';
 
   @override
   void initState() {
@@ -43829,7 +43832,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
 
     await _stopSound();
 
-    _closeNegotiationIfOpen();
+    // ---------------------------------------------------------------------------
+    // GET FINAL ACCEPTED PRICE
+    // ---------------------------------------------------------------------------
 
     final double finalPrice = _readPrice(
           data['finalPrice'],
@@ -43842,38 +43847,90 @@ class _DriverHomePageState extends State<DriverHomePage> {
         ) ??
         0.0;
 
-    final double pickupLat = _readDouble(
-          data['pickupLat'],
-        ) ??
-        0.0;
+    // ---------------------------------------------------------------------------
+    // GET RIDE DETAILS
+    // ---------------------------------------------------------------------------
 
-    final double pickupLng = _readDouble(
-          data['pickupLng'],
-        ) ??
-        0.0;
+    final String riderName = data['userName']?.toString() ??
+        data['riderName']?.toString() ??
+        'Rider';
 
-    final double destinationLat = _readDouble(
-          data['destinationLat'],
-        ) ??
-        0.0;
+    final String pickup = _cleanAddress(
+      data['Pickup Location'] ?? data['pickup'] ?? data['pickupLocation'],
+    );
 
-    final double destinationLng = _readDouble(
-          data['destinationLng'],
-        ) ??
-        0.0;
+    final String destination = _cleanAddress(
+      data['Destination'] ?? data['destination'] ?? data['destinationLocation'],
+    );
 
-    if (!mounted) {
-      return;
-    }
+    final String paymentMethod = data['paymentMethod']?.toString() ??
+        data['Payment Method']?.toString() ??
+        data['payment_method']?.toString() ??
+        'Cash';
 
-    _activeRideSubscription?.cancel();
+    // ---------------------------------------------------------------------------
+    // STOP LISTENING BEFORE NAVIGATION
+    // ---------------------------------------------------------------------------
+
+    await _activeRideSubscription?.cancel();
 
     _activeRideSubscription = null;
 
     _activeNegotiationRideId = null;
 
     _activeRideData = null;
+
+    // ---------------------------------------------------------------------------
+    // CLOSE THE NEGOTIATION MODAL
+    //
+    // showModalBottomSheet creates another Navigator route. We must close it
+    // first and WAIT for it to finish before pushing DriverBookedScreen.
+    // ---------------------------------------------------------------------------
+
+    if (_negotiationModalOpen && mounted) {
+      Navigator.of(context).pop();
+
+      _negotiationModalOpen = false;
+
+      // Give Flutter time to remove the bottom-sheet route before pushing
+      // DriverBookedScreen.
+      await Future.delayed(
+        const Duration(milliseconds: 150),
+      );
+    }
+
+    // ---------------------------------------------------------------------------
+    // MAKE SURE THE DRIVER HOME PAGE STILL EXISTS
+    // ---------------------------------------------------------------------------
+
+    if (!mounted) {
+      return;
+    }
+
+    // ---------------------------------------------------------------------------
+    // NAVIGATE TO DRIVER BOOKED SCREEN
+    // ---------------------------------------------------------------------------
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => DriverBookedScreen(
+          rideId: rideId,
+          riderName: riderName,
+          pickup: pickup,
+          destination: destination,
+          price: finalPrice,
+          paymentMethod: paymentMethod,
+        ),
+      ),
+    );
+
+    // ---------------------------------------------------------------------------
+    // RESET NAVIGATION LOCK AFTER RETURNING
+    // ---------------------------------------------------------------------------
+
+    _isNavigatingToBooked = false;
   }
+
   // ===========================================================================
   // CLOSE ACTIVE MODAL
   // ===========================================================================
@@ -43927,9 +43984,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
 
       await FirebaseFirestore.instance.runTransaction(
         (transaction) async {
-          final snapshot = await transaction.get(
-            rideRef,
-          );
+          final snapshot = await transaction.get(rideRef);
 
           if (!snapshot.exists) {
             throw Exception(
@@ -44021,9 +44076,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
 
       await FirebaseFirestore.instance.runTransaction(
         (transaction) async {
-          final snapshot = await transaction.get(
-            rideRef,
-          );
+          final snapshot = await transaction.get(rideRef);
 
           if (!snapshot.exists) {
             throw Exception(
@@ -44172,7 +44225,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
         backgroundColor: Colors.white,
         elevation: 0,
         leading: Padding(
-          padding: const EdgeInsets.only(left: 10),
+          padding: const EdgeInsets.only(
+            left: 10,
+          ),
           child: GestureDetector(
             onTap: () => Navigator.pop(context),
             child: Container(
@@ -44191,7 +44246,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
           ),
         ),
         title: const Padding(
-          padding: EdgeInsets.only(left: 8),
+          padding: EdgeInsets.only(
+            left: 8,
+          ),
           child: Text(
             'Partner',
             style: TextStyle(
@@ -44667,9 +44724,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
 
     final rideTime = timestamp.toDate();
 
-    final difference = now.difference(
-      rideTime,
-    );
+    final difference = now.difference(rideTime);
 
     if (difference.inMinutes < 1) {
       return 'Just now';
@@ -44686,7 +44741,6 @@ class _DriverHomePageState extends State<DriverHomePage> {
     return '${difference.inDays} days ago';
   }
 }
-
 // ============================================================================
 // DRIVER NEGOTIATION SHEET
 //
