@@ -45734,7 +45734,8 @@ class _DriverAvailabilitySheetState extends State<_DriverAvailabilitySheet> {
   // Use the same Google Places key already used by the rider location flow.
   // If your project already exposes this as a global constant, replace this
   // value with that constant instead.
-  static const String _googlePlacesApiKey = 'YOUR_GOOGLE_MAPS_API_KEY';
+  static const String _googlePlacesApiKey =
+      'AIzaSyAxmD8Gvtn1KGomBFy3pWXRFgvw0c4a-48';
 
   late List<String> _cities;
   String? _state;
