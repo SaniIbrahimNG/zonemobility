@@ -43288,14 +43288,25 @@ class DriverHomePage extends StatefulWidget {
 }
 
 class _DriverHomePageState extends State<DriverHomePage> {
-  // ===========================================================================
-  // PENDING RIDE REQUESTS
-  // ===========================================================================
+  Stream<QuerySnapshot>? get rideRequestsStream {
+    final state = driverState?.trim();
+    final city = driverCity?.trim();
 
-  final Stream<QuerySnapshot> rideRequestsStream = FirebaseFirestore.instance
-      .collection('ride_requests')
-      .where('Status', isEqualTo: 'pending')
-      .snapshots();
+    if (!isOnline ||
+        state == null ||
+        state.isEmpty ||
+        city == null ||
+        city.isEmpty) {
+      return null;
+    }
+
+    return FirebaseFirestore.instance
+        .collection('ride_requests')
+        .where('Status', isEqualTo: 'pending')
+        .where('pickupState', isEqualTo: state)
+        .where('pickupCity', isEqualTo: city)
+        .snapshots();
+  }
 
   // ===========================================================================
   // CONTROLLERS / AUDIO
@@ -43321,6 +43332,30 @@ class _DriverHomePageState extends State<DriverHomePage> {
   double totalEarnings = 0.0;
 
   // ===========================================================================
+  // DRIVER AVAILABILITY / LOCATION
+  // ===========================================================================
+
+  bool isOnline = false;
+  bool isLoadingDriverLocation = true;
+  bool _isChangingOnlineStatus = false;
+
+  String? driverState;
+  String? driverCity;
+  String? driverAddress;
+  String? driverFullAddress;
+  double? driverLatitude;
+  double? driverLongitude;
+
+  List<String> _driverStates = [];
+  List<String> _driverCities = [];
+  List<Map<String, dynamic>> savedDriverAddresses = [];
+
+  final TextEditingController _driverAddressController =
+      TextEditingController();
+  final TextEditingController _driverFullAddressController =
+      TextEditingController();
+
+  // ===========================================================================
   // ACTIVE NEGOTIATION
   //
   // This is the ride that the driver has already offered a price for.
@@ -43341,11 +43376,37 @@ class _DriverHomePageState extends State<DriverHomePage> {
 
   bool _isNavigatingToBooked = false;
 
+  // ===========================================================================
+  // STAGED RIDE MATCHING
+  // ===========================================================================
+
+  // Requests that have already been seen by this driver. This lets us expand
+  // a request to the rest of the same city a few seconds after the closest
+  // drivers have had first access to it.
+  final Map<String, DateTime> _rideFirstSeenAt = {};
+
+  // Timers used to expose a same-city request after the expansion delay.
+  final Map<String, Timer> _rideExpansionTimers = {};
+
+  // Once a request reaches the expansion stage, it remains visible while it
+  // is still pending.
+  final Set<String> _expandedCityRideIds = {};
+
+  // A small radius is used for the first/nearby stage. Five kilometres is
+  // deliberately broad enough for an urban pickup without making every
+  // driver in the city see the request immediately.
+  static const double _nearbyPickupRadiusKm = 5.0;
+
+  // After the nearby stage has had a short head start, expand to every driver
+  // listening in the same city.
+  static const int _cityExpansionDelaySeconds = 3;
+
   @override
   void initState() {
     super.initState();
 
     _loadDriverInfo();
+    _loadDriverAvailability();
   }
 
   @override
@@ -43356,7 +43417,14 @@ class _DriverHomePageState extends State<DriverHomePage> {
 
     _activeRideSubscription?.cancel();
 
+    for (final timer in _rideExpansionTimers.values) {
+      timer.cancel();
+    }
+    _rideExpansionTimers.clear();
+
     _audioPlayer.dispose();
+    _driverAddressController.dispose();
+    _driverFullAddressController.dispose();
 
     super.dispose();
   }
@@ -43443,6 +43511,402 @@ class _DriverHomePageState extends State<DriverHomePage> {
         'Error loading driver information: $e',
       );
     }
+  }
+
+  // ===========================================================================
+  // DRIVER AVAILABILITY / LOCATION
+  // ===========================================================================
+
+  Future<void> _loadDriverAvailability() async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+
+    if (currentUser == null) {
+      if (mounted) {
+        setState(() {
+          isLoadingDriverLocation = false;
+        });
+      }
+      return;
+    }
+
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('Drivers')
+          .doc(currentUser.uid)
+          .get();
+
+      final data = doc.data() ?? <String, dynamic>{};
+      final currentAddress = data['currentAddress'] is Map
+          ? Map<String, dynamic>.from(data['currentAddress'] as Map)
+          : <String, dynamic>{};
+
+      final loadedState = currentAddress['state']?.toString().trim();
+      final loadedCity = currentAddress['city']?.toString().trim();
+
+      final onlineValue = data['isOnline'];
+      final status = data['status']?.toString().toLowerCase().trim();
+
+      final loadedOnline =
+          onlineValue is bool ? onlineValue : status == 'online';
+
+      List<String> states = [];
+      try {
+        states = await LocationService.getStates();
+      } catch (e) {
+        debugPrint('Error loading Nigerian states: $e');
+      }
+
+      List<String> cities = [];
+      if (loadedState != null && loadedState.isNotEmpty) {
+        try {
+          cities = await LocationService.getLocations(loadedState);
+        } catch (e) {
+          debugPrint('Error loading driver cities: $e');
+        }
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        isOnline = loadedOnline;
+        driverState = loadedState?.isEmpty == true ? null : loadedState;
+        driverCity = loadedCity?.isEmpty == true ? null : loadedCity;
+        driverAddress = currentAddress['address']?.toString();
+        driverFullAddress = currentAddress['fullAddress']?.toString();
+        driverLatitude = _readDouble(currentAddress['latitude']);
+        driverLongitude = _readDouble(currentAddress['longitude']);
+        _driverStates = states;
+        _driverCities = cities;
+        isLoadingDriverLocation = false;
+      });
+
+      await _fetchSavedDriverAddresses();
+    } catch (e) {
+      debugPrint('Error loading driver availability: $e');
+
+      if (!mounted) return;
+
+      setState(() {
+        isLoadingDriverLocation = false;
+      });
+    }
+  }
+
+  Future<void> _fetchSavedDriverAddresses() async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+
+    if (currentUser == null) return;
+
+    try {
+      QuerySnapshot<Map<String, dynamic>> snapshot;
+
+      try {
+        snapshot = await FirebaseFirestore.instance
+            .collection('Drivers')
+            .doc(currentUser.uid)
+            .collection('addresses')
+            .orderBy('createdAt', descending: true)
+            .get();
+      } catch (_) {
+        snapshot = await FirebaseFirestore.instance
+            .collection('Drivers')
+            .doc(currentUser.uid)
+            .collection('addresses')
+            .get();
+      }
+
+      final addresses = snapshot.docs.map((doc) {
+        final data = doc.data();
+        data['id'] = doc.id;
+        return data;
+      }).toList();
+
+      if (!mounted) return;
+
+      setState(() {
+        savedDriverAddresses = addresses;
+      });
+    } catch (e) {
+      debugPrint('Error loading saved driver addresses: $e');
+    }
+  }
+
+  Future<void> _loadDriverStates() async {
+    try {
+      final states = await LocationService.getStates();
+      if (!mounted) return;
+      setState(() {
+        _driverStates = states;
+      });
+    } catch (e) {
+      debugPrint('Error loading states: $e');
+    }
+  }
+
+  Future<void> _loadDriverCities(String state) async {
+    if (state.trim().isEmpty) {
+      if (mounted) {
+        setState(() {
+          _driverCities = [];
+        });
+      }
+      return;
+    }
+
+    try {
+      final cities = await LocationService.getLocations(state);
+      if (!mounted) return;
+      setState(() {
+        _driverCities = cities;
+      });
+    } catch (e) {
+      debugPrint('Error loading cities for $state: $e');
+      if (mounted) {
+        setState(() {
+          _driverCities = [];
+        });
+      }
+    }
+  }
+
+  Future<void> _saveDriverAddress({
+    required String fullAddress,
+    required String addressText,
+    required String city,
+    required String state,
+    double? latitude,
+    double? longitude,
+    String placeId = '',
+  }) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
+
+    final cleanFullAddress = fullAddress.trim();
+    if (cleanFullAddress.isEmpty ||
+        state.trim().isEmpty ||
+        city.trim().isEmpty) {
+      return;
+    }
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('Drivers')
+          .doc(currentUser.uid)
+          .collection('addresses')
+          .add({
+        'address': addressText.trim(),
+        'city': city.trim(),
+        'state': state.trim(),
+        'fullAddress': cleanFullAddress,
+        'latitude': latitude,
+        'longitude': longitude,
+        'placeId': placeId.trim(),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      await _fetchSavedDriverAddresses();
+    } catch (e) {
+      debugPrint('Error saving driver address: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _setDriverCurrentAddress({
+    required String fullAddress,
+    required String addressText,
+    required String city,
+    required String state,
+    double? latitude,
+    double? longitude,
+    String placeId = '',
+    String source = 'manual',
+    bool makeOnline = false,
+  }) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
+
+    final cleanFullAddress = fullAddress.trim();
+    final cleanState = state.trim();
+    final cleanCity = city.trim();
+
+    if (cleanFullAddress.isEmpty || cleanState.isEmpty || cleanCity.isEmpty) {
+      throw Exception('Please select a state, city and address.');
+    }
+
+    final currentAddress = {
+      'address': addressText.trim(),
+      'city': cleanCity,
+      'state': cleanState,
+      'fullAddress': cleanFullAddress,
+      'latitude': latitude,
+      'longitude': longitude,
+      'placeId': placeId.trim(),
+      'source': source,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+
+    await FirebaseFirestore.instance
+        .collection('Drivers')
+        .doc(currentUser.uid)
+        .set({
+      'currentAddress': currentAddress,
+      'isOnline': makeOnline ? true : isOnline,
+      'status': makeOnline ? 'online' : (isOnline ? 'online' : 'offline'),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    if (!mounted) return;
+
+    setState(() {
+      driverState = cleanState;
+      driverCity = cleanCity;
+      driverAddress = addressText.trim();
+      driverFullAddress = cleanFullAddress;
+      driverLatitude = latitude;
+      driverLongitude = longitude;
+      if (makeOnline) {
+        isOnline = true;
+      }
+    });
+  }
+
+  Future<void> _selectSavedDriverAddress(
+    Map<String, dynamic> savedAddress, {
+    bool makeOnline = false,
+  }) async {
+    final fullAddress = savedAddress['fullAddress']?.toString().trim() ?? '';
+    final city = savedAddress['city']?.toString().trim() ?? '';
+    final state = savedAddress['state']?.toString().trim() ?? '';
+
+    if (fullAddress.isEmpty || city.isEmpty || state.isEmpty) return;
+
+    await _setDriverCurrentAddress(
+      fullAddress: fullAddress,
+      addressText: savedAddress['address']?.toString() ?? fullAddress,
+      city: city,
+      state: state,
+      latitude: _readDouble(savedAddress['latitude']),
+      longitude: _readDouble(savedAddress['longitude']),
+      placeId: savedAddress['placeId']?.toString() ?? '',
+      source: 'saved',
+      makeOnline: makeOnline,
+    );
+  }
+
+  Future<void> _setDriverOffline() async {
+    if (_isChangingOnlineStatus) return;
+
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
+
+    setState(() {
+      _isChangingOnlineStatus = true;
+    });
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('Drivers')
+          .doc(currentUser.uid)
+          .set({
+        'isOnline': false,
+        'status': 'offline',
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      await _stopSound();
+
+      if (!mounted) return;
+
+      setState(() {
+        isOnline = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Unable to go offline: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isChangingOnlineStatus = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _openDriverAvailabilityModal() async {
+    await _fetchSavedDriverAddresses();
+    await _loadDriverStates();
+
+    if (!mounted) return;
+
+    await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        return _DriverAvailabilitySheet(
+          states: _driverStates,
+          cities: _driverCities,
+          savedAddresses: savedDriverAddresses,
+          currentState: driverState,
+          currentCity: driverCity,
+          currentAddress: driverAddress,
+          currentFullAddress: driverFullAddress,
+          onStateChanged: (state) async {
+            await _loadDriverCities(state);
+            if (sheetContext.mounted) {
+              // The sheet is stateful and refreshes itself through its callback.
+            }
+          },
+          onSaveAndGoOnline: ({
+            required String state,
+            required String city,
+            required String address,
+            required String fullAddress,
+            required double latitude,
+            required double longitude,
+            required String placeId,
+          }) async {
+            await _saveDriverAddress(
+              fullAddress: fullAddress,
+              addressText: address,
+              city: city,
+              state: state,
+              latitude: latitude,
+              longitude: longitude,
+              placeId: placeId,
+            );
+
+            await _setDriverCurrentAddress(
+              fullAddress: fullAddress,
+              addressText: address,
+              city: city,
+              state: state,
+              latitude: latitude,
+              longitude: longitude,
+              placeId: placeId,
+              source: 'google_places',
+              makeOnline: true,
+            );
+
+            if (sheetContext.mounted) {
+              Navigator.of(sheetContext).pop(true);
+            }
+          },
+          onSelectSaved: (saved) async {
+            await _selectSavedDriverAddress(saved, makeOnline: true);
+            if (sheetContext.mounted) {
+              Navigator.of(sheetContext).pop(true);
+            }
+          },
+        );
+      },
+    );
   }
 
   // ===========================================================================
@@ -44214,6 +44678,374 @@ class _DriverHomePageState extends State<DriverHomePage> {
   }
 
   // ===========================================================================
+  // STAGED RIDE MATCHING HELPERS
+  // ===========================================================================
+
+  String _normalizeLocationText(dynamic value) {
+    if (value == null) {
+      return '';
+    }
+
+    return value
+        .toString()
+        .toLowerCase()
+        .replaceAll('nigeria', '')
+        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  bool _sameLocationText(
+    dynamic first,
+    dynamic second,
+  ) {
+    final a = _normalizeLocationText(first);
+    final b = _normalizeLocationText(second);
+
+    if (a.isEmpty || b.isEmpty) {
+      return false;
+    }
+
+    return a == b;
+  }
+
+  double? _ridePickupLatitude(
+    Map<String, dynamic> data,
+  ) {
+    return _readDouble(
+          data['pickupLat'],
+        ) ??
+        _readDouble(
+          data['pickupLatitude'],
+        ) ??
+        _readDouble(
+          data['pickup_lat'],
+        );
+  }
+
+  double? _ridePickupLongitude(
+    Map<String, dynamic> data,
+  ) {
+    return _readDouble(
+          data['pickupLng'],
+        ) ??
+        _readDouble(
+          data['pickupLongitude'],
+        ) ??
+        _readDouble(
+          data['pickup_lng'],
+        );
+  }
+
+  String _ridePickupAddress(
+    Map<String, dynamic> data,
+  ) {
+    return data['Pickup Location']?.toString() ??
+        data['pickupAddress']?.toString() ??
+        data['pickupLocation']?.toString() ??
+        data['pickup']?.toString() ??
+        '';
+  }
+
+  String _ridePickupState(
+    Map<String, dynamic> data,
+  ) {
+    return data['pickupState']?.toString() ??
+        data['pickup_state']?.toString() ??
+        '';
+  }
+
+  String _ridePickupCity(
+    Map<String, dynamic> data,
+  ) {
+    return data['pickupCity']?.toString() ??
+        data['pickup_city']?.toString() ??
+        '';
+  }
+
+  double? _driverDistanceToRideKm(
+    Map<String, dynamic> data,
+  ) {
+    final pickupLat = _ridePickupLatitude(data);
+    final pickupLng = _ridePickupLongitude(data);
+
+    final driverLat = driverLatitude;
+    final driverLng = driverLongitude;
+
+    if (pickupLat == null ||
+        pickupLng == null ||
+        driverLat == null ||
+        driverLng == null) {
+      return null;
+    }
+
+    // Uses Geolocator's existing geographic distance calculation so the
+    // matching is based on metres rather than a raw latitude/longitude
+    // difference.
+    try {
+      final metres = Geolocator.distanceBetween(
+        driverLat,
+        driverLng,
+        pickupLat,
+        pickupLng,
+      );
+
+      return metres / 1000.0;
+    } catch (e) {
+      debugPrint(
+        'Ride distance calculation error: $e',
+      );
+      return null;
+    }
+  }
+
+  bool _isImmediateRideMatch(
+    Map<String, dynamic> data,
+  ) {
+    // -------------------------------------------------------------------------
+    // 1. Exact/current-address match.
+    // -------------------------------------------------------------------------
+
+    final pickupAddress = _ridePickupAddress(data);
+
+    if (_sameLocationText(
+      pickupAddress,
+      driverFullAddress,
+    )) {
+      return true;
+    }
+
+    if (_sameLocationText(
+      pickupAddress,
+      driverAddress,
+    )) {
+      return true;
+    }
+
+    // -------------------------------------------------------------------------
+    // 2. Exact or nearby coordinates.
+    // -------------------------------------------------------------------------
+
+    final distanceKm = _driverDistanceToRideKm(data);
+
+    if (distanceKm != null && distanceKm <= _nearbyPickupRadiusKm) {
+      return true;
+    }
+
+    return false;
+  }
+
+  DateTime _getRideFirstSeenTime(
+    String rideId,
+  ) {
+    return _rideFirstSeenAt.putIfAbsent(
+      rideId,
+      DateTime.now,
+    );
+  }
+
+  bool _isRideOldEnoughForExpansion(
+    String rideId,
+    Map<String, dynamic> data,
+  ) {
+    if (_expandedCityRideIds.contains(
+      rideId,
+    )) {
+      return true;
+    }
+
+    // Prefer the ride's server-created timestamp. This means a driver who
+    // opens the app after the three-second window does not wait another three
+    // seconds unnecessarily.
+    final timestamp = data['Time'] is Timestamp
+        ? data['Time'] as Timestamp
+        : data['createdAt'] is Timestamp
+            ? data['createdAt'] as Timestamp
+            : data['created_at'] is Timestamp
+                ? data['created_at'] as Timestamp
+                : null;
+
+    final firstSeen = timestamp?.toDate() ?? _getRideFirstSeenTime(rideId);
+
+    final age = DateTime.now().difference(firstSeen);
+
+    if (age.inMilliseconds >= _cityExpansionDelaySeconds * 1000) {
+      _expandedCityRideIds.add(
+        rideId,
+      );
+      return true;
+    }
+
+    // Schedule the exact remaining delay so the UI expands automatically even
+    // if Firestore does not send another snapshot.
+    _scheduleRideExpansion(
+      rideId,
+      data,
+      firstSeen,
+    );
+
+    return false;
+  }
+
+  void _scheduleRideExpansion(
+    String rideId,
+    Map<String, dynamic> data,
+    DateTime firstSeen,
+  ) {
+    if (_expandedCityRideIds.contains(
+      rideId,
+    )) {
+      return;
+    }
+
+    if (_rideExpansionTimers.containsKey(
+      rideId,
+    )) {
+      return;
+    }
+
+    final elapsed = DateTime.now().difference(firstSeen).inMilliseconds;
+
+    final delayMs = (_cityExpansionDelaySeconds * 1000) - elapsed;
+
+    final delay = Duration(
+      milliseconds: delayMs <= 0 ? 50 : delayMs,
+    );
+
+    _rideExpansionTimers[rideId] = Timer(
+      delay,
+      () {
+        _rideExpansionTimers.remove(
+          rideId,
+        );
+
+        if (!mounted || !isOnline) {
+          return;
+        }
+
+        _expandedCityRideIds.add(
+          rideId,
+        );
+
+        setState(() {});
+      },
+    );
+  }
+
+  List<QueryDocumentSnapshot> _getVisibleRideRequests(
+    List<QueryDocumentSnapshot> docs,
+  ) {
+    final visible = <QueryDocumentSnapshot>[];
+
+    final currentState = _normalizeLocationText(
+      driverState,
+    );
+
+    final currentCity = _normalizeLocationText(
+      driverCity,
+    );
+
+    for (final ride in docs) {
+      final data = ride.data() as Map<String, dynamic>;
+
+      // Server-side state/city filtering is the first gate. We repeat the
+      // comparison here as a safety check for documents written with a stale
+      // or inconsistent location.
+      final pickupState = _normalizeLocationText(
+        _ridePickupState(data),
+      );
+
+      final pickupCity = _normalizeLocationText(
+        _ridePickupCity(data),
+      );
+
+      if (pickupState.isNotEmpty &&
+          currentState.isNotEmpty &&
+          pickupState != currentState) {
+        continue;
+      }
+
+      if (pickupCity.isNotEmpty &&
+          currentCity.isNotEmpty &&
+          pickupCity != currentCity) {
+        continue;
+      }
+
+      final immediate = _isImmediateRideMatch(data);
+
+      if (immediate ||
+          _isRideOldEnoughForExpansion(
+            ride.id,
+            data,
+          )) {
+        visible.add(ride);
+      }
+    }
+
+    // Nearby/exact requests are placed first. Once a request has expanded to
+    // the whole city, distance is still useful for ordering what the driver
+    // sees at the top of the list.
+    visible.sort(
+      (a, b) {
+        final aData = a.data() as Map<String, dynamic>;
+        final bData = b.data() as Map<String, dynamic>;
+
+        final aImmediate = _isImmediateRideMatch(
+          aData,
+        );
+        final bImmediate = _isImmediateRideMatch(
+          bData,
+        );
+
+        if (aImmediate != bImmediate) {
+          return aImmediate ? -1 : 1;
+        }
+
+        final aDistance = _driverDistanceToRideKm(
+          aData,
+        );
+        final bDistance = _driverDistanceToRideKm(
+          bData,
+        );
+
+        if (aDistance != null && bDistance != null) {
+          return aDistance.compareTo(
+            bDistance,
+          );
+        }
+
+        if (aDistance != null) {
+          return -1;
+        }
+
+        if (bDistance != null) {
+          return 1;
+        }
+
+        return 0;
+      },
+    );
+
+    // Clean timers for requests that disappeared from Firestore.
+    final ids = docs.map((e) => e.id).toSet();
+
+    final staleTimers = _rideExpansionTimers.keys
+        .where(
+          (id) => !ids.contains(id),
+        )
+        .toList();
+
+    for (final id in staleTimers) {
+      _rideExpansionTimers[id]?.cancel();
+      _rideExpansionTimers.remove(id);
+      _rideFirstSeenAt.remove(id);
+      _expandedCityRideIds.remove(id);
+    }
+
+    return visible;
+  }
+
+  // ===========================================================================
   // BUILD
   // ===========================================================================
 
@@ -44313,21 +45145,36 @@ class _DriverHomePageState extends State<DriverHomePage> {
                             ),
                           ],
                         ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.green[600],
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: const Text(
-                            'Online',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
+                        GestureDetector(
+                          onTap: _isChangingOnlineStatus
+                              ? null
+                              : () {
+                                  if (isOnline) {
+                                    _setDriverOffline();
+                                  } else {
+                                    _openDriverAvailabilityModal();
+                                  }
+                                },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isOnline
+                                  ? Colors.green[600]
+                                  : Colors.grey[700],
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              _isChangingOnlineStatus
+                                  ? '...'
+                                  : (isOnline ? 'Online' : 'Offline'),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                         ),
@@ -44417,248 +45264,263 @@ class _DriverHomePageState extends State<DriverHomePage> {
             // =================================================================
 
             Expanded(
-              child: StreamBuilder<QuerySnapshot>(
-                stream: rideRequestsStream,
-                builder: (context, snapshot) {
-                  if (snapshot.hasError) {
-                    return Center(
-                      child: Text(
-                        'Unable to load ride requests',
-                        style: TextStyle(
-                          color: Colors.grey[700],
-                        ),
-                      ),
-                    );
-                  }
-
-                  if (!snapshot.hasData) {
-                    return const Center(
-                      child: CircularProgressIndicator(),
-                    );
-                  }
-
-                  final requests = snapshot.data!.docs;
-
-                  if (requests.isEmpty) {
-                    return ListView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      children: const [
-                        SizedBox(
-                          height: 200,
-                        ),
-                        Center(
-                          child: Text(
-                            'No pending ride requests.',
-                          ),
-                        ),
-                      ],
-                    );
-                  }
-
-                  return ListView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    children: requests.map(
-                      (ride) {
-                        final data = ride.data() as Map<String, dynamic>;
-
-                        final String rideId = ride.id;
-
-                        final Timestamp? timestamp = data['Time'] as Timestamp?;
-
-                        final String timeAgo = _getTimeAgo(
-                          timestamp,
-                        );
-
-                        _priceControllers.putIfAbsent(
-                          rideId,
-                          () => TextEditingController(),
-                        );
-
-                        final String pickup = _cleanAddress(
-                          data['Pickup Location'],
-                        );
-
-                        final String destination = _cleanAddress(
-                          data['Destination'],
-                        );
-
-                        return Card(
-                          margin: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(
-                              20,
+              child: rideRequestsStream == null
+                  ? _buildOfflineRideState()
+                  : StreamBuilder<QuerySnapshot>(
+                      stream: rideRequestsStream,
+                      builder: (context, snapshot) {
+                        if (snapshot.hasError) {
+                          return Center(
+                            child: Text(
+                              'Unable to load ride requests',
+                              style: TextStyle(
+                                color: Colors.grey[700],
+                              ),
                             ),
-                          ),
-                          elevation: 8,
-                          color: Colors.grey[500],
-                          shadowColor: Colors.black12,
-                          child: Padding(
-                            padding: const EdgeInsets.all(20),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Center(
-                                  child: Text(
-                                    'New Ride Request',
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.black87,
-                                    ),
+                          );
+                        }
+
+                        if (!snapshot.hasData) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
+
+                        final allRequests = snapshot.data!.docs;
+
+                        final requests = _getVisibleRideRequests(
+                          allRequests,
+                        );
+
+                        if (requests.isEmpty) {
+                          return ListView(
+                            physics: AlwaysScrollableScrollPhysics(),
+                            children: [
+                              SizedBox(
+                                height: 200,
+                              ),
+                              Center(
+                                child: Text(
+                                  allRequests.isEmpty
+                                      ? 'No pending ride requests.'
+                                      : 'No nearby ride requests yet.',
+                                ),
+                              ),
+                            ],
+                          );
+                        }
+
+                        return ListView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          children: requests.map(
+                            (ride) {
+                              final data = ride.data() as Map<String, dynamic>;
+
+                              final String rideId = ride.id;
+
+                              final Timestamp? timestamp =
+                                  data['Time'] as Timestamp?;
+
+                              final String timeAgo = _getTimeAgo(
+                                timestamp,
+                              );
+
+                              _priceControllers.putIfAbsent(
+                                rideId,
+                                () => TextEditingController(),
+                              );
+
+                              final String pickup = _cleanAddress(
+                                data['Pickup Location'],
+                              );
+
+                              final String destination = _cleanAddress(
+                                data['Destination'],
+                              );
+
+                              return Card(
+                                margin: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(
+                                    20,
                                   ),
                                 ),
-                                const SizedBox(
-                                  height: 16,
-                                ),
-                                const Text(
-                                  'Pickup Location',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                const SizedBox(
-                                  height: 2,
-                                ),
-                                _buildInfoRow(
-                                  'Pickup',
-                                  pickup,
-                                ),
-                                const SizedBox(
-                                  height: 5,
-                                ),
-                                const Text(
-                                  'Destination',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                _buildInfoRow(
-                                  'Destination',
-                                  destination,
-                                ),
-                                const SizedBox(
-                                  height: 10,
-                                ),
-                                Text(
-                                  'Booked by: '
-                                  '${data['userName'] ?? 'Unknown'}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                const SizedBox(
-                                  height: 4,
-                                ),
-                                Text(
-                                  'Requested: '
-                                  '$timeAgo',
-                                  style: TextStyle(
-                                    color: Colors.green[700],
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(
-                                  height: 16,
-                                ),
-                                TextField(
-                                  controller: _priceControllers[rideId],
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                                  decoration: InputDecoration(
-                                    labelText: 'Enter your price',
-                                    prefixText: '₦ ',
-                                    filled: true,
-                                    fillColor: Colors.white,
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(
-                                        10,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(
-                                  height: 16,
-                                ),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: ElevatedButton(
-                                        onPressed: () {
-                                          _sendDriverOffer(
-                                            context: context,
-                                            rideId: rideId,
-                                            data: data,
-                                          );
-                                        },
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: Colors.black,
-                                          padding: const EdgeInsets.symmetric(
-                                            vertical: 14,
+                                elevation: 8,
+                                color: Colors.grey[500],
+                                shadowColor: Colors.black12,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(20),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Center(
+                                        child: Text(
+                                          'New Ride Request',
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.black87,
                                           ),
-                                          shape: RoundedRectangleBorder(
+                                        ),
+                                      ),
+                                      const SizedBox(
+                                        height: 16,
+                                      ),
+                                      const Text(
+                                        'Pickup Location',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      const SizedBox(
+                                        height: 2,
+                                      ),
+                                      _buildInfoRow(
+                                        'Pickup',
+                                        pickup,
+                                      ),
+                                      const SizedBox(
+                                        height: 5,
+                                      ),
+                                      const Text(
+                                        'Destination',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      _buildInfoRow(
+                                        'Destination',
+                                        destination,
+                                      ),
+                                      const SizedBox(
+                                        height: 10,
+                                      ),
+                                      Text(
+                                        'Booked by: '
+                                        '${data['userName'] ?? 'Unknown'}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      const SizedBox(
+                                        height: 4,
+                                      ),
+                                      Text(
+                                        'Requested: '
+                                        '$timeAgo',
+                                        style: TextStyle(
+                                          color: Colors.green[700],
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      const SizedBox(
+                                        height: 16,
+                                      ),
+                                      TextField(
+                                        controller: _priceControllers[rideId],
+                                        keyboardType: const TextInputType
+                                            .numberWithOptions(
+                                          decimal: true,
+                                        ),
+                                        decoration: InputDecoration(
+                                          labelText: 'Enter your price',
+                                          prefixText: '₦ ',
+                                          filled: true,
+                                          fillColor: Colors.white,
+                                          border: OutlineInputBorder(
                                             borderRadius: BorderRadius.circular(
                                               10,
                                             ),
                                           ),
                                         ),
-                                        child: const Text(
-                                          'Offer',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(
-                                      width: 12,
-                                    ),
-                                    Expanded(
-                                      child: ElevatedButton(
-                                        onPressed: () {
-                                          _rejectRide(
-                                            rideId: rideId,
-                                          );
-                                        },
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: Colors.red[900],
-                                          padding: const EdgeInsets.symmetric(
-                                            vertical: 14,
-                                          ),
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              10,
+                                      const SizedBox(
+                                        height: 16,
+                                      ),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: ElevatedButton(
+                                              onPressed: () {
+                                                _sendDriverOffer(
+                                                  context: context,
+                                                  rideId: rideId,
+                                                  data: data,
+                                                );
+                                              },
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: Colors.black,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  vertical: 14,
+                                                ),
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(
+                                                    10,
+                                                  ),
+                                                ),
+                                              ),
+                                              child: const Text(
+                                                'Offer',
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                        child: const Text(
-                                          'Reject',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 16,
+                                          const SizedBox(
+                                            width: 12,
                                           ),
-                                        ),
+                                          Expanded(
+                                            child: ElevatedButton(
+                                              onPressed: () {
+                                                _rejectRide(
+                                                  rideId: rideId,
+                                                );
+                                              },
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor:
+                                                    Colors.red[900],
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  vertical: 14,
+                                                ),
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(
+                                                    10,
+                                                  ),
+                                                ),
+                                              ),
+                                              child: const Text(
+                                                'Reject',
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 16,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
-                              ],
-                            ),
-                          ),
+                              );
+                            },
+                          ).toList(),
                         );
                       },
-                    ).toList(),
-                  );
-                },
-              ),
+                    ),
             ),
           ],
         ),
@@ -44709,6 +45571,94 @@ class _DriverHomePageState extends State<DriverHomePage> {
     );
   }
 
+  Widget _buildOfflineRideState() {
+    final hasLocation = driverState?.trim().isNotEmpty == true &&
+        driverCity?.trim().isNotEmpty == true &&
+        driverFullAddress?.trim().isNotEmpty == true;
+
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 40),
+      children: [
+        const SizedBox(height: 30),
+        Icon(
+          isOnline ? Icons.location_off_outlined : Icons.power_settings_new,
+          size: 44,
+          color: Colors.grey,
+        ),
+        const SizedBox(height: 16),
+        Text(
+          isOnline ? 'Waiting for ride requests' : 'You are offline',
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          isOnline
+              ? (hasLocation
+                  ? 'You will receive pending rides from ${driverCity ?? ''}, ${driverState ?? ''}.'
+                  : 'Select your operating location to start receiving rides.')
+              : 'Go online to start receiving ride requests in your selected city.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 13,
+            height: 1.5,
+            color: Colors.grey[600],
+          ),
+        ),
+        const SizedBox(height: 22),
+        if (isOnline &&
+            driverFullAddress != null &&
+            driverFullAddress!.isNotEmpty)
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.location_on_outlined, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    driverFullAddress!,
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        const SizedBox(height: 18),
+        SizedBox(
+          height: 48,
+          child: ElevatedButton(
+            onPressed: _isChangingOnlineStatus
+                ? null
+                : (isOnline
+                    ? _openDriverAvailabilityModal
+                    : _openDriverAvailabilityModal),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.black,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(30),
+              ),
+            ),
+            child: Text(
+              isOnline ? 'Change Location' : 'Go Online',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   // ===========================================================================
   // TIME AGO
   // ===========================================================================
@@ -44741,6 +45691,923 @@ class _DriverHomePageState extends State<DriverHomePage> {
     return '${difference.inDays} days ago';
   }
 }
+
+class _DriverAvailabilitySheet extends StatefulWidget {
+  final List<String> states;
+  final List<String> cities;
+  final List<Map<String, dynamic>> savedAddresses;
+  final String? currentState;
+  final String? currentCity;
+  final String? currentAddress;
+  final String? currentFullAddress;
+  final Future<void> Function(String state) onStateChanged;
+  final Future<void> Function({
+    required String state,
+    required String city,
+    required String address,
+    required String fullAddress,
+    required double latitude,
+    required double longitude,
+    required String placeId,
+  }) onSaveAndGoOnline;
+  final Future<void> Function(Map<String, dynamic> saved) onSelectSaved;
+
+  const _DriverAvailabilitySheet({
+    required this.states,
+    required this.cities,
+    required this.savedAddresses,
+    required this.currentState,
+    required this.currentCity,
+    required this.currentAddress,
+    required this.currentFullAddress,
+    required this.onStateChanged,
+    required this.onSaveAndGoOnline,
+    required this.onSelectSaved,
+  });
+
+  @override
+  State<_DriverAvailabilitySheet> createState() =>
+      _DriverAvailabilitySheetState();
+}
+
+class _DriverAvailabilitySheetState extends State<_DriverAvailabilitySheet> {
+  // Use the same Google Places key already used by the rider location flow.
+  // If your project already exposes this as a global constant, replace this
+  // value with that constant instead.
+  static const String _googlePlacesApiKey = 'YOUR_GOOGLE_MAPS_API_KEY';
+
+  late List<String> _cities;
+  String? _state;
+  String? _city;
+
+  late TextEditingController _addressController;
+  late TextEditingController _fullAddressController;
+
+  bool _saving = false;
+  bool _loadingCities = false;
+  bool _loadingSuggestions = false;
+
+  double? _selectedLatitude;
+  double? _selectedLongitude;
+  String _selectedPlaceId = '';
+
+  List<Map<String, dynamic>> _addressSuggestions = [];
+  Timer? _autocompleteDebounce;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _cities = List<String>.from(widget.cities);
+    _state = widget.currentState;
+    _city = widget.currentCity;
+
+    _addressController = TextEditingController(
+      text: widget.currentAddress ?? '',
+    );
+
+    _fullAddressController = TextEditingController(
+      text: widget.currentFullAddress ?? '',
+    );
+
+    for (final savedCurrent in widget.savedAddresses) {
+      if (savedCurrent['fullAddress']?.toString() ==
+          widget.currentFullAddress) {
+        _selectedLatitude = _readDouble(savedCurrent['latitude']);
+        _selectedLongitude = _readDouble(savedCurrent['longitude']);
+        _selectedPlaceId = savedCurrent['placeId']?.toString() ?? '';
+        break;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _autocompleteDebounce?.cancel();
+    _addressController.dispose();
+    _fullAddressController.dispose();
+    super.dispose();
+  }
+
+  double? _readDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '');
+  }
+
+  Future<void> _changeState(String? value) async {
+    if (value == null || value.trim().isEmpty) return;
+
+    setState(() {
+      _state = value;
+      _city = null;
+      _cities = [];
+      _addressSuggestions = [];
+      _selectedLatitude = null;
+      _selectedLongitude = null;
+      _selectedPlaceId = '';
+      _addressController.clear();
+      _fullAddressController.clear();
+      _loadingCities = true;
+    });
+
+    try {
+      final cities = await LocationService.getLocations(value);
+
+      if (!mounted) return;
+
+      setState(() {
+        _cities = cities;
+        _loadingCities = false;
+      });
+
+      await widget.onStateChanged(value);
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _loadingCities = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unable to load cities: $e')),
+      );
+    }
+  }
+
+  void _changeCity(String? value) {
+    if (value == null || value.trim().isEmpty) return;
+
+    _autocompleteDebounce?.cancel();
+
+    setState(() {
+      _city = value;
+      _addressSuggestions = [];
+      _selectedLatitude = null;
+      _selectedLongitude = null;
+      _selectedPlaceId = '';
+      _addressController.clear();
+      _fullAddressController.clear();
+    });
+  }
+
+  // ===========================================================================
+  // GOOGLE PLACES AUTOCOMPLETE
+  //
+  // The selected state and city are deliberately included in the query so the
+  // suggestions are focused on the driver's chosen operating location.
+  // ===========================================================================
+
+  void _onAddressChanged(String value) {
+    // Once the driver edits the selected suggestion, the old coordinates are
+    // no longer considered valid for the new text.
+    if (_selectedLatitude != null || _selectedLongitude != null) {
+      setState(() {
+        _selectedLatitude = null;
+        _selectedLongitude = null;
+        _selectedPlaceId = '';
+      });
+    }
+
+    _autocompleteDebounce?.cancel();
+
+    final state = _state?.trim() ?? '';
+    final city = _city?.trim() ?? '';
+    final query = value.trim();
+
+    if (state.isEmpty || city.isEmpty || query.length < 3) {
+      if (mounted) {
+        setState(() {
+          _addressSuggestions = [];
+          _loadingSuggestions = false;
+        });
+      }
+      return;
+    }
+
+    _autocompleteDebounce = Timer(
+      const Duration(milliseconds: 350),
+      () {
+        _fetchAddressSuggestions(
+          query: query,
+          city: city,
+          state: state,
+        );
+      },
+    );
+  }
+
+  Future<void> _fetchAddressSuggestions({
+    required String query,
+    required String city,
+    required String state,
+  }) async {
+    if (query.length < 3) return;
+
+    if (_googlePlacesApiKey == 'YOUR_GOOGLE_MAPS_API_KEY') {
+      debugPrint(
+        'Google Places API key has not been configured.',
+      );
+      return;
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _loadingSuggestions = true;
+    });
+
+    try {
+      final focusedQuery = '$query, $city, $state, Nigeria';
+
+      final requestBody = <String, dynamic>{
+        'input': focusedQuery,
+        'includedRegionCodes': ['ng'],
+      };
+
+      final response = await http.post(
+        Uri.parse(
+          'https://places.googleapis.com/v1/places:autocomplete',
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': _googlePlacesApiKey,
+          'X-Goog-FieldMask': 'suggestions.placePrediction.placeId,'
+              'suggestions.placePrediction.text,'
+              'suggestions.placePrediction.structuredFormat',
+        },
+        body: jsonEncode(requestBody),
+      );
+
+      if (response.statusCode != 200) {
+        debugPrint(
+          'Driver address autocomplete error: '
+          '${response.statusCode} ${response.body}',
+        );
+
+        if (mounted) {
+          setState(() {
+            _loadingSuggestions = false;
+          });
+        }
+        return;
+      }
+
+      final Map<String, dynamic> data =
+          jsonDecode(response.body) as Map<String, dynamic>;
+
+      final List<dynamic> suggestions =
+          data['suggestions'] as List<dynamic>? ?? [];
+
+      final results = <Map<String, dynamic>>[];
+
+      for (final item in suggestions) {
+        if (item is! Map<String, dynamic>) continue;
+
+        final prediction = item['placePrediction'];
+        if (prediction is! Map<String, dynamic>) continue;
+
+        final placeId = prediction['placeId']?.toString() ?? '';
+        final description = prediction['text']?['text']?.toString() ?? '';
+        final mainText =
+            prediction['structuredFormat']?['mainText']?['text']?.toString() ??
+                description;
+        final secondaryText = prediction['structuredFormat']?['secondaryText']
+                    ?['text']
+                ?.toString() ??
+            '';
+
+        if (placeId.isEmpty || description.isEmpty) continue;
+
+        results.add({
+          'placeId': placeId,
+          'description': description,
+          'mainText': mainText,
+          'secondaryText': secondaryText,
+        });
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _addressSuggestions = results;
+        _loadingSuggestions = false;
+      });
+    } catch (e) {
+      debugPrint('Driver address autocomplete failed: $e');
+
+      if (!mounted) return;
+
+      setState(() {
+        _addressSuggestions = [];
+        _loadingSuggestions = false;
+      });
+    }
+  }
+
+  Future<Map<String, dynamic>?> _getPlaceDetails(String placeId) async {
+    if (placeId.isEmpty) return null;
+
+    if (_googlePlacesApiKey == 'YOUR_GOOGLE_MAPS_API_KEY') {
+      debugPrint(
+        'Google Places API key has not been configured.',
+      );
+      return null;
+    }
+
+    try {
+      final response = await http.get(
+        Uri.parse(
+          'https://places.googleapis.com/v1/places/$placeId',
+        ),
+        headers: {
+          'X-Goog-Api-Key': _googlePlacesApiKey,
+          'X-Goog-FieldMask': 'location,formattedAddress,displayName',
+        },
+      );
+
+      if (response.statusCode != 200) {
+        debugPrint(
+          'Driver place details error: '
+          '${response.statusCode} ${response.body}',
+        );
+        return null;
+      }
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final location = data['location'];
+
+      if (location is! Map<String, dynamic>) return null;
+
+      final latitude = _readDouble(location['latitude']);
+      final longitude = _readDouble(location['longitude']);
+
+      if (latitude == null || longitude == null) return null;
+
+      return {
+        'latitude': latitude,
+        'longitude': longitude,
+        'formattedAddress': data['formattedAddress']?.toString() ?? '',
+        'displayName': data['displayName']?['text']?.toString() ?? '',
+      };
+    } catch (e) {
+      debugPrint('Driver place details failed: $e');
+      return null;
+    }
+  }
+
+  Future<void> _selectAddressSuggestion(
+    Map<String, dynamic> suggestion,
+  ) async {
+    if (_saving) return;
+
+    final placeId = suggestion['placeId']?.toString() ?? '';
+    final description = suggestion['description']?.toString() ?? '';
+
+    if (placeId.isEmpty || description.isEmpty) return;
+
+    FocusScope.of(context).unfocus();
+
+    setState(() {
+      _loadingSuggestions = true;
+    });
+
+    final details = await _getPlaceDetails(placeId);
+
+    if (!mounted) return;
+
+    if (details == null) {
+      setState(() {
+        _loadingSuggestions = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Unable to get the coordinates for that location. Please try another suggestion.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final latitude = _readDouble(details['latitude']);
+    final longitude = _readDouble(details['longitude']);
+
+    if (latitude == null || longitude == null) {
+      setState(() {
+        _loadingSuggestions = false;
+      });
+      return;
+    }
+
+    final formattedAddress =
+        details['formattedAddress']?.toString().trim() ?? '';
+
+    final displayName = details['displayName']?.toString().trim() ?? '';
+
+    final addressText = displayName.isNotEmpty ? displayName : description;
+
+    final fullAddress = formattedAddress.isNotEmpty
+        ? formattedAddress
+        : '$description, ${_city!}, ${_state!}, Nigeria';
+
+    setState(() {
+      _addressController.text = addressText;
+      _fullAddressController.text = fullAddress;
+      _selectedLatitude = latitude;
+      _selectedLongitude = longitude;
+      _selectedPlaceId = placeId;
+      _addressSuggestions = [];
+      _loadingSuggestions = false;
+    });
+  }
+
+  Future<void> _submit() async {
+    final state = _state?.trim() ?? '';
+    final city = _city?.trim() ?? '';
+    final address = _addressController.text.trim();
+    final fullAddress = _fullAddressController.text.trim();
+
+    if (state.isEmpty || city.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Select your state and city first.'),
+        ),
+      );
+      return;
+    }
+
+    if (address.isEmpty || fullAddress.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Search for your address and select a suggestion.'),
+        ),
+      );
+      return;
+    }
+
+    if (_selectedLatitude == null || _selectedLongitude == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Please select an address from the suggestions so its exact coordinates can be saved.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _saving = true;
+    });
+
+    try {
+      await widget.onSaveAndGoOnline(
+        state: state,
+        city: city,
+        address: address,
+        fullAddress: fullAddress,
+        latitude: _selectedLatitude!,
+        longitude: _selectedLongitude!,
+        placeId: _selectedPlaceId,
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _saving = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.toString().replaceFirst('Exception: ', ''),
+          ),
+        ),
+      );
+    }
+  }
+
+  Widget _buildSuggestionList() {
+    if (_loadingSuggestions && _addressSuggestions.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            children: [
+              const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Finding locations...',
+                style: TextStyle(color: Colors.grey[700]),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_addressSuggestions.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey[200]!),
+        boxShadow: const [
+          BoxShadow(
+            blurRadius: 12,
+            offset: Offset(0, 5),
+            color: Colors.black12,
+          ),
+        ],
+      ),
+      child: Column(
+        children: _addressSuggestions.map((suggestion) {
+          final main = suggestion['mainText']?.toString() ??
+              suggestion['description']?.toString() ??
+              '';
+          final secondary = suggestion['secondaryText']?.toString() ?? '';
+
+          return InkWell(
+            onTap: _saving ? null : () => _selectAddressSuggestion(suggestion),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 12,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.location_on_outlined,
+                    size: 21,
+                    color: Colors.black,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          main,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        if (secondary.isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            secondary,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(20, 14, 20, 20 + bottom),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 42,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Driver location',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Select your state and city, then search for your exact operating location.',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.grey[600],
+                  height: 1.4,
+                ),
+              ),
+              if (widget.savedAddresses.isNotEmpty) ...[
+                const SizedBox(height: 22),
+                const Text(
+                  'Saved addresses',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                ...widget.savedAddresses.map((saved) {
+                  final full = saved['fullAddress']?.toString() ?? '';
+                  final city = saved['city']?.toString() ?? '';
+                  final state = saved['state']?.toString() ?? '';
+                  final hasCoordinates =
+                      _readDouble(saved['latitude']) != null &&
+                          _readDouble(saved['longitude']) != null;
+                  final selected =
+                      full.isNotEmpty && full == widget.currentFullAddress;
+
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: _saving || !hasCoordinates
+                        ? null
+                        : () async {
+                            setState(() {
+                              _saving = true;
+                            });
+                            try {
+                              await widget.onSelectSaved(saved);
+                            } catch (e) {
+                              if (!mounted) return;
+                              setState(() {
+                                _saving = false;
+                              });
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Unable to select address: $e',
+                                  ),
+                                ),
+                              );
+                            }
+                          },
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 9),
+                      padding: const EdgeInsets.all(13),
+                      decoration: BoxDecoration(
+                        color: selected ? Colors.grey[200] : Colors.grey[100],
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: selected ? Colors.black : Colors.transparent,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            selected
+                                ? Icons.check_circle
+                                : Icons.location_on_outlined,
+                            size: 20,
+                            color: selected ? Colors.green[700] : Colors.black,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  full,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                if (city.isNotEmpty || state.isNotEmpty) ...[
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    '$city${city.isNotEmpty && state.isNotEmpty ? ', ' : ''}$state',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                ],
+                                if (!hasCoordinates) ...[
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    'Coordinates unavailable — set this location again.',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.red[700],
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+              ],
+              const SizedBox(height: 12),
+              const Text(
+                'Set another location',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                value: _state,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: 'State',
+                  filled: true,
+                  fillColor: Colors.grey[100],
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+                items: widget.states.map((state) {
+                  return DropdownMenuItem<String>(
+                    value: state,
+                    child: Text(state),
+                  );
+                }).toList(),
+                onChanged: _saving ? null : _changeState,
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: _cities.contains(_city) ? _city : null,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: _loadingCities ? 'Loading cities...' : 'City',
+                  filled: true,
+                  fillColor: Colors.grey[100],
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+                items: _cities.map((city) {
+                  return DropdownMenuItem<String>(
+                    value: city,
+                    child: Text(city),
+                  );
+                }).toList(),
+                onChanged: _saving || _loadingCities || _state == null
+                    ? null
+                    : _changeCity,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _addressController,
+                enabled: !_saving && _city != null && _state != null,
+                textCapitalization: TextCapitalization.words,
+                decoration: InputDecoration(
+                  labelText:
+                      _city == null ? 'Address' : 'Search address in $_city',
+                  hintText: _city == null
+                      ? 'Select state and city first'
+                      : 'Start typing your street or location',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _loadingSuggestions
+                      ? const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                            ),
+                          ),
+                        )
+                      : null,
+                  filled: true,
+                  fillColor: Colors.grey[100],
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+                onChanged: _onAddressChanged,
+              ),
+              _buildSuggestionList(),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _fullAddressController,
+                readOnly: true,
+                maxLines: 2,
+                decoration: InputDecoration(
+                  labelText: 'Selected full address',
+                  hintText: 'Select a suggestion above',
+                  filled: true,
+                  fillColor: Colors.grey[100],
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none,
+                  ),
+                  suffixIcon:
+                      _selectedLatitude != null && _selectedLongitude != null
+                          ? const Icon(
+                              Icons.check_circle,
+                              color: Colors.green,
+                            )
+                          : null,
+                ),
+              ),
+              if (_selectedLatitude != null && _selectedLongitude != null) ...[
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(11),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(.08),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.my_location,
+                        size: 18,
+                        color: Colors.green,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Location coordinates captured: ${_selectedLatitude!.toStringAsFixed(6)}, ${_selectedLongitude!.toStringAsFixed(6)}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: _saving ? null : _submit,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.black,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                  ),
+                  child: _saving
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text(
+                          'Go Online',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ============================================================================
 // DRIVER NEGOTIATION SHEET
 //
