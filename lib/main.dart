@@ -43018,6 +43018,7 @@ class DriverOnboardingForm extends StatefulWidget {
 
 class _DriverOnboardingFormState extends State<DriverOnboardingForm> {
   final _formKey = GlobalKey<FormState>();
+
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _vehicleController = TextEditingController();
   final TextEditingController _vehicleTypeController = TextEditingController();
@@ -43027,6 +43028,9 @@ class _DriverOnboardingFormState extends State<DriverOnboardingForm> {
 
   bool _isLoading = false;
 
+  // Driver category
+  String? _selectedCategory;
+
   /// Pick image (works on web + mobile)
   Future<void> _pickImage(bool isDriver) async {
     final picker = ImagePicker();
@@ -43034,6 +43038,7 @@ class _DriverOnboardingFormState extends State<DriverOnboardingForm> {
 
     if (pickedFile != null) {
       final bytes = await pickedFile.readAsBytes();
+
       setState(() {
         if (isDriver) {
           _driverImageBytes = bytes;
@@ -43049,16 +43054,47 @@ class _DriverOnboardingFormState extends State<DriverOnboardingForm> {
     if (image == null) return null;
 
     try {
-      final ref = FirebaseStorage.instance
-          .ref()
-          .child('drivers/${FirebaseAuth.instance.currentUser!.uid}/$path.jpg');
+      final ref = FirebaseStorage.instance.ref().child(
+            'drivers/${FirebaseAuth.instance.currentUser!.uid}/$path.jpg',
+          );
 
       await ref.putData(image);
+
       return await ref.getDownloadURL();
     } catch (e) {
       print("Error uploading image: $e");
       return null;
     }
+  }
+
+  /// Generate a unique driver ID in the format:
+  /// ZN + five random digits
+  /// Example: ZN48371
+  Future<String> _generateDriverId() async {
+    final random = Random();
+
+    for (int attempt = 0; attempt < 20; attempt++) {
+      final number = random.nextInt(100000);
+
+      final digits = number.toString().padLeft(5, '0');
+
+      final driverId = 'ZN$digits';
+
+      // Check whether this ID already exists.
+      final existingDriver = await FirebaseFirestore.instance
+          .collection('Drivers')
+          .where('driverId', isEqualTo: driverId)
+          .limit(1)
+          .get();
+
+      if (existingDriver.docs.isEmpty) {
+        return driverId;
+      }
+    }
+
+    throw Exception(
+      "Unable to generate a unique driver ID. Please try again.",
+    );
   }
 
   Future<void> _submitForm() async {
@@ -43068,14 +43104,23 @@ class _DriverOnboardingFormState extends State<DriverOnboardingForm> {
 
     try {
       final user = FirebaseAuth.instance.currentUser;
-      if (user == null) throw Exception("No authenticated user found.");
+
+      if (user == null) {
+        throw Exception("No authenticated user found.");
+      }
 
       if (_driverImageBytes == null || _vehicleImageBytes == null) {
         throw Exception("Please upload both driver and vehicle images.");
       }
 
+      // Make sure category is selected.
+      if (_selectedCategory == null || _selectedCategory!.isEmpty) {
+        throw Exception("Please select your driver category.");
+      }
+
       final driverImageUrl =
           await _uploadImage(_driverImageBytes, "profileImage");
+
       final vehicleImageUrl =
           await _uploadImage(_vehicleImageBytes, "vehicleImage");
 
@@ -43083,26 +43128,50 @@ class _DriverOnboardingFormState extends State<DriverOnboardingForm> {
         throw Exception("Image upload failed. Please try again.");
       }
 
+      // Generate the driver's permanent Zone driver ID.
+      // The driver does not need to see this.
+      final driverId = await _generateDriverId();
+
       await FirebaseFirestore.instance.collection('Drivers').doc(user.uid).set({
         'name': _nameController.text.trim(),
+
         'vehicle': _vehicleController.text.trim(),
+
         'vehicleType': _vehicleTypeController.text.trim(),
+
+        // New driver category.
+        'category': _selectedCategory,
+
+        // New automatically generated driver ID.
+        'driverId': driverId,
+
         'profileImage': driverImageUrl,
+
         'vehicleImage': vehicleImageUrl,
+
+        // Verification status remains separate from online/offline.
         'status': 'pending',
+
         'createdAt': FieldValue.serverTimestamp(),
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text("Driver profile submitted for verification!")),
+          content: Text(
+            "Driver profile submitted for verification!",
+          ),
+        ),
       );
 
       Navigator.pop(context);
     } catch (e, stack) {
       print("❌ Error in _submitForm: $e");
       print(stack);
-      _showErrorDialog("Submission failed", e.toString());
+
+      _showErrorDialog(
+        "Submission failed",
+        e.toString(),
+      );
     } finally {
       setState(() => _isLoading = false);
     }
@@ -43112,12 +43181,22 @@ class _DriverOnboardingFormState extends State<DriverOnboardingForm> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(
+          title,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         content: Text(message),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text("OK", style: TextStyle(color: Colors.deepPurple)),
+            child: const Text(
+              "OK",
+              style: TextStyle(
+                color: Colors.deepPurple,
+              ),
+            ),
           ),
         ],
       ),
@@ -43126,10 +43205,20 @@ class _DriverOnboardingFormState extends State<DriverOnboardingForm> {
 
   Stream<DocumentSnapshot<Map<String, dynamic>>> _driverStatusStream() {
     final user = FirebaseAuth.instance.currentUser;
+
     return FirebaseFirestore.instance
         .collection('Drivers')
         .doc(user!.uid)
         .snapshots();
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _vehicleController.dispose();
+    _vehicleTypeController.dispose();
+
+    super.dispose();
   }
 
   @override
@@ -43139,7 +43228,10 @@ class _DriverOnboardingFormState extends State<DriverOnboardingForm> {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
-              body: Center(child: CircularProgressIndicator()));
+            body: Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
         }
 
         if (snapshot.hasData && snapshot.data!.exists) {
@@ -43162,10 +43254,8 @@ class _DriverOnboardingFormState extends State<DriverOnboardingForm> {
   Widget _buildOnboardingForm() {
     return Scaffold(
       appBar: AppBar(
-        //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
-
         leading: Padding(
           padding: const EdgeInsets.only(left: 10),
           child: GestureDetector(
@@ -43174,7 +43264,7 @@ class _DriverOnboardingFormState extends State<DriverOnboardingForm> {
               width: 25,
               height: 25,
               decoration: BoxDecoration(
-                color: Colors.grey[100], // ✅ grey 50 look
+                color: Colors.grey[100],
                 shape: BoxShape.circle,
               ),
               child: const Icon(
@@ -43185,9 +43275,8 @@ class _DriverOnboardingFormState extends State<DriverOnboardingForm> {
             ),
           ),
         ),
-
         title: const Padding(
-          padding: EdgeInsets.only(left: 8), // ✅ spacing from icon
+          padding: EdgeInsets.only(left: 8),
           child: Text(
             'Onboarding',
             style: TextStyle(
@@ -43206,24 +43295,79 @@ class _DriverOnboardingFormState extends State<DriverOnboardingForm> {
             children: [
               TextFormField(
                 controller: _nameController,
-                decoration: const InputDecoration(labelText: "Full Name"),
+                decoration: const InputDecoration(
+                  labelText: "Full Name",
+                ),
                 validator: (value) => value!.isEmpty ? "Enter your name" : null,
               ),
+
               const SizedBox(height: 16),
+
               TextFormField(
                 controller: _vehicleController,
-                decoration: const InputDecoration(labelText: "Vehicle"),
+                decoration: const InputDecoration(
+                  labelText: "Vehicle",
+                ),
                 validator: (value) =>
                     value!.isEmpty ? "Enter your vehicle" : null,
               ),
+
               const SizedBox(height: 16),
+
               TextFormField(
                 controller: _vehicleTypeController,
-                decoration: const InputDecoration(labelText: "Vehicle Type"),
+                decoration: const InputDecoration(
+                  labelText: "Vehicle Type",
+                ),
                 validator: (value) =>
                     value!.isEmpty ? "Enter vehicle type" : null,
               ),
+
+              const SizedBox(height: 16),
+
+              // ============================================================
+              // DRIVER CATEGORY
+              // ============================================================
+
+              DropdownButtonFormField<String>(
+                value: _selectedCategory,
+                decoration: const InputDecoration(
+                  labelText: "Driver Category",
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: "Cab",
+                    child: Text("Cab"),
+                  ),
+                  DropdownMenuItem(
+                    value: "Okada",
+                    child: Text("Okada"),
+                  ),
+                  DropdownMenuItem(
+                    value: "Tricycle",
+                    child: Text("Tricycle (Keke Napep)"),
+                  ),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    _selectedCategory = value;
+                  });
+                },
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return "Select driver category";
+                  }
+
+                  return null;
+                },
+              ),
+
               const SizedBox(height: 20),
+
+              // ============================================================
+              // DRIVER PHOTO
+              // ============================================================
+
               Row(
                 children: [
                   _driverImageBytes != null
@@ -43233,16 +43377,27 @@ class _DriverOnboardingFormState extends State<DriverOnboardingForm> {
                         )
                       : const CircleAvatar(
                           radius: 40,
-                          child: Icon(Icons.person, size: 40),
+                          child: Icon(
+                            Icons.person,
+                            size: 40,
+                          ),
                         ),
                   const SizedBox(width: 16),
                   ElevatedButton(
                     onPressed: () => _pickImage(true),
-                    child: const Text("Upload Driver Photo"),
+                    child: const Text(
+                      "Upload Driver Photo",
+                    ),
                   ),
                 ],
               ),
+
               const SizedBox(height: 20),
+
+              // ============================================================
+              // VEHICLE PHOTO
+              // ============================================================
+
               Row(
                 children: [
                   _vehicleImageBytes != null
@@ -43252,24 +43407,43 @@ class _DriverOnboardingFormState extends State<DriverOnboardingForm> {
                         )
                       : const CircleAvatar(
                           radius: 40,
-                          child: Icon(Icons.directions_car, size: 40),
+                          child: Icon(
+                            Icons.directions_car,
+                            size: 40,
+                          ),
                         ),
                   const SizedBox(width: 16),
                   ElevatedButton(
                     onPressed: () => _pickImage(false),
-                    child: const Text("Upload Vehicle Photo"),
+                    child: const Text(
+                      "Upload Vehicle Photo",
+                    ),
                   ),
                 ],
               ),
+
               const SizedBox(height: 30),
+
+              // ============================================================
+              // SUBMIT
+              // ============================================================
+
               _isLoading
-                  ? const Center(child: CircularProgressIndicator())
+                  ? const Center(
+                      child: CircularProgressIndicator(),
+                    )
                   : ElevatedButton(
                       onPressed: _submitForm,
-                      child:
-                          const Text("Submit", style: TextStyle(fontSize: 16)),
                       style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 14,
+                        ),
+                      ),
+                      child: const Text(
+                        "Submit",
+                        style: TextStyle(
+                          fontSize: 16,
+                        ),
                       ),
                     ),
             ],
@@ -43292,11 +43466,34 @@ class _DriverHomePageState extends State<DriverHomePage> {
     final state = driverState?.trim();
     final city = driverCity?.trim();
 
+    // Match the driver's saved category to RideType in ride_requests.
+    final String? rideType;
+
+    switch (driverCategory?.trim().toLowerCase()) {
+      case 'cab':
+        rideType = 'Cab';
+        break;
+
+      case 'tricycle':
+        rideType = 'Tricycle';
+        break;
+
+      case 'okada':
+        rideType = 'Bike (Okada)';
+        break;
+
+      default:
+        rideType = null;
+    }
+
+    // Do not listen until the driver is online and their
+    // location and category have been loaded.
     if (!isOnline ||
         state == null ||
         state.isEmpty ||
         city == null ||
-        city.isEmpty) {
+        city.isEmpty ||
+        rideType == null) {
       return null;
     }
 
@@ -43305,9 +43502,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
         .where('Status', isEqualTo: 'pending')
         .where('pickupState', isEqualTo: state)
         .where('pickupCity', isEqualTo: city)
+        .where('RideType', isEqualTo: rideType)
         .snapshots();
   }
-
   // ===========================================================================
   // CONTROLLERS / AUDIO
   // ===========================================================================
@@ -43327,6 +43524,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
   String? vehicleType;
   String? vehicle;
   String? driverImageUrl;
+  String? driverCategory;
 
   int completedRides = 0;
   double totalEarnings = 0.0;
@@ -43458,6 +43656,13 @@ class _DriverHomePageState extends State<DriverHomePage> {
         vehicle = data['vehicleType']?.toString() ?? 'No description';
 
         driverImageUrl = data['profileImage']?.toString();
+
+        driverCategory = data['category']?.toString().trim();
+      }
+
+// Rebuild so rideRequestsStream uses the loaded category.
+      if (mounted) {
+        setState(() {});
       }
 
       // -----------------------------------------------------------------------
@@ -43542,12 +43747,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
 
       final loadedState = currentAddress['state']?.toString().trim();
       final loadedCity = currentAddress['city']?.toString().trim();
-
       final onlineValue = data['isOnline'];
-      final status = data['status']?.toString().toLowerCase().trim();
 
-      final loadedOnline =
-          onlineValue is bool ? onlineValue : status == 'online';
+      final loadedOnline = onlineValue is bool ? onlineValue : false;
 
       List<String> states = [];
       try {
@@ -43751,7 +43953,6 @@ class _DriverHomePageState extends State<DriverHomePage> {
         .set({
       'currentAddress': currentAddress,
       'isOnline': makeOnline ? true : isOnline,
-      'status': makeOnline ? 'online' : (isOnline ? 'online' : 'offline'),
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
 
@@ -43809,7 +44010,6 @@ class _DriverHomePageState extends State<DriverHomePage> {
           .doc(currentUser.uid)
           .set({
         'isOnline': false,
-        'status': 'offline',
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
@@ -44947,6 +45147,33 @@ class _DriverHomePageState extends State<DriverHomePage> {
 
     for (final ride in docs) {
       final data = ride.data() as Map<String, dynamic>;
+
+      // Defensive category check: never show a ride that does not
+// match this driver's registered category.
+      final String? expectedRideType;
+
+      switch (driverCategory?.trim().toLowerCase()) {
+        case 'cab':
+          expectedRideType = 'Cab';
+          break;
+
+        case 'tricycle':
+          expectedRideType = 'Tricycle';
+          break;
+
+        case 'okada':
+          expectedRideType = 'Bike (Okada)';
+          break;
+
+        default:
+          expectedRideType = null;
+      }
+
+      final rideType = data['RideType']?.toString().trim();
+
+      if (expectedRideType == null || rideType != expectedRideType) {
+        continue;
+      }
 
       // Server-side state/city filtering is the first gate. We repeat the
       // comparison here as a safety check for documents written with a stale
@@ -49606,6 +49833,7 @@ class EarnPage extends StatelessWidget {
                   'assets/images/car.png',
                 ],
               ),
+              SizedBox(height: 15),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
@@ -49624,6 +49852,32 @@ class EarnPage extends StatelessWidget {
                 },
                 child: const Text(
                   "Manage Institutions",
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              SizedBox(height: 15),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  backgroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => AdminDashboard(),
+                    ),
+                  );
+                },
+                child: const Text(
+                  "Admin Dashboard",
                   style: TextStyle(
                     fontSize: 16,
                     color: Colors.white,
