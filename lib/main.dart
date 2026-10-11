@@ -731,7 +731,7 @@ class _LoginPageState extends State<LoginPage> {
                 Align(
                     alignment: Alignment.center,
                     child: Row(children: [
-                      // Spacer(),
+                      Spacer(),
                       SizedBox(width: 65),
                       Text(
                         'Not a user ?',
