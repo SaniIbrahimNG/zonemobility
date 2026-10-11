@@ -31432,7 +31432,10 @@ class DriverBookedScreen extends StatefulWidget {
 class _DriverBookedScreenState extends State<DriverBookedScreen> {
   bool hasStartedPickup = false;
   bool hasArrivedAtPickup = false;
+  bool _pickupCodeVerified = false;
   bool _completionDialogShown = false;
+  bool _isUpdatingStatus = false;
+  bool _isVerifyingCode = false;
 
   LatLng? userLocation;
   LatLng? pickupPosition;
@@ -31441,7 +31444,7 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
   GoogleMapController? _mapController;
 
   StreamSubscription<Position>? _positionStream;
-  StreamSubscription<DocumentSnapshot>? _rideSubscription;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _rideSubscription;
 
   List<LatLng> _routePoints = [];
 
@@ -31451,13 +31454,21 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
 
   bool _routeLoading = false;
   bool _mapReady = false;
-  bool _initialCameraMoved = false;
   bool _coordinatesLoading = true;
   String? _coordinateError;
 
-  // Replace with your restricted Google Directions API key.
+  // Positions for the always-visible pickup and destination labels.
+  Offset? _pickupLabelOffset;
+  Offset? _destinationLabelOffset;
+
+  bool _updatingLabelPositions = false;
+
+  // Keep your existing restricted Directions API key here.
   static const String _googleDirectionsApiKey =
-      "AIzaSyAxmD8Gvtn1KGomBFy3pWXRFgvw0c4a-48";
+      "AIzaSyAxD8Gvtn1KGomBFy3pWXRFgvw0c4a-48";
+
+  DocumentReference<Map<String, dynamic>> get _rideRef =>
+      FirebaseFirestore.instance.collection('ride_requests').doc(widget.rideId);
 
   @override
   void initState() {
@@ -31468,10 +31479,9 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
     _startLocationTracking();
   }
 
-  // =========================================================
-  // LOAD EXACT COORDINATES FROM THE RIDE REQUEST
-  // No default location, address geocoding, or coordinate fallback.
-  // =========================================================
+  // ==========================================================================
+  // COORDINATES
+  // ==========================================================================
 
   double? _readCoordinate(
     Map<String, dynamic> data,
@@ -31479,9 +31489,7 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
   ) {
     final value = data[key];
 
-    if (value is num) {
-      return value.toDouble();
-    }
+    if (value is num) return value.toDouble();
 
     if (value is String) {
       return double.tryParse(value.trim());
@@ -31509,10 +31517,7 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
 
   Future<void> _loadRideCoordinates() async {
     try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('ride_requests')
-          .doc(widget.rideId)
-          .get();
+      final snapshot = await _rideRef.get();
 
       if (!mounted) return;
 
@@ -31520,9 +31525,13 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
         throw Exception('The ride request no longer exists.');
       }
 
-      final data = snapshot.data() as Map<String, dynamic>;
+      final data = snapshot.data();
 
-      // Use only the exact coordinate fields written by SearchingScreen.
+      if (data == null) {
+        throw Exception('Ride details could not be loaded.');
+      }
+
+      // Use only the exact coordinates saved on the ride request.
       final pickup = _readRideCoordinate(
         data,
         'pickupLat',
@@ -31537,8 +31546,7 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
 
       if (pickup == null || destination == null) {
         throw Exception(
-          'Missing or invalid pickupLat, pickupLng, '
-          'destinationLat, or destinationLng.',
+          'Missing or invalid pickup and destination coordinates.',
         );
       }
 
@@ -31549,22 +31557,12 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
         _coordinateError = null;
       });
 
-      debugPrint(
-        'Pickup coordinates: '
-        '${pickup.latitude}, ${pickup.longitude}',
-      );
-
-      debugPrint(
-        'Destination coordinates: '
-        '${destination.latitude}, ${destination.longitude}',
-      );
-
-      // Fetch the actual driving route between the two coordinates.
       await _getDrivingRoute();
 
       if (!mounted) return;
 
       _moveCameraToRoute();
+      await _updateMarkerLabelPositions();
     } catch (e) {
       debugPrint('Error loading ride coordinates: $e');
 
@@ -31577,11 +31575,9 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
     }
   }
 
-  // =========================================================
-  // DRIVER GPS LOCATION TRACKING
-  // This is only for the driver's live location, not for choosing
-  // the initial map center or calculating the pickup-destination route.
-  // =========================================================
+  // ==========================================================================
+  // DRIVER GPS
+  // ==========================================================================
 
   Future<void> _startLocationTracking() async {
     try {
@@ -31623,7 +31619,7 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
           distanceFilter: 10,
         ),
       ).listen(
-        (Position position) {
+        (position) {
           if (!mounted) return;
 
           setState(() {
@@ -31644,36 +31640,24 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
     }
   }
 
-  // =========================================================
-  // GOOGLE DIRECTIONS API
-  // Route origin = saved pickup coordinates.
-  // Route destination = saved destination coordinates.
-  // =========================================================
+  // ==========================================================================
+  // DRIVING ROUTE
+  // ==========================================================================
 
   Future<void> _getDrivingRoute() async {
     final pickup = pickupPosition;
     final destination = destinationPosition;
 
-    if (pickup == null || destination == null) {
-      debugPrint(
-        'Cannot request route: pickup or destination is missing.',
-      );
-      return;
-    }
+    if (pickup == null || destination == null) return;
 
     if (_googleDirectionsApiKey.isEmpty ||
         _googleDirectionsApiKey == 'YOUR_GOOGLE_MAPS_API_KEY') {
-      debugPrint(
-        'Configure _googleDirectionsApiKey before requesting routes.',
-      );
-
       if (mounted) {
         setState(() {
           _routeLoading = false;
           _nextManeuver = 'Directions API key is not configured';
         });
       }
-
       return;
     }
 
@@ -31739,27 +31723,21 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
       final encodedPoints = overviewPolyline?['points']?.toString() ?? '';
 
       if (encodedPoints.isEmpty) {
-        throw Exception(
-          'Google Directions returned an empty route polyline.',
-        );
+        throw Exception('The route polyline is empty.');
       }
 
       final points = _decodePolyline(encodedPoints);
 
       if (points.length < 2) {
-        throw Exception(
-          'The route polyline contains insufficient points.',
-        );
+        throw Exception('The route polyline is invalid.');
       }
 
-      if (!mounted) return;
-
       final steps = leg['steps'] as List? ?? [];
+
       String maneuver = 'Follow the route to your destination';
 
       if (steps.isNotEmpty) {
         final firstStep = steps.first as Map<String, dynamic>;
-
         final instruction = _stripHtml(
           firstStep['html_instructions']?.toString() ?? '',
         );
@@ -31769,20 +31747,17 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
         }
       }
 
+      if (!mounted) return;
+
       setState(() {
         _routePoints = points;
-
         _remainingDistance = leg['distance']?['text']?.toString() ?? '';
-
         _remainingDuration = leg['duration']?['text']?.toString() ?? '';
-
         _nextManeuver = maneuver;
       });
 
       debugPrint(
-        'Driving route loaded successfully: '
-        '${points.length} points, '
-        '$_remainingDistance, $_remainingDuration',
+        'Route loaded: $_remainingDistance, $_remainingDuration',
       );
 
       _moveCameraToRoute();
@@ -31803,10 +31778,6 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
       }
     }
   }
-
-  // =========================================================
-  // DECODE GOOGLE ROUTE POLYLINE
-  // =========================================================
 
   List<LatLng> _decodePolyline(String encoded) {
     final List<LatLng> points = [];
@@ -31871,11 +31842,9 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
         .replaceAll('&quot;', '"');
   }
 
-  // =========================================================
-  // CAMERA
-  // Fit the actual route, or the pickup and destination while
-  // Directions is loading. Do not include the driver GPS here.
-  // =========================================================
+  // ==========================================================================
+  // MAP CAMERA
+  // ==========================================================================
 
   void _moveCameraToRoute() {
     final controller = _mapController;
@@ -31896,8 +31865,6 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
       controller.animateCamera(
         CameraUpdate.newLatLngZoom(points.first, 16),
       );
-
-      _initialCameraMoved = true;
       return;
     }
 
@@ -31913,7 +31880,6 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
       maxLng = math.max(maxLng, point.longitude);
     }
 
-    // Ensure the bounds are valid when the two locations are very close.
     if ((maxLat - minLat).abs() < 0.0001) {
       minLat -= 0.0001;
       maxLat += 0.0001;
@@ -31931,19 +31897,116 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
             southwest: LatLng(minLat, minLng),
             northeast: LatLng(maxLat, maxLng),
           ),
-          80,
+          95,
         ),
       );
-
-      _initialCameraMoved = true;
     } catch (e) {
-      debugPrint('Error fitting camera to route: $e');
+      debugPrint('Error fitting map to route: $e');
     }
   }
 
-  // =========================================================
+  // ==========================================================================
+  // ALWAYS-VISIBLE MAP LABELS
+  //
+  // Convert pickup/destination coordinates to screen positions so the names
+  // appear beside their respective map markers, not in the bottom sheet.
+  // ==========================================================================
+
+  Future<void> _updateMarkerLabelPositions() async {
+    if (!_mapReady ||
+        _mapController == null ||
+        pickupPosition == null ||
+        destinationPosition == null ||
+        _updatingLabelPositions ||
+        !mounted) {
+      return;
+    }
+
+    _updatingLabelPositions = true;
+
+    try {
+      final double devicePixelRatio = MediaQuery.of(context).devicePixelRatio;
+
+      final pickupPoint =
+          await _mapController!.getScreenCoordinate(pickupPosition!);
+
+      final destinationPoint = await _mapController!.getScreenCoordinate(
+        destinationPosition!,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _pickupLabelOffset = Offset(
+          pickupPoint.x / devicePixelRatio,
+          pickupPoint.y / devicePixelRatio,
+        );
+
+        _destinationLabelOffset = Offset(
+          destinationPoint.x / devicePixelRatio,
+          destinationPoint.y / devicePixelRatio,
+        );
+      });
+    } catch (e) {
+      debugPrint('Unable to update marker labels: $e');
+    } finally {
+      _updatingLabelPositions = false;
+    }
+  }
+
+  Widget _buildMapLabel({
+    required String text,
+    required bool isPickup,
+  }) {
+    final color = isPickup ? Colors.green.shade700 : Colors.red.shade700;
+
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 185),
+      padding: const EdgeInsets.symmetric(
+        horizontal: 10,
+        vertical: 7,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(.45)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(.15),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isPickup ? Icons.my_location : Icons.location_on,
+            color: color,
+            size: 15,
+          ),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: Colors.black87,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==========================================================================
   // NAVIGATION PROGRESS
-  // =========================================================
+  // ==========================================================================
 
   void _updateNavigationProgress() {
     if (userLocation == null ||
@@ -31965,7 +32028,6 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
           _nextManeuver = 'You are near the pickup point';
         });
       }
-
       return;
     }
 
@@ -31982,8 +32044,6 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
       });
     }
 
-    // Keep the driver's live location centered after pickup.
-    // This does not change the route's origin or destination.
     if (_mapController != null) {
       _mapController!.animateCamera(
         CameraUpdate.newLatLng(userLocation!),
@@ -31991,24 +32051,46 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
     }
   }
 
-  // =========================================================
-  // FIRESTORE RIDE STATUS
-  // =========================================================
+  // ==========================================================================
+  // RIDE LISTENER
+  // ==========================================================================
 
   void _listenToRideStatus() {
-    _rideSubscription = FirebaseFirestore.instance
-        .collection('ride_requests')
-        .doc(widget.rideId)
-        .snapshots()
-        .listen(
+    _rideSubscription = _rideRef.snapshots().listen(
       (snapshot) {
         if (!snapshot.exists || !mounted) return;
 
-        final data = snapshot.data() as Map<String, dynamic>;
+        final data = snapshot.data();
+        if (data == null) return;
 
-        final status = data['Status'] ?? data['status'];
+        final driverStatus =
+            (data['DriverStatus'] ?? '').toString().toLowerCase();
 
-        if (status == 'completed' && !_completionDialogShown) {
+        final rideStatus =
+            (data['Status'] ?? data['status'] ?? '').toString().toLowerCase();
+
+        final bool started = driverStatus == 'en_route' ||
+            driverStatus == 'arrived' ||
+            driverStatus == 'in_progress' ||
+            driverStatus == 'completed';
+
+        final bool arrived = driverStatus == 'arrived' ||
+            driverStatus == 'in_progress' ||
+            driverStatus == 'completed';
+
+        final bool codeVerified = data['pickupCodeVerified'] == true ||
+            driverStatus == 'in_progress' ||
+            driverStatus == 'completed';
+
+        if (mounted) {
+          setState(() {
+            hasStartedPickup = started;
+            hasArrivedAtPickup = arrived;
+            _pickupCodeVerified = codeVerified;
+          });
+        }
+
+        if (rideStatus == 'completed' && !_completionDialogShown) {
           _completionDialogShown = true;
           _showRideCompletedDialog();
         }
@@ -32019,6 +32101,435 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
     );
   }
 
+  // ==========================================================================
+  // START PICKUP
+  // ==========================================================================
+
+  Future<void> _startPickup() async {
+    if (_isUpdatingStatus || hasStartedPickup) return;
+
+    setState(() {
+      _isUpdatingStatus = true;
+    });
+
+    try {
+      await _rideRef.update({
+        'DriverStatus': 'en_route',
+        'DriverStatus_updates': FieldValue.arrayUnion([
+          {
+            'DriverStatus': 'en_route',
+            'timestamp': Timestamp.now(),
+          }
+        ]),
+      });
+
+      if (!mounted) return;
+
+      setState(() {
+        hasStartedPickup = true;
+      });
+
+      _updateNavigationProgress();
+    } catch (e) {
+      debugPrint('Error starting pickup: $e');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to start pickup. Please try again.'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUpdatingStatus = false;
+        });
+      }
+    }
+  }
+
+  // ==========================================================================
+  // ARRIVED AT PICKUP
+  //
+  // Update the arrival status, then request the rider's pickup code.
+  // The driver cannot reach Complete Ride until the code is verified.
+  // ==========================================================================
+
+  Future<void> _arrivedAtPickup() async {
+    if (_isUpdatingStatus || hasArrivedAtPickup) return;
+
+    setState(() {
+      _isUpdatingStatus = true;
+    });
+
+    try {
+      await _rideRef.update({
+        'DriverStatus': 'arrived',
+        'DriverStatus_updates': FieldValue.arrayUnion([
+          {
+            'DriverStatus': 'arrived',
+            'timestamp': Timestamp.now(),
+          }
+        ]),
+      });
+
+      if (!mounted) return;
+
+      setState(() {
+        hasStartedPickup = true;
+        hasArrivedAtPickup = true;
+      });
+
+      _updateNavigationProgress();
+
+      // Prompt the driver immediately after marking arrival.
+      await _showPickupCodeDialog();
+    } catch (e) {
+      debugPrint('Error updating arrival status: $e');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to update arrival status.'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUpdatingStatus = false;
+        });
+      }
+    }
+  }
+
+  // ==========================================================================
+  // PICKUP CODE DIALOG
+  // ==========================================================================
+
+  Future<void> _showPickupCodeDialog() async {
+    if (!mounted || _pickupCodeVerified) return;
+
+    final controller = TextEditingController();
+    String? inlineError;
+    bool verifying = false;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, dialogSetState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(22),
+              ),
+              title: const Text(
+                'Confirm Pickup Code',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Ask the rider for their pickup code. '
+                    'Enter the code to unlock Complete Ride.',
+                    style: TextStyle(fontSize: 14),
+                  ),
+                  const SizedBox(height: 18),
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    keyboardType: TextInputType.number,
+                    maxLength: 8,
+                    decoration: InputDecoration(
+                      hintText: 'Enter pickup code',
+                      counterText: '',
+                      filled: true,
+                      fillColor: Colors.grey.shade100,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none,
+                      ),
+                      errorText: inlineError,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  if (verifying)
+                    const LinearProgressIndicator(
+                      minHeight: 3,
+                      color: Colors.black,
+                    ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: verifying
+                      ? null
+                      : () {
+                          Navigator.of(dialogContext).pop();
+                        },
+                  child: const Text(
+                    'Enter Later',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: verifying
+                      ? null
+                      : () async {
+                          final enteredCode = controller.text.trim();
+
+                          if (enteredCode.isEmpty) {
+                            dialogSetState(() {
+                              inlineError = 'Enter the pickup code.';
+                            });
+                            return;
+                          }
+
+                          dialogSetState(() {
+                            verifying = true;
+                            inlineError = null;
+                          });
+
+                          try {
+                            // Read the current ride document and compare
+                            // against the actual code saved on the ride.
+                            final snapshot = await _rideRef.get();
+
+                            if (!snapshot.exists) {
+                              throw Exception('Ride request not found.');
+                            }
+
+                            final data = snapshot.data();
+
+                            if (data == null) {
+                              throw Exception('Ride details are unavailable.');
+                            }
+
+                            final savedCode =
+                                (data['Code'] ?? '').toString().trim();
+
+                            if (savedCode.isEmpty) {
+                              dialogSetState(() {
+                                verifying = false;
+                                inlineError =
+                                    'No pickup code was found for this ride.';
+                              });
+                              return;
+                            }
+
+                            if (enteredCode != savedCode) {
+                              dialogSetState(() {
+                                verifying = false;
+                                inlineError = 'Wrong code. Please try again.';
+                              });
+                              return;
+                            }
+
+                            // Re-read the document transactionally before
+                            // unlocking the Complete Ride button.
+                            await FirebaseFirestore.instance
+                                .runTransaction((transaction) async {
+                              final freshSnapshot =
+                                  await transaction.get(_rideRef);
+
+                              if (!freshSnapshot.exists) {
+                                throw Exception('Ride request not found.');
+                              }
+
+                              final freshData = freshSnapshot.data();
+
+                              if (freshData == null) {
+                                throw Exception('Ride details unavailable.');
+                              }
+
+                              final latestCode =
+                                  (freshData['Code'] ?? '').toString().trim();
+
+                              if (latestCode != enteredCode) {
+                                throw Exception(
+                                  'Wrong code. Please try again.',
+                                );
+                              }
+
+                              transaction.update(_rideRef, {
+                                'pickupCodeVerified': true,
+                                'pickupCodeVerifiedAt':
+                                    FieldValue.serverTimestamp(),
+                                'DriverStatus': 'in_progress',
+                                'DriverStatus_updates': FieldValue.arrayUnion([
+                                  {
+                                    'DriverStatus': 'in_progress',
+                                    'timestamp': Timestamp.now(),
+                                  }
+                                ]),
+                              });
+                            });
+
+                            if (!mounted) return;
+
+                            setState(() {
+                              _pickupCodeVerified = true;
+                            });
+
+                            Navigator.of(dialogContext).pop();
+
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Pickup code verified. '
+                                  'Complete Ride is now available.',
+                                ),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                          } catch (e) {
+                            debugPrint('Pickup code verification error: $e');
+
+                            dialogSetState(() {
+                              verifying = false;
+                              inlineError = e.toString().contains('Wrong code')
+                                  ? 'Wrong code. Please try again.'
+                                  : 'Unable to verify. Please try again.';
+                            });
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.black,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text('Verify Code'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    controller.dispose();
+  }
+
+  // ==========================================================================
+  // COMPLETE RIDE
+  // ==========================================================================
+
+  Future<void> _completeRide() async {
+    if (_isUpdatingStatus) return;
+
+    if (!_pickupCodeVerified) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Verify the pickup code before completing the ride.'),
+        ),
+      );
+      return;
+    }
+
+    final shouldComplete = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: const Text('Complete Ride?'),
+        content: const Text(
+          'Confirm that the trip has ended before completing this ride.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Not yet'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.black,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Complete Ride'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldComplete != true || !mounted) return;
+
+    setState(() {
+      _isUpdatingStatus = true;
+    });
+
+    try {
+      await FirebaseFirestore.instance.runTransaction(
+        (transaction) async {
+          final snapshot = await transaction.get(_rideRef);
+
+          if (!snapshot.exists) {
+            throw Exception('Ride request not found.');
+          }
+
+          final data = snapshot.data();
+
+          if (data == null) {
+            throw Exception('Ride details are unavailable.');
+          }
+
+          if (data['pickupCodeVerified'] != true) {
+            throw Exception('Pickup code has not been verified.');
+          }
+
+          final status = (data['Status'] ?? data['status'] ?? '').toString();
+
+          if (status == 'completed') return;
+
+          transaction.update(_rideRef, {
+            'Status': 'completed',
+            'DriverStatus': 'completed',
+            'completedAt': FieldValue.serverTimestamp(),
+            'DriverStatus_updates': FieldValue.arrayUnion([
+              {
+                'DriverStatus': 'completed',
+                'timestamp': Timestamp.now(),
+              }
+            ]),
+          });
+        },
+      );
+
+      if (!mounted) return;
+
+      // The ride listener displays the completion dialog.
+    } catch (e) {
+      debugPrint('Error completing ride: $e');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Unable to complete the ride. Please try again.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUpdatingStatus = false;
+        });
+      }
+    }
+  }
+
+  // ==========================================================================
+  // COMPLETION DIALOG
+  // ==========================================================================
+
   void _showRideCompletedDialog() {
     if (!mounted) return;
 
@@ -32027,27 +32538,28 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
       barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Ride Completed'),
-        content: const Text(
-          'The passenger has paid and the trip is completed.',
+        content: Text(
+          'The trip with ${widget.riderName} has been marked as completed.',
         ),
         actions: [
           TextButton(
-            child: const Text('OK'),
             onPressed: () {
               Navigator.of(dialogContext).pop();
+
               if (mounted) {
                 Navigator.of(context).pop();
               }
             },
+            child: const Text('OK'),
           ),
         ],
       ),
     );
   }
 
-  // =========================================================
+  // ==========================================================================
   // MAP MARKERS
-  // =========================================================
+  // ==========================================================================
 
   Set<Marker> _buildMarkers() {
     final markers = <Marker>{};
@@ -32057,9 +32569,7 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
         Marker(
           markerId: const MarkerId('driver_location'),
           position: userLocation!,
-          infoWindow: const InfoWindow(
-            title: 'Driver',
-          ),
+          infoWindow: const InfoWindow(title: 'Driver'),
           icon: BitmapDescriptor.defaultMarkerWithHue(
             BitmapDescriptor.hueAzure,
           ),
@@ -32102,10 +32612,6 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
     return markers;
   }
 
-  // =========================================================
-  // ROUTE POLYLINE
-  // =========================================================
-
   Set<Polyline> _buildPolylines() {
     if (_routePoints.length < 2) return {};
 
@@ -32123,14 +32629,289 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
     };
   }
 
-  // =========================================================
+  // ==========================================================================
+  // SINGLE ACTION BUTTON
+  //
+  // Only one of Start Pickup, Arrived at Pickup or Complete Ride is displayed
+  // at a time. Each button occupies the same position and uses the same style.
+  // ==========================================================================
+
+  Widget _buildRideActionButton() {
+    String label;
+    VoidCallback? onPressed;
+
+    if (_isUpdatingStatus) {
+      label = 'Updating...';
+      onPressed = null;
+    } else if (!hasStartedPickup) {
+      label = 'Start Pickup';
+      onPressed = _startPickup;
+    } else if (!hasArrivedAtPickup) {
+      label = 'Arrived at Pickup';
+      onPressed = _arrivedAtPickup;
+    } else if (!_pickupCodeVerified) {
+      label = 'Verify Pickup Code';
+      onPressed = _showPickupCodeDialog;
+    } else {
+      label = 'Complete Ride';
+      onPressed = _completeRide;
+    }
+
+    return SizedBox(
+      width: double.infinity,
+      height: 52,
+      child: ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.black,
+          disabledBackgroundColor: Colors.black,
+          foregroundColor: Colors.white,
+          disabledForegroundColor: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        child: _isUpdatingStatus
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+      ),
+    );
+  }
+
+  // ==========================================================================
+  // COMPACT BOTTOM SHEET
+  // ==========================================================================
+
+  Widget _buildBottomSheet() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(24),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 12,
+            offset: Offset(0, -3),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Small drag handle.
+            Center(
+              child: Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 15),
+
+            // Estimated driving distance and duration from Directions API.
+            Row(
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(
+                    Icons.route,
+                    size: 24,
+                    color: Colors.black,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Trip overview',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        _routeLoading
+                            ? 'Calculating distance and time...'
+                            : _remainingDistance.isNotEmpty &&
+                                    _remainingDuration.isNotEmpty
+                                ? '$_remainingDistance  •  $_remainingDuration'
+                                : 'Route estimate unavailable',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade600,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 15),
+            Divider(height: 1, color: Colors.grey.shade200),
+            const SizedBox(height: 15),
+
+            // Rider avatar and name.
+            Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.grey.shade100,
+                    border: Border.all(
+                      color: Colors.grey.shade200,
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.person,
+                    size: 27,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.riderName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Ride fare: ₦${widget.price.toStringAsFixed(0)}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_pickupCodeVerified)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.verified,
+                          size: 15,
+                          color: Colors.green.shade700,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Verified',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.green.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+
+            const SizedBox(height: 15),
+
+            // Payment information stays compact.
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.payment_outlined,
+                    color: Colors.grey.shade700,
+                    size: 19,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Payment: ${widget.paymentMethod}',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 14),
+
+            // Exactly one primary action appears at a time.
+            _buildRideActionButton(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ==========================================================================
   // BUILD
-  // =========================================================
+  // ==========================================================================
 
   @override
   Widget build(BuildContext context) {
-    // Do not display a temporary map at Lagos, the driver's location,
-    // or any other fallback while ride coordinates are being loaded.
     if (_coordinatesLoading) {
       return const Scaffold(
         backgroundColor: Colors.white,
@@ -32140,8 +32921,6 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
       );
     }
 
-    // Missing coordinates should produce an error state, not a map
-    // with arbitrary markers or a default location.
     if (pickupPosition == null || destinationPosition == null) {
       return Scaffold(
         backgroundColor: Colors.white,
@@ -32195,35 +32974,88 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
       );
     }
 
+    final screenSize = MediaQuery.of(context).size;
+
     return Scaffold(
       body: Stack(
         children: [
-          GoogleMap(
-            // The real pickup coordinates are the initial map target.
-            initialCameraPosition: CameraPosition(
-              target: pickupPosition!,
-              zoom: 15,
+          // ================================================================
+          // MAP
+          // ================================================================
+
+          Positioned.fill(
+            child: GoogleMap(
+              initialCameraPosition: CameraPosition(
+                target: pickupPosition!,
+                zoom: 15,
+              ),
+              onMapCreated: (controller) {
+                _mapController = controller;
+                _mapReady = true;
+
+                _moveCameraToRoute();
+
+                Future.delayed(
+                  const Duration(milliseconds: 500),
+                  _updateMarkerLabelPositions,
+                );
+              },
+              onCameraIdle: _updateMarkerLabelPositions,
+              markers: _buildMarkers(),
+              polylines: _buildPolylines(),
+              myLocationEnabled: true,
+              myLocationButtonEnabled: true,
+              zoomControlsEnabled: false,
+              mapToolbarEnabled: false,
             ),
-            onMapCreated: (controller) {
-              _mapController = controller;
-              _mapReady = true;
-              _moveCameraToRoute();
-            },
-            markers: _buildMarkers(),
-            polylines: _buildPolylines(),
-            myLocationEnabled: true,
-            myLocationButtonEnabled: true,
-            zoomControlsEnabled: false,
-            mapToolbarEnabled: false,
           ),
 
-          // Route navigation information.
+          // ================================================================
+          // PICKUP LABEL BESIDE PICKUP MARKER
+          // ================================================================
+
+          if (_pickupLabelOffset != null)
+            Positioned(
+              left: (_pickupLabelOffset!.dx + 12)
+                  .clamp(8.0, screenSize.width - 195),
+              top: (_pickupLabelOffset!.dy - 20)
+                  .clamp(70.0, screenSize.height - 150),
+              child: IgnorePointer(
+                child: _buildMapLabel(
+                  text: widget.pickup,
+                  isPickup: true,
+                ),
+              ),
+            ),
+
+          // ================================================================
+          // DESTINATION LABEL BESIDE DESTINATION MARKER
+          // ================================================================
+
+          if (_destinationLabelOffset != null)
+            Positioned(
+              left: (_destinationLabelOffset!.dx + 12)
+                  .clamp(8.0, screenSize.width - 195),
+              top: (_destinationLabelOffset!.dy - 20)
+                  .clamp(70.0, screenSize.height - 150),
+              child: IgnorePointer(
+                child: _buildMapLabel(
+                  text: widget.destination,
+                  isPickup: false,
+                ),
+              ),
+            ),
+
+          // ================================================================
+          // NAVIGATION INFORMATION AT THE TOP
+          // ================================================================
+
           Positioned(
             top: MediaQuery.of(context).padding.top + 12,
             left: 16,
             right: 16,
             child: Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(16),
@@ -32248,8 +33080,10 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
                       Expanded(
                         child: Text(
                           _nextManeuver,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            fontSize: 16,
+                            fontSize: 15,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -32264,320 +33098,35 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
                         ),
                     ],
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Text(
                     _routePoints.isNotEmpty
-                        ? 'Distance: $_remainingDistance'
-                            '  •  $_remainingDuration'
+                        ? '$_remainingDistance  •  $_remainingDuration'
                         : _routeLoading
                             ? 'Getting route details...'
                             : 'Route line unavailable',
                     style: const TextStyle(
                       color: Colors.grey,
-                      fontSize: 13,
+                      fontSize: 12,
                     ),
                   ),
-                  if (_routePoints.isEmpty &&
-                      !_routeLoading &&
-                      _coordinateError == null)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 6),
-                      child: Text(
-                        'Check the Directions API configuration '
-                        'if the route does not appear.',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.redAccent,
-                        ),
-                      ),
-                    ),
                 ],
               ),
             ),
           ),
 
-          // ORIGINAL DETAILS BOTTOM SHEET
+          // ================================================================
+          // COMPACT BOTTOM SHEET
+          // ================================================================
+
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                vertical: 20,
-                horizontal: 16,
-              ),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(24),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black12,
-                    blurRadius: 10,
-                    offset: Offset(0, -2),
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildInfoRow(
-                    icon: Icons.person,
-                    label: 'Client',
-                    content: widget.riderName,
-                    context: context,
-                  ),
-                  const SizedBox(height: 12),
-                  _buildInfoRow(
-                    icon: Icons.my_location,
-                    label: 'Pickup',
-                    content: widget.pickup,
-                    context: context,
-                  ),
-                  const SizedBox(height: 12),
-                  _buildInfoRow(
-                    icon: Icons.location_on,
-                    label: 'Destination',
-                    content: widget.destination,
-                    context: context,
-                  ),
-                  const SizedBox(height: 12),
-                  _buildInfoRow(
-                    icon: Icons.payment,
-                    label: 'Payment Method',
-                    content: widget.paymentMethod,
-                    context: context,
-                  ),
-                  const SizedBox(height: 5),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.purple.shade50,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      'You will receive ₦'
-                      '${widget.price.toStringAsFixed(2)} '
-                      'in cash at the end of the trip.',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        color: Colors.black87,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: hasStartedPickup
-                                ? Colors.grey
-                                : Colors.purple[900],
-                            foregroundColor: Colors.white,
-                            elevation: 4,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 16,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          onPressed: hasStartedPickup
-                              ? null
-                              : () async {
-                                  try {
-                                    await FirebaseFirestore.instance
-                                        .collection('ride_requests')
-                                        .doc(widget.rideId)
-                                        .update({
-                                      'DriverStatus': 'en_route',
-                                      'DriverStatus_updates':
-                                          FieldValue.arrayUnion([
-                                        {
-                                          'DriverStatus': 'en_route',
-                                          'timestamp': Timestamp.now(),
-                                        }
-                                      ]),
-                                    });
-
-                                    if (!mounted) return;
-
-                                    setState(() {
-                                      hasStartedPickup = true;
-                                    });
-
-                                    _updateNavigationProgress();
-                                  } catch (e) {
-                                    debugPrint(
-                                      'Error starting pickup: $e',
-                                    );
-
-                                    if (!mounted) return;
-
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'Unable to update ride status.',
-                                        ),
-                                      ),
-                                    );
-                                  }
-                                },
-                          child: const Text('Start Pickup'),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: hasArrivedAtPickup
-                                ? Colors.grey
-                                : Colors.purple[900],
-                            foregroundColor: Colors.white,
-                            elevation: 4,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 16,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          onPressed: hasArrivedAtPickup
-                              ? null
-                              : () async {
-                                  try {
-                                    await FirebaseFirestore.instance
-                                        .collection('ride_requests')
-                                        .doc(widget.rideId)
-                                        .update({
-                                      'DriverStatus': 'arrived',
-                                      'DriverStatus_updates':
-                                          FieldValue.arrayUnion([
-                                        {
-                                          'DriverStatus': 'arrived',
-                                          'timestamp': Timestamp.now(),
-                                        }
-                                      ]),
-                                    });
-
-                                    if (!mounted) return;
-
-                                    setState(() {
-                                      hasArrivedAtPickup = true;
-                                    });
-
-                                    _updateNavigationProgress();
-                                  } catch (e) {
-                                    debugPrint(
-                                      'Error updating arrival status: $e',
-                                    );
-
-                                    if (!mounted) return;
-
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'Unable to update arrival status.',
-                                        ),
-                                      ),
-                                    );
-                                  }
-                                },
-                          child: const Text(
-                            'Arrived at Pickup',
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.black,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 16,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Text(
-                        'Complete Ride',
-                        style: TextStyle(
-                          fontSize: 18,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            child: _buildBottomSheet(),
           ),
         ],
       ),
-    );
-  }
-
-  // =========================================================
-  // ORIGINAL INFO ROW
-  // =========================================================
-
-  Widget _buildInfoRow({
-    required IconData icon,
-    required String label,
-    required String content,
-    required BuildContext context,
-  }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(
-          icon,
-          color: Colors.grey[400],
-          size: 18,
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                content,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black,
-                ),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 2,
-              ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 
@@ -32589,7 +33138,6 @@ class _DriverBookedScreenState extends State<DriverBookedScreen> {
     super.dispose();
   }
 }
-
 // ============================================================================
 // ADMIN DASHBOARD
 // ============================================================================
@@ -48503,7 +49051,6 @@ class _helpState extends State<help> {
   }
 }
 
-
 class EarnPage extends StatelessWidget {
   EarnPage({super.key});
 
@@ -48737,7 +49284,6 @@ class EarnPage extends StatelessWidget {
   }
 }
 
-
 class LocationService {
   static Map<String, dynamic>? _cache;
 
@@ -48772,7 +49318,6 @@ class LocationService {
     return locations;
   }
 }
-
 
 class LogisticsPage extends StatefulWidget {
   const LogisticsPage({super.key});
@@ -49411,19 +49956,6 @@ class _LogisticsPageState extends State<LogisticsPage> {
   }
 }
 
-
-import 'dart:async';
-import 'dart:convert';
-import 'dart:math' as math;
-
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:http/http.dart' as http;
-import 'package:url_launcher/url_launcher.dart';
-
 class RideStartedScreen extends StatefulWidget {
   final String rideId;
   final String pickup;
@@ -49503,9 +50035,7 @@ class _RideStartedScreenState extends State<RideStartedScreen>
       'AIzaSyAxmD8Gvtn1KGomBFy3pWXRFgvw0c4a-48';
 
   DocumentReference<Map<String, dynamic>> get _rideRef =>
-      FirebaseFirestore.instance
-          .collection('ride_requests')
-          .doc(widget.rideId);
+      FirebaseFirestore.instance.collection('ride_requests').doc(widget.rideId);
 
   @override
   void initState() {
@@ -49550,8 +50080,7 @@ class _RideStartedScreenState extends State<RideStartedScreen>
 
   void _setRideMarkers() {
     final pickup = LatLng(widget.pickupLat, widget.pickupLng);
-    final destination =
-        LatLng(widget.destinationLat, widget.destinationLng);
+    final destination = LatLng(widget.destinationLat, widget.destinationLng);
 
     if (!mounted) return;
 
@@ -49753,16 +50282,14 @@ class _RideStartedScreenState extends State<RideStartedScreen>
       final Map<String, dynamic> responseData =
           jsonDecode(response.body) as Map<String, dynamic>;
 
-      final List<dynamic>? routes =
-          responseData['routes'] as List<dynamic>?;
+      final List<dynamic>? routes = responseData['routes'] as List<dynamic>?;
 
       if (routes == null || routes.isEmpty) {
         _setFallbackDistanceAndDuration();
         return _fallbackStraightRoute();
       }
 
-      final Map<String, dynamic> route =
-          routes.first as Map<String, dynamic>;
+      final Map<String, dynamic> route = routes.first as Map<String, dynamic>;
 
       // Read actual road distance and estimated duration.
       final dynamic distanceMeters = route['distanceMeters'];
@@ -49873,8 +50400,7 @@ class _RideStartedScreenState extends State<RideStartedScreen>
 
   List<LatLng> _fallbackStraightRoute() {
     final LatLng start = LatLng(widget.pickupLat, widget.pickupLng);
-    final LatLng end =
-        LatLng(widget.destinationLat, widget.destinationLng);
+    final LatLng end = LatLng(widget.destinationLat, widget.destinationLng);
 
     const int numberOfPoints = 40;
     final List<LatLng> points = [];
@@ -49955,8 +50481,7 @@ class _RideStartedScreenState extends State<RideStartedScreen>
           _polylines = {
             Polyline(
               polylineId: const PolylineId('ride_route'),
-              points:
-                  _routePoints.take(_visibleRoutePoints).toList(),
+              points: _routePoints.take(_visibleRoutePoints).toList(),
               color: Colors.green.shade700,
               width: 6,
               startCap: Cap.roundCap,
@@ -50246,8 +50771,7 @@ class _RideStartedScreenState extends State<RideStartedScreen>
         final data = snapshot.data();
         if (data == null) return;
 
-        final String newDriverStatus =
-            _normalizeStatus(data['DriverStatus']);
+        final String newDriverStatus = _normalizeStatus(data['DriverStatus']);
 
         final String newRideStatus = _normalizeStatus(
           data['status'] ?? data['Status'],
@@ -50256,9 +50780,8 @@ class _RideStartedScreenState extends State<RideStartedScreen>
         if (!mounted) return;
 
         setState(() {
-          _driverStatus = newDriverStatus.isEmpty
-              ? 'awaiting_pickup'
-              : newDriverStatus;
+          _driverStatus =
+              newDriverStatus.isEmpty ? 'awaiting_pickup' : newDriverStatus;
           _rideStatus = newRideStatus;
         });
 
@@ -50322,8 +50845,7 @@ class _RideStartedScreenState extends State<RideStartedScreen>
         (_) {
           if (!mounted || _tripStartedAt == null) return;
 
-          final elapsed =
-              DateTime.now().difference(_tripStartedAt!).inSeconds;
+          final elapsed = DateTime.now().difference(_tripStartedAt!).inSeconds;
 
           setState(() {
             _tripElapsedSeconds = elapsed < 0 ? 0 : elapsed;
@@ -50356,8 +50878,7 @@ class _RideStartedScreenState extends State<RideStartedScreen>
       int elapsedSeconds = _tripElapsedSeconds;
 
       if (startedAt != null) {
-        elapsedSeconds =
-            DateTime.now().difference(startedAt).inSeconds;
+        elapsedSeconds = DateTime.now().difference(startedAt).inSeconds;
       }
 
       if (elapsedSeconds < 0) elapsedSeconds = 0;
@@ -50430,7 +50951,11 @@ class _RideStartedScreenState extends State<RideStartedScreen>
           ),
           const SizedBox(height: 2),
           Text(
-            _tripDurationSaved ? 'Saved' : running ? 'Trip time' : 'Waiting',
+            _tripDurationSaved
+                ? 'Saved'
+                : running
+                    ? 'Trip time'
+                    : 'Waiting',
             style: TextStyle(
               fontSize: 9,
               color: running ? Colors.green.shade800 : Colors.grey.shade600,
@@ -50448,20 +50973,16 @@ class _RideStartedScreenState extends State<RideStartedScreen>
 
   String get _driverStatusTitle {
     if (_isEnRouteStatus(_driverStatus)) return 'Driver On His Way';
-    if (_driverStatus == 'arrived' ||
-        _driverStatus == 'driver_arrived') {
+    if (_driverStatus == 'arrived' || _driverStatus == 'driver_arrived') {
       return 'Your Driver Has Arrived';
     }
-    if (_driverStatus == 'in_progress' ||
-        _driverStatus == 'ride_started') {
+    if (_driverStatus == 'in_progress' || _driverStatus == 'ride_started') {
       return 'Your Trip Is In Progress';
     }
-    if (_isCompletedStatus(_driverStatus) ||
-        _isCompletedStatus(_rideStatus)) {
+    if (_isCompletedStatus(_driverStatus) || _isCompletedStatus(_rideStatus)) {
       return 'Trip Completed';
     }
-    if (_driverStatus == 'cancelled' ||
-        _driverStatus == 'driver_cancelled') {
+    if (_driverStatus == 'cancelled' || _driverStatus == 'driver_cancelled') {
       return 'Ride Cancelled';
     }
 
@@ -50473,23 +50994,19 @@ class _RideStartedScreenState extends State<RideStartedScreen>
       return 'Your driver is heading to your pickup location.';
     }
 
-    if (_driverStatus == 'arrived' ||
-        _driverStatus == 'driver_arrived') {
+    if (_driverStatus == 'arrived' || _driverStatus == 'driver_arrived') {
       return 'Your driver has reached the pickup point.';
     }
 
-    if (_driverStatus == 'in_progress' ||
-        _driverStatus == 'ride_started') {
+    if (_driverStatus == 'in_progress' || _driverStatus == 'ride_started') {
       return 'Have a safe and comfortable trip.';
     }
 
-    if (_isCompletedStatus(_driverStatus) ||
-        _isCompletedStatus(_rideStatus)) {
+    if (_isCompletedStatus(_driverStatus) || _isCompletedStatus(_rideStatus)) {
       return 'Your trip time has been saved.';
     }
 
-    if (_driverStatus == 'cancelled' ||
-        _driverStatus == 'driver_cancelled') {
+    if (_driverStatus == 'cancelled' || _driverStatus == 'driver_cancelled') {
       return 'Please contact support if you need assistance.';
     }
 
@@ -50501,23 +51018,19 @@ class _RideStartedScreenState extends State<RideStartedScreen>
       return Icons.directions_car_rounded;
     }
 
-    if (_driverStatus == 'arrived' ||
-        _driverStatus == 'driver_arrived') {
+    if (_driverStatus == 'arrived' || _driverStatus == 'driver_arrived') {
       return Icons.location_on_rounded;
     }
 
-    if (_driverStatus == 'in_progress' ||
-        _driverStatus == 'ride_started') {
+    if (_driverStatus == 'in_progress' || _driverStatus == 'ride_started') {
       return Icons.route_rounded;
     }
 
-    if (_isCompletedStatus(_driverStatus) ||
-        _isCompletedStatus(_rideStatus)) {
+    if (_isCompletedStatus(_driverStatus) || _isCompletedStatus(_rideStatus)) {
       return Icons.check_circle_rounded;
     }
 
-    if (_driverStatus == 'cancelled' ||
-        _driverStatus == 'driver_cancelled') {
+    if (_driverStatus == 'cancelled' || _driverStatus == 'driver_cancelled') {
       return Icons.info_outline_rounded;
     }
 
@@ -50525,13 +51038,11 @@ class _RideStartedScreenState extends State<RideStartedScreen>
   }
 
   Color get _driverStatusColor {
-    if (_isCompletedStatus(_driverStatus) ||
-        _isCompletedStatus(_rideStatus)) {
+    if (_isCompletedStatus(_driverStatus) || _isCompletedStatus(_rideStatus)) {
       return Colors.green.shade700;
     }
 
-    if (_driverStatus == 'cancelled' ||
-        _driverStatus == 'driver_cancelled') {
+    if (_driverStatus == 'cancelled' || _driverStatus == 'driver_cancelled') {
       return Colors.red.shade700;
     }
 
@@ -50770,8 +51281,7 @@ class _RideStartedScreenState extends State<RideStartedScreen>
 
     final int amount = (widget.price * 100).toInt();
 
-    final String reference =
-        "deck_${DateTime.now().millisecondsSinceEpoch}";
+    final String reference = "deck_${DateTime.now().millisecondsSinceEpoch}";
 
     final Uri url = Uri.parse(
       'https://api.paystack.co/transaction/initialize',
@@ -50794,8 +51304,7 @@ class _RideStartedScreenState extends State<RideStartedScreen>
       if (response.statusCode == 200) {
         final responseData = jsonDecode(response.body);
 
-        final String checkoutUrl =
-            responseData['data']['authorization_url'];
+        final String checkoutUrl = responseData['data']['authorization_url'];
 
         if (await canLaunchUrl(Uri.parse(checkoutUrl))) {
           await launchUrl(
@@ -51150,7 +51659,6 @@ class _RideStartedScreenState extends State<RideStartedScreen>
     );
   }
 }
-
 
 class Support extends StatefulWidget {
   final String userName;
