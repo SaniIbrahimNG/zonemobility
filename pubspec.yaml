@@ -38,7 +38,7 @@ dependencies:
   intl: ^0.18.0
   flutter_typeahead: ^5.2.0
   google_places_flutter: ^2.0.6
-  paystack_flutter_sdk: ^0.0.1-alpha.2
+  
   gal: ^2.3.1
   share_plus: ^11.0.0
   path_provider: ^2.1.5
@@ -167,8 +167,7 @@ flutter:
     - assets/images/bread2.jpg
     - assets/images/tss1.jpg
     - assets/images/on.jpg
-    - assets/images/tm.jpg
-     - assets/images/MAINPIC.PNG
+   
     - assets/images/soft-drink.png
     - assets/images/pizza.png
     - assets/images/shawarma.png
