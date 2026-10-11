@@ -35582,11 +35582,9 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
     return (_calculatedPrice ?? 0).toDouble();
   }
 
-  double get _sizeSurcharge =>
-      _baseDeliveryFee * _sizeSurchargeRate;
+  double get _sizeSurcharge => _baseDeliveryFee * _sizeSurchargeRate;
 
-  double get _valueSurcharge =>
-      _baseDeliveryFee * _valueSurchargeRate;
+  double get _valueSurcharge => _baseDeliveryFee * _valueSurchargeRate;
 
   double get _totalDeliveryFee =>
       _baseDeliveryFee + _sizeSurcharge + _valueSurcharge;
@@ -35661,17 +35659,13 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
       _senderType = data['senderType']?.toString();
 
       if (_senderType == 'business') {
-        _senderNameController.text =
-            data['businessName']?.toString() ?? '';
+        _senderNameController.text = data['businessName']?.toString() ?? '';
       } else {
         _senderNameController.text =
-            data['name']?.toString() ??
-            data['fullName']?.toString() ??
-            '';
+            data['name']?.toString() ?? data['fullName']?.toString() ?? '';
       }
 
-      _senderContactController.text =
-          data['phone']?.toString() ?? '';
+      _senderContactController.text = data['phone']?.toString() ?? '';
 
       final address = data['address']?.toString() ?? '';
       final city = data['city']?.toString() ?? '';
@@ -35701,9 +35695,8 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
 
   Future<void> _fetchRoutes() async {
     try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('logistics_routes')
-          .get();
+      final snapshot =
+          await FirebaseFirestore.instance.collection('logistics_routes').get();
 
       if (!mounted) return;
 
@@ -35751,8 +35744,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
     final destinations = _getDestinations(_selectedFromCity!);
 
     final match = destinations.firstWhere(
-      (destination) =>
-          destination['name']?.toString() == _selectedToCity,
+      (destination) => destination['name']?.toString() == _selectedToCity,
       orElse: () => <String, dynamic>{},
     );
 
@@ -35773,14 +35765,11 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
     if (!mounted) return;
 
     setState(() {
-      _senderNameController.text =
-          prefs.getString('senderName') ?? '';
+      _senderNameController.text = prefs.getString('senderName') ?? '';
 
-      _senderContactController.text =
-          prefs.getString('senderContact') ?? '';
+      _senderContactController.text = prefs.getString('senderContact') ?? '';
 
-      _pickupAddressController.text =
-          prefs.getString('pickupAddress') ?? '';
+      _pickupAddressController.text = prefs.getString('pickupAddress') ?? '';
     });
   }
 
@@ -35808,8 +35797,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
   bool _validateStep(int step) {
     switch (step) {
       case 0:
-        final packageValid =
-            _packageNameController.text.trim().isNotEmpty &&
+        final packageValid = _packageNameController.text.trim().isNotEmpty &&
             _selectedCategory != null &&
             _selectedSize != null &&
             _selectedEstimatedValue != null;
@@ -35904,17 +35892,14 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
   // ================= PREVIEW =================
 
   void _goToPreview() {
-    if (!_validateStep(0) ||
-        !_validateStep(1) ||
-        !_validateStep(2)) {
+    if (!_validateStep(0) || !_validateStep(1) || !_validateStep(2)) {
       _showValidationMessage(
         'Please complete all required details before continuing.',
       );
       return;
     }
 
-    final trackingId =
-        'TRK-${const Uuid().v4().substring(0, 8).toUpperCase()}';
+    final trackingId = 'TRK-${const Uuid().v4().substring(0, 8).toUpperCase()}';
 
     final user = FirebaseAuth.instance.currentUser;
 
@@ -36309,8 +36294,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
                     itemBuilder: (context, index) {
                       final destination = destinations[index];
 
-                      final name =
-                          destination['name']?.toString() ?? '';
+                      final name = destination['name']?.toString() ?? '';
 
                       final price = destination['price'];
 
@@ -36363,14 +36347,11 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
           vertical: 15,
         ),
         decoration: BoxDecoration(
-          color: selected
-              ? Colors.black.withOpacity(0.05)
-              : Colors.grey.shade50,
+          color:
+              selected ? Colors.black.withOpacity(0.05) : Colors.grey.shade50,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: selected
-                ? Colors.black
-                : Colors.grey.shade200,
+            color: selected ? Colors.black : Colors.grey.shade200,
             width: selected ? 1.2 : 1,
           ),
         ),
@@ -36411,9 +36392,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
                 shape: BoxShape.circle,
                 color: selected ? Colors.black : Colors.transparent,
                 border: Border.all(
-                  color: selected
-                      ? Colors.black
-                      : Colors.grey.shade400,
+                  color: selected ? Colors.black : Colors.grey.shade400,
                   width: 1.5,
                 ),
               ),
@@ -36475,12 +36454,8 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
                     hasValue ? value : (hint ?? 'Select'),
                     style: TextStyle(
                       fontSize: 15,
-                      fontWeight: hasValue
-                          ? FontWeight.w600
-                          : FontWeight.w400,
-                      color: hasValue
-                          ? Colors.black
-                          : Colors.grey.shade600,
+                      fontWeight: hasValue ? FontWeight.w600 : FontWeight.w400,
+                      color: hasValue ? Colors.black : Colors.grey.shade600,
                     ),
                   ),
                 ],
@@ -36677,9 +36652,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
                     color: Colors.black,
                     width: 1,
                   ),
-                  color: _useSavedSender
-                      ? Colors.black
-                      : Colors.transparent,
+                  color: _useSavedSender ? Colors.black : Colors.transparent,
                 ),
                 child: _useSavedSender
                     ? const Icon(
@@ -37018,14 +36991,12 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
                               child: OutlinedButton(
                                 onPressed: _previousStep,
                                 style: OutlinedButton.styleFrom(
-                                  minimumSize:
-                                      const Size.fromHeight(55),
+                                  minimumSize: const Size.fromHeight(55),
                                   side: BorderSide(
                                     color: Colors.grey.shade300,
                                   ),
                                   shape: RoundedRectangleBorder(
-                                    borderRadius:
-                                        BorderRadius.circular(14),
+                                    borderRadius: BorderRadius.circular(14),
                                   ),
                                 ),
                                 child: const Text(
@@ -37036,8 +37007,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
                                 ),
                               ),
                             ),
-                          if (_currentStep > 0)
-                            const SizedBox(width: 14),
+                          if (_currentStep > 0) const SizedBox(width: 14),
                           Expanded(
                             child: ElevatedButton(
                               onPressed: () {
@@ -37049,17 +37019,13 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
                               },
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.black,
-                                minimumSize:
-                                    const Size.fromHeight(55),
+                                minimumSize: const Size.fromHeight(55),
                                 shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                      BorderRadius.circular(14),
+                                  borderRadius: BorderRadius.circular(30),
                                 ),
                               ),
                               child: Text(
-                                _currentStep == 2
-                                    ? 'Continue'
-                                    : 'Next',
+                                _currentStep == 2 ? 'Continue' : 'Next',
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w600,
@@ -37127,16 +37093,6 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
   }
 }
 
-
-import 'dart:convert';
-import 'dart:math';
-
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'package:url_launcher/url_launcher.dart';
-
 // Keep your existing import for OrderPlacedPage.
 
 class PackagePreviewPage extends StatelessWidget {
@@ -37150,8 +37106,7 @@ class PackagePreviewPage extends StatelessWidget {
   // Prefer the final calculated fee from PackageDetailsPage.
   // The fallback supports older packageData maps.
   double get _deliveryFee {
-    final dynamic value =
-        packageData['deliveryFee'] ?? packageData['price'];
+    final dynamic value = packageData['deliveryFee'] ?? packageData['price'];
 
     if (value is num) return value.toDouble();
 
@@ -37213,8 +37168,8 @@ class PackagePreviewPage extends StatelessWidget {
       fallback: 'Package Details',
     );
 
-    final hasRoute = packageData['fromCity'] != null ||
-        packageData['toCity'] != null;
+    final hasRoute =
+        packageData['fromCity'] != null || packageData['toCity'] != null;
 
     final baseFee = _number(packageData['baseDeliveryFee']);
     final sizeSurcharge = _number(packageData['sizeSurcharge']);
@@ -37289,9 +37244,7 @@ class PackagePreviewPage extends StatelessWidget {
                           ),
                         ),
                       ),
-
                       const SizedBox(height: 6),
-
                       Center(
                         child: Text(
                           serviceType,
@@ -37302,101 +37255,83 @@ class PackagePreviewPage extends StatelessWidget {
                           ),
                         ),
                       ),
-
                       const SizedBox(height: 24),
-
                       _sectionTitle('Package Information'),
-
                       _buildSummaryRow(
                         'Service Type',
                         serviceType,
                       ),
-
                       if (packageData['packageName'] != null)
                         _buildSummaryRow(
                           _isWaybill ? 'Item Name' : 'Package Name',
                           _text(packageData['packageName']),
                         ),
-
                       if (packageData['category'] != null)
                         _buildSummaryRow(
                           'Package Category',
                           _text(packageData['category']),
                         ),
-
                       if (packageData['extraField'] != null)
                         _buildSummaryRow(
                           _isWaybill ? 'Invoice/Waybill' : 'Pickup Time',
                           _text(packageData['extraField']),
                         ),
-
                       if (hasRoute) ...[
                         const SizedBox(height: 10),
                         _sectionTitle('Route'),
-
                         if (packageData['fromCity'] != null)
                           _buildSummaryRow(
                             'From',
                             _text(packageData['fromCity']),
                           ),
-
                         if (packageData['toCity'] != null)
                           _buildSummaryRow(
                             'To',
                             _text(packageData['toCity']),
                           ),
                       ],
-
                       if (packageData['pickupAddress'] != null ||
                           packageData['deliveryAddress'] != null) ...[
                         const SizedBox(height: 10),
                         _sectionTitle('Delivery Addresses'),
-
                         if (packageData['pickupAddress'] != null)
                           _buildSummaryRow(
                             'Pickup Address',
                             _text(packageData['pickupAddress']),
                           ),
-
                         if (packageData['deliveryAddress'] != null)
                           _buildSummaryRow(
                             'Delivery Address',
                             _text(packageData['deliveryAddress']),
                           ),
                       ],
-
                       if (packageData['senderName'] != null ||
                           packageData['senderContact'] != null ||
                           packageData['receiverName'] != null ||
                           packageData['receiverContact'] != null) ...[
                         const SizedBox(height: 10),
                         _sectionTitle('Sender & Receiver'),
-
                         if (packageData['senderName'] != null)
                           _buildSummaryRow(
                             'Sender Name',
                             _text(packageData['senderName']),
                           ),
-
                         if (packageData['senderContact'] != null)
                           _buildSummaryRow(
                             'Sender Contact',
                             _text(packageData['senderContact']),
                           ),
-
                         if (packageData['receiverName'] != null)
                           _buildSummaryRow(
                             'Receiver Name',
                             _text(packageData['receiverName']),
                           ),
-
                         if (packageData['receiverContact'] != null)
                           _buildSummaryRow(
                             'Receiver Contact',
                             _text(packageData['receiverContact']),
                           ),
                       ],
-
                       if (packageData['trackingId'] != null) ...[
                         const SizedBox(height: 12),
                         Container(
@@ -37429,34 +37364,27 @@ class PackagePreviewPage extends StatelessWidget {
                           ),
                         ),
                       ],
-
                       const SizedBox(height: 22),
-
                       _sectionTitle('Delivery Fee'),
-
                       if (hasSurchargeBreakdown) ...[
                         _buildFeeRow(
                           'Base delivery fee',
                           _naira(baseFee),
                         ),
-
                         if (sizeSurcharge > 0)
                           _buildFeeRow(
                             'Package size surcharge',
                             '+${_naira(sizeSurcharge)}',
                           ),
-
                         if (valueSurcharge > 0)
                           _buildFeeRow(
                             'Estimated value surcharge',
                             '+${_naira(valueSurcharge)}',
                           ),
-
                         const SizedBox(height: 10),
                         Divider(color: Colors.grey.shade300),
                         const SizedBox(height: 8),
                       ],
-
                       Row(
                         children: [
                           const Expanded(
@@ -37479,9 +37407,7 @@ class PackagePreviewPage extends StatelessWidget {
                           ),
                         ],
                       ),
-
                       const SizedBox(height: 8),
-
                       Text(
                         _isWaybill
                             ? 'The fee includes the selected route and applicable package surcharges.'
@@ -37492,9 +37418,7 @@ class PackagePreviewPage extends StatelessWidget {
                           color: Colors.grey.shade600,
                         ),
                       ),
-
                       const SizedBox(height: 28),
-
                       Row(
                         children: [
                           Expanded(
@@ -37520,9 +37444,7 @@ class PackagePreviewPage extends StatelessWidget {
                               ),
                             ),
                           ),
-
                           const SizedBox(width: 12),
-
                           Expanded(
                             child: ElevatedButton(
                               onPressed: _deliveryFee > 0
@@ -37660,7 +37582,8 @@ class PackagePreviewPage extends StatelessWidget {
     if (amountInKobo <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('The delivery fee is invalid. Please go back and review your package.'),
+          content: Text(
+              'The delivery fee is invalid. Please go back and review your package.'),
         ),
       );
       return;
@@ -37671,17 +37594,16 @@ class PackagePreviewPage extends StatelessWidget {
     if (trackingId == null || trackingId.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Tracking ID is missing. Please go back and try again.'),
+          content:
+              Text('Tracking ID is missing. Please go back and try again.'),
         ),
       );
       return;
     }
 
-    final String reference =
-        'log_${DateTime.now().millisecondsSinceEpoch}';
+    final String reference = 'log_${DateTime.now().millisecondsSinceEpoch}';
 
-    final Uri url =
-        Uri.parse('https://api.paystack.co/transaction/initialize');
+    final Uri url = Uri.parse('https://api.paystack.co/transaction/initialize');
 
     bool dialogOpen = false;
 
@@ -37730,8 +37652,7 @@ class PackagePreviewPage extends StatelessWidget {
         );
       }
 
-      final checkoutUrl =
-          responseData['data']['authorization_url'].toString();
+      final checkoutUrl = responseData['data']['authorization_url'].toString();
 
       final checkoutUri = Uri.parse(checkoutUrl);
 
@@ -37813,7 +37734,6 @@ class PackagePreviewPage extends StatelessWidget {
     );
   }
 }
-
 
 class OrderPlacedPage extends StatelessWidget {
   final String orderId;
