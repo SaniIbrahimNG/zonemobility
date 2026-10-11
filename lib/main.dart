@@ -45869,10 +45869,23 @@ class _DriverNegotiationSheet extends StatefulWidget {
 class _DriverNegotiationSheetState extends State<_DriverNegotiationSheet> {
   late final Stream<DocumentSnapshot<Map<String, dynamic>>> _rideStream;
 
+  late final StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>
+      _historySubscription;
+
   final TextEditingController _offerController = TextEditingController();
 
   bool _sendingOffer = false;
   bool _acceptingCounter = false;
+
+  // The visible conversation.
+  final List<Map<String, dynamic>> _messages = [];
+
+  // Tracks the last prices observed from Firestore.
+  double? _lastDriverPrice;
+  double? _lastRiderPrice;
+
+  bool _hasReceivedFirstSnapshot = false;
+  bool _historyLoaded = false;
 
   @override
   void initState() {
@@ -45882,46 +45895,220 @@ class _DriverNegotiationSheetState extends State<_DriverNegotiationSheet> {
         .collection('ride_requests')
         .doc(widget.rideId)
         .snapshots();
+
+    _historySubscription = _rideStream.listen(
+      _observeRideUpdate,
+    );
   }
 
   @override
   void dispose() {
+    _historySubscription.cancel();
     _offerController.dispose();
     super.dispose();
   }
 
-  // ===========================================================================
-  // READ PRICE
-  // ===========================================================================
+  // ============================================================
+  // PRICE HELPERS
+  // ============================================================
 
   double? _price(dynamic value) {
-    if (value == null) {
-      return null;
-    }
+    if (value == null) return null;
 
-    if (value is num) {
-      return value.toDouble();
-    }
+    if (value is num) return value.toDouble();
 
     return double.tryParse(
-      value.toString().replaceAll(',', ''),
+      value.toString().replaceAll(',', '').trim(),
     );
   }
 
-  // ===========================================================================
+  String _formatPrice(double price) {
+    final formatted = price.toStringAsFixed(2);
+    final parts = formatted.split('.');
+    final whole = parts[0];
+
+    final buffer = StringBuffer();
+
+    for (int i = 0; i < whole.length; i++) {
+      if (i > 0 && (whole.length - i) % 3 == 0) {
+        buffer.write(',');
+      }
+      buffer.write(whole[i]);
+    }
+
+    return '₦${buffer.toString()}.${parts[1]}';
+  }
+
+  // ============================================================
+  // ADD A MESSAGE TO THE CONVERSATION
+  // ============================================================
+
+  void _addMessage({
+    required String actor,
+    required double price,
+    double? previousPrice,
+    String? id,
+  }) {
+    // Prevent duplicate messages when Firestore emits the same
+    // negotiation history again.
+    if (id != null && _messages.any((message) => message['id'] == id)) {
+      return;
+    }
+
+    _messages.add({
+      'id': id,
+      'actor': actor,
+      'price': price,
+      'previousPrice': previousPrice,
+    });
+  }
+
+  // ============================================================
+  // OBSERVE FIRESTORE PRICE CHANGES
+  //
+  // Preferred persistent format:
+  // negotiationHistory: [
+  //   {
+  //     id: 'unique-id',
+  //     actor: 'driver' or 'rider',
+  //     price: 2500,
+  //     createdAt: Timestamp
+  //   }
+  // ]
+  //
+  // The latest-price fields remain supported as a fallback.
+  // ============================================================
+
+  void _observeRideUpdate(
+    DocumentSnapshot<Map<String, dynamic>> snapshot,
+  ) {
+    if (!snapshot.exists) return;
+
+    final data = snapshot.data() ?? <String, dynamic>{};
+
+    final driverPrice = _price(
+          data['driverOfferPrice'],
+        ) ??
+        _price(data['price']);
+
+    final riderPrice = _price(
+      data['userCounterPrice'],
+    );
+
+    final actor = data['lastNegotiationActor']?.toString() ?? '';
+
+    final rawHistory = data['negotiationHistory'];
+
+    if (rawHistory is List && rawHistory.isNotEmpty) {
+      // The saved history is the source of truth.
+      final savedMessages = <Map<String, dynamic>>[];
+
+      for (final item in rawHistory) {
+        if (item is! Map) continue;
+
+        final price = _price(item['price']);
+        final messageActor = item['actor']?.toString();
+
+        if (price == null ||
+            (messageActor != 'driver' && messageActor != 'rider')) {
+          continue;
+        }
+
+        savedMessages.add({
+          'id': item['id']?.toString(),
+          'actor': messageActor,
+          'price': price,
+          'previousPrice': _price(item['previousPrice']),
+        });
+      }
+
+      if (mounted) {
+        setState(() {
+          _messages
+            ..clear()
+            ..addAll(savedMessages);
+          _historyLoaded = true;
+        });
+      }
+
+      _lastDriverPrice = driverPrice;
+      _lastRiderPrice = riderPrice;
+      _hasReceivedFirstSnapshot = true;
+      return;
+    }
+
+    // Fallback for existing documents that do not yet contain
+    // negotiationHistory. This preserves the latest conversation
+    // observed while this sheet remains open.
+    if (!_hasReceivedFirstSnapshot) {
+      _hasReceivedFirstSnapshot = true;
+
+      if (driverPrice != null && riderPrice != null) {
+        // The actor identifies the latest price change.
+        if (actor == 'rider') {
+          _addMessage(
+            actor: 'driver',
+            price: driverPrice,
+          );
+          _addMessage(
+            actor: 'rider',
+            price: riderPrice,
+          );
+        } else {
+          _addMessage(
+            actor: 'rider',
+            price: riderPrice,
+          );
+          _addMessage(
+            actor: 'driver',
+            price: driverPrice,
+          );
+        }
+      } else if (driverPrice != null) {
+        _addMessage(
+          actor: 'driver',
+          price: driverPrice,
+        );
+      } else if (riderPrice != null) {
+        _addMessage(
+          actor: 'rider',
+          price: riderPrice,
+        );
+      }
+    } else {
+      if (actor == 'driver' &&
+          driverPrice != null &&
+          driverPrice != _lastDriverPrice) {
+        _addMessage(
+          actor: 'driver',
+          price: driverPrice,
+          previousPrice: _lastDriverPrice,
+        );
+      } else if (actor == 'rider' &&
+          riderPrice != null &&
+          riderPrice != _lastRiderPrice) {
+        _addMessage(
+          actor: 'rider',
+          price: riderPrice,
+          previousPrice: _lastRiderPrice,
+        );
+      }
+    }
+
+    _lastDriverPrice = driverPrice;
+    _lastRiderPrice = riderPrice;
+
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  // ============================================================
   // DRIVER MAKES ANOTHER OFFER
-  // ===========================================================================
+  // ============================================================
 
-  Future<void> _sendDriverOffer(
-    double price,
-  ) async {
-    if (_sendingOffer) {
-      return;
-    }
-
-    if (price <= 0) {
-      return;
-    }
+  Future<void> _sendDriverOffer(double price) async {
+    if (_sendingOffer || price <= 0) return;
 
     setState(() {
       _sendingOffer = true;
@@ -45938,6 +46125,14 @@ class _DriverNegotiationSheetState extends State<_DriverNegotiationSheet> {
       if (mounted) {
         FocusScope.of(context).unfocus();
       }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Unable to send offer: $e'),
+          ),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -45947,14 +46142,12 @@ class _DriverNegotiationSheetState extends State<_DriverNegotiationSheet> {
     }
   }
 
-  // ===========================================================================
+  // ============================================================
   // ACCEPT RIDER COUNTER
-  // ===========================================================================
+  // ============================================================
 
   Future<void> _acceptCounter() async {
-    if (_acceptingCounter) {
-      return;
-    }
+    if (_acceptingCounter) return;
 
     setState(() {
       _acceptingCounter = true;
@@ -45964,6 +46157,14 @@ class _DriverNegotiationSheetState extends State<_DriverNegotiationSheet> {
       await widget.acceptCounterCallback(
         rideId: widget.rideId,
       );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Unable to accept offer: $e'),
+          ),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -45973,32 +46174,86 @@ class _DriverNegotiationSheetState extends State<_DriverNegotiationSheet> {
     }
   }
 
-  // ===========================================================================
-  // PRICE BUBBLE
-  // ===========================================================================
+  // ============================================================
+  // PRICE CHANGE LABEL
+  // ============================================================
+
+  Widget _priceChangeLabel({
+    required double price,
+    required double? previousPrice,
+    required bool isDriver,
+  }) {
+    if (previousPrice == null) {
+      return const SizedBox.shrink();
+    }
+
+    final difference = price - previousPrice;
+
+    if (difference == 0) {
+      return const SizedBox.shrink();
+    }
+
+    final increased = difference > 0;
+    final amount = difference.abs();
+
+    final label = '${increased ? '+' : '−'}${_formatPrice(amount)}';
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 5),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            increased
+                ? Icons.arrow_upward_rounded
+                : Icons.arrow_downward_rounded,
+            size: 12,
+            color: increased ? Colors.orange.shade300 : Colors.green.shade400,
+          ),
+          const SizedBox(width: 3),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: isDriver
+                  ? (increased ? Colors.orange.shade300 : Colors.green.shade300)
+                  : (increased
+                      ? Colors.orange.shade800
+                      : Colors.green.shade700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // PRICE MESSAGE BUBBLE
+  // ============================================================
 
   Widget _priceBubble({
     required double price,
+    required double? previousPrice,
     required bool isDriver,
     required String label,
   }) {
     return Align(
       alignment: isDriver ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
-        constraints: const BoxConstraints(
-          maxWidth: 280,
-        ),
-        margin: const EdgeInsets.only(
-          bottom: 12,
-        ),
+        constraints: const BoxConstraints(maxWidth: 280),
+        margin: const EdgeInsets.only(bottom: 14),
         padding: const EdgeInsets.symmetric(
           horizontal: 15,
           vertical: 12,
         ),
         decoration: BoxDecoration(
           color: isDriver ? Colors.black : Colors.grey[100],
-          borderRadius: BorderRadius.circular(
-            18,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(18),
+            topRight: const Radius.circular(18),
+            bottomLeft: Radius.circular(isDriver ? 18 : 5),
+            bottomRight: Radius.circular(isDriver ? 5 : 18),
           ),
         ),
         child: Column(
@@ -46012,16 +46267,19 @@ class _DriverNegotiationSheetState extends State<_DriverNegotiationSheet> {
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(
-              height: 3,
-            ),
+            const SizedBox(height: 4),
             Text(
-              '₦${price.toStringAsFixed(2)}',
+              _formatPrice(price),
               style: TextStyle(
                 color: isDriver ? Colors.white : Colors.black,
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
               ),
+            ),
+            _priceChangeLabel(
+              price: price,
+              previousPrice: previousPrice,
+              isDriver: isDriver,
             ),
           ],
         ),
@@ -46029,22 +46287,16 @@ class _DriverNegotiationSheetState extends State<_DriverNegotiationSheet> {
     );
   }
 
-  // ===========================================================================
-  // TYPING DOTS
-  // ===========================================================================
-
   Widget _waitingDots() {
     return const _FourDotTypingIndicator();
   }
 
-  // ===========================================================================
+  // ============================================================
   // BUILD
-  // ===========================================================================
+  // ============================================================
 
   @override
-  Widget build(
-    BuildContext context,
-  ) {
+  Widget build(BuildContext context) {
     return SafeArea(
       child: Container(
         height: MediaQuery.of(context).size.height * 0.78,
@@ -46065,9 +46317,7 @@ class _DriverNegotiationSheetState extends State<_DriverNegotiationSheet> {
 
             if (!snapshot.data!.exists) {
               return const Center(
-                child: Text(
-                  'Ride no longer exists.',
-                ),
+                child: Text('Ride no longer exists.'),
               );
             }
 
@@ -46078,9 +46328,7 @@ class _DriverNegotiationSheetState extends State<_DriverNegotiationSheet> {
             final driverOffer = _price(
                   data['driverOfferPrice'],
                 ) ??
-                _price(
-                  data['price'],
-                );
+                _price(data['price']);
 
             final riderCounter = _price(
               data['userCounterPrice'],
@@ -46088,98 +46336,69 @@ class _DriverNegotiationSheetState extends State<_DriverNegotiationSheet> {
 
             final actor = data['lastNegotiationActor']?.toString();
 
-            // -----------------------------------------------------------------
-            // If accepted, let DriverHomePage handle navigation.
-            // -----------------------------------------------------------------
-
             if (status == 'accepted' || status == 'ride_started') {
               return _buildAcceptedState();
             }
-
-            // -----------------------------------------------------------------
-            // Cancelled.
-            // -----------------------------------------------------------------
 
             if (status == 'cancelled' || status == 'driver_rejected') {
               return _buildCancelledState();
             }
 
-            // -----------------------------------------------------------------
-            // Current negotiation state.
-            // -----------------------------------------------------------------
-
-            final bool riderIsWaiting =
+            final riderIsWaiting =
                 status == 'innegotiation' && actor == 'rider';
 
-            final bool driverIsWaiting =
+            final driverIsWaiting =
                 status == 'innegotiation' && actor == 'driver';
 
-            final bool firstOffer = status == 'driver_offered';
+            final firstOffer = status == 'driver_offered';
 
             return Column(
               children: [
-                // -------------------------------------------------------------
-                // HANDLE
-                // -------------------------------------------------------------
-
-                const SizedBox(
-                  height: 10,
-                ),
+                const SizedBox(height: 10),
 
                 Container(
                   width: 45,
                   height: 5,
                   decoration: BoxDecoration(
                     color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(
-                      20,
-                    ),
+                    borderRadius: BorderRadius.circular(20),
                   ),
                 ),
 
-                const SizedBox(
-                  height: 18,
-                ),
+                const SizedBox(height: 18),
 
-                // -------------------------------------------------------------
                 // HEADER
-                // -------------------------------------------------------------
-
                 Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 20,
                   ),
                   child: Row(
                     children: [
-                      driverOffer != null
-                          ? Container(
-                              width: 46,
-                              height: 46,
-                              decoration: BoxDecoration(
-                                color: Colors.grey[100],
-                                shape: BoxShape.circle,
-                                image: widget.driverImageUrl != null &&
-                                        widget.driverImageUrl!.isNotEmpty
-                                    ? DecorationImage(
-                                        image: NetworkImage(
-                                          widget.driverImageUrl!,
-                                        ),
-                                        fit: BoxFit.cover,
-                                      )
-                                    : null,
-                              ),
-                              child: widget.driverImageUrl == null ||
-                                      widget.driverImageUrl!.isEmpty
-                                  ? const Icon(
-                                      Icons.person,
-                                      color: Colors.black54,
-                                    )
-                                  : null,
-                            )
-                          : const SizedBox(),
-                      const SizedBox(
-                        width: 12,
+                      Container(
+                        width: 46,
+                        height: 46,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          shape: BoxShape.circle,
+                          image: widget.driverImageUrl != null &&
+                                  widget.driverImageUrl!.isNotEmpty
+                              ? DecorationImage(
+                                  image: NetworkImage(
+                                    widget.driverImageUrl!,
+                                  ),
+                                  fit: BoxFit.cover,
+                                )
+                              : null,
+                        ),
+                        child: widget.driverImageUrl == null ||
+                                widget.driverImageUrl!.isEmpty
+                            ? const Icon(
+                                Icons.person,
+                                color: Colors.black54,
+                              )
+                            : null,
                       ),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -46208,9 +46427,7 @@ class _DriverNegotiationSheetState extends State<_DriverNegotiationSheet> {
                         ),
                         decoration: BoxDecoration(
                           color: Colors.green[50],
-                          borderRadius: BorderRadius.circular(
-                            20,
-                          ),
+                          borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
                           firstOffer ? 'Offer' : 'Negotiating',
@@ -46225,113 +46442,98 @@ class _DriverNegotiationSheetState extends State<_DriverNegotiationSheet> {
                   ),
                 ),
 
-                const SizedBox(
-                  height: 15,
-                ),
+                const SizedBox(height: 15),
+                const Divider(height: 1),
 
-                const Divider(
-                  height: 1,
-                ),
-
-                // -------------------------------------------------------------
-                // CHAT AREA
-                // -------------------------------------------------------------
-
+                // CHAT HISTORY
                 Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.all(
-                      20,
-                    ),
-                    children: [
-                      if (driverOffer != null)
-                        _priceBubble(
-                          price: driverOffer,
-                          isDriver: true,
-                          label: 'Your offer',
-                        ),
-                      if (riderCounter != null)
-                        _priceBubble(
-                          price: riderCounter,
-                          isDriver: false,
-                          label: 'Rider counter offer',
-                        ),
-                      if (riderIsWaiting) ...[
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 11,
+                  child: ListView.builder(
+                    padding: const EdgeInsets.all(20),
+                    itemCount: _messages.length +
+                        ((riderIsWaiting || driverIsWaiting || firstOffer)
+                            ? 1
+                            : 0),
+                    itemBuilder: (context, index) {
+                      if (index < _messages.length) {
+                        final message = _messages[index];
+
+                        final isDriver = message['actor'] == 'driver';
+
+                        final price = (message['price'] as num).toDouble();
+
+                        final previousPrice = _price(message['previousPrice']);
+
+                        return _priceBubble(
+                          price: price,
+                          previousPrice: previousPrice,
+                          isDriver: isDriver,
+                          label:
+                              isDriver ? 'Driver offer' : 'Rider counteroffer',
+                        );
+                      }
+
+                      if (riderIsWaiting) {
+                        return Padding(
+                          padding: const EdgeInsets.only(
+                            top: 4,
+                            bottom: 12,
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 11,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[100],
+                                  borderRadius: BorderRadius.circular(18),
+                                ),
+                                child: _waitingDots(),
                               ),
-                              decoration: BoxDecoration(
-                                color: Colors.grey[100],
-                                borderRadius: BorderRadius.circular(
-                                  18,
+                              const SizedBox(width: 10),
+                              Flexible(
+                                child: Text(
+                                  'Rider is waiting for your response',
+                                  style: TextStyle(
+                                    color: Colors.grey[600],
+                                    fontSize: 12,
+                                  ),
                                 ),
                               ),
-                              child: _waitingDots(),
-                            ),
-                            const SizedBox(
-                              width: 10,
-                            ),
-                            Text(
-                              'Rider is waiting for your response',
-                              style: TextStyle(
-                                color: Colors.grey[600],
-                                fontSize: 12,
+                            ],
+                          ),
+                        );
+                      }
+
+                      if (driverIsWaiting || firstOffer) {
+                        return Padding(
+                          padding: const EdgeInsets.only(
+                            top: 4,
+                            bottom: 12,
+                          ),
+                          child: Row(
+                            children: [
+                              _waitingDots(),
+                              const SizedBox(width: 10),
+                              Text(
+                                'Waiting for rider response...',
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 12,
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
-                      ],
-                      if (driverIsWaiting) ...[
-                        const SizedBox(
-                          height: 4,
-                        ),
-                        Row(
-                          children: [
-                            _waitingDots(),
-                            const SizedBox(
-                              width: 10,
-                            ),
-                            Text(
-                              'Waiting for rider response...',
-                              style: TextStyle(
-                                color: Colors.grey[600],
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                      if (firstOffer) ...[
-                        const SizedBox(
-                          height: 4,
-                        ),
-                        Row(
-                          children: [
-                            _waitingDots(),
-                            const SizedBox(
-                              width: 10,
-                            ),
-                            Text(
-                              'Waiting for rider response...',
-                              style: TextStyle(
-                                color: Colors.grey[600],
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ],
+                            ],
+                          ),
+                        );
+                      }
+
+                      return const SizedBox.shrink();
+                    },
                   ),
                 ),
 
-                // -------------------------------------------------------------
                 // ACTION AREA
-                // -------------------------------------------------------------
-
                 if (riderIsWaiting && riderCounter != null)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(
@@ -46342,7 +46544,6 @@ class _DriverNegotiationSheetState extends State<_DriverNegotiationSheet> {
                     ),
                     child: Column(
                       children: [
-                        // Accept rider counter.
                         SizedBox(
                           width: double.infinity,
                           height: 50,
@@ -46353,9 +46554,7 @@ class _DriverNegotiationSheetState extends State<_DriverNegotiationSheet> {
                               backgroundColor: Colors.green[700],
                               foregroundColor: Colors.white,
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(
-                                  25,
-                                ),
+                                borderRadius: BorderRadius.circular(25),
                               ),
                             ),
                             child: _acceptingCounter
@@ -46368,36 +46567,20 @@ class _DriverNegotiationSheetState extends State<_DriverNegotiationSheet> {
                                     ),
                                   )
                                 : Text(
-                                    'Accept ₦${riderCounter.toStringAsFixed(2)}',
+                                    'Accept ${_formatPrice(riderCounter)}',
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
                           ),
                         ),
-
-                        const SizedBox(
-                          height: 10,
-                        ),
-
-                        // Make another driver offer.
+                        const SizedBox(height: 10),
                         _buildOfferInput(),
                       ],
                     ),
                   ),
 
-                if (driverIsWaiting)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      18,
-                      8,
-                      18,
-                      18,
-                    ),
-                    child: _buildOfferInput(),
-                  ),
-
-                if (firstOffer)
+                if (driverIsWaiting || firstOffer)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(
                       18,
@@ -46415,9 +46598,9 @@ class _DriverNegotiationSheetState extends State<_DriverNegotiationSheet> {
     );
   }
 
-  // ===========================================================================
+  // ============================================================
   // OFFER INPUT
-  // ===========================================================================
+  // ============================================================
 
   Widget _buildOfferInput() {
     return Row(
@@ -46434,9 +46617,7 @@ class _DriverNegotiationSheetState extends State<_DriverNegotiationSheet> {
               filled: true,
               fillColor: Colors.grey[100],
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(
-                  25,
-                ),
+                borderRadius: BorderRadius.circular(25),
                 borderSide: BorderSide.none,
               ),
               contentPadding: const EdgeInsets.symmetric(
@@ -46444,11 +46625,18 @@ class _DriverNegotiationSheetState extends State<_DriverNegotiationSheet> {
                 vertical: 14,
               ),
             ),
+            onSubmitted: (value) {
+              final price = double.tryParse(
+                value.replaceAll(',', '').trim(),
+              );
+
+              if (price != null && price > 0) {
+                _sendDriverOffer(price);
+              }
+            },
           ),
         ),
-        const SizedBox(
-          width: 8,
-        ),
+        const SizedBox(width: 8),
         Container(
           width: 50,
           height: 50,
@@ -46461,31 +46649,19 @@ class _DriverNegotiationSheetState extends State<_DriverNegotiationSheet> {
                 ? null
                 : () {
                     final price = double.tryParse(
-                      _offerController.text
-                          .replaceAll(
-                            ',',
-                            '',
-                          )
-                          .trim(),
+                      _offerController.text.replaceAll(',', '').trim(),
                     );
 
                     if (price == null || price <= 0) {
-                      ScaffoldMessenger.of(
-                        context,
-                      ).showSnackBar(
+                      ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text(
-                            'Enter a valid offer.',
-                          ),
+                          content: Text('Enter a valid offer.'),
                         ),
                       );
-
                       return;
                     }
 
-                    _sendDriverOffer(
-                      price,
-                    );
+                    _sendDriverOffer(price);
                   },
             icon: _sendingOffer
                 ? const SizedBox(
@@ -46507,9 +46683,9 @@ class _DriverNegotiationSheetState extends State<_DriverNegotiationSheet> {
     );
   }
 
-  // ===========================================================================
+  // ============================================================
   // ACCEPTED STATE
-  // ===========================================================================
+  // ============================================================
 
   Widget _buildAcceptedState() {
     return const Center(
@@ -46521,9 +46697,7 @@ class _DriverNegotiationSheetState extends State<_DriverNegotiationSheet> {
             color: Colors.green,
             size: 55,
           ),
-          SizedBox(
-            height: 14,
-          ),
+          SizedBox(height: 14),
           Text(
             'Ride accepted',
             style: TextStyle(
@@ -46531,23 +46705,19 @@ class _DriverNegotiationSheetState extends State<_DriverNegotiationSheet> {
               fontWeight: FontWeight.bold,
             ),
           ),
-          SizedBox(
-            height: 6,
-          ),
+          SizedBox(height: 6),
           Text(
             'Opening your ride...',
-            style: TextStyle(
-              color: Colors.black54,
-            ),
+            style: TextStyle(color: Colors.black54),
           ),
         ],
       ),
     );
   }
 
-  // ===========================================================================
+  // ============================================================
   // CANCELLED STATE
-  // ===========================================================================
+  // ============================================================
 
   Widget _buildCancelledState() {
     return const Center(
@@ -46559,9 +46729,7 @@ class _DriverNegotiationSheetState extends State<_DriverNegotiationSheet> {
             color: Colors.red,
             size: 50,
           ),
-          SizedBox(
-            height: 12,
-          ),
+          SizedBox(height: 12),
           Text(
             'Ride is no longer available',
             style: TextStyle(
@@ -47529,12 +47697,6 @@ class DriverOfferScreen extends StatefulWidget {
   State<DriverOfferScreen> createState() => _DriverOfferScreenState();
 }
 
-// ============================================================================
-// LOCAL CHAT MESSAGE
-//
-// This is kept in memory only. It is NOT saved to Firestore.
-// ============================================================================
-
 class _LocalNegotiationMessage {
   final String actor;
   final double price;
@@ -47550,10 +47712,8 @@ class _LocalNegotiationMessage {
 
   bool get isDriver => actor == 'driver';
 
-  double? get difference {
-    if (previousPrice == null) return null;
-    return price - previousPrice!;
-  }
+  double? get difference =>
+      previousPrice == null ? null : price - previousPrice!;
 }
 
 class _DriverOfferScreenState extends State<DriverOfferScreen>
@@ -47566,22 +47726,19 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
   bool _offerExpired = false;
   bool _expiryInProgress = false;
 
+  // Once negotiation begins, the countdown is permanently disabled
+  // for this screen and will never restart.
+  bool _hasEnteredNegotiation = false;
+
   double? _currentDriverOffer;
   double? _myCounterOffer;
-
-  String _lastNegotiationActor = '';
-  String _lastNegotiationType = '';
 
   static const int _offerTimeoutSeconds = 30;
 
   late final AnimationController _countdownController;
 
-  final TextEditingController _counterPriceController = TextEditingController();
-
-  // Local negotiation messages. These disappear when this screen is disposed.
   final List<_LocalNegotiationMessage> _chatMessages = [];
 
-  // Lets the bottom sheet rebuild when a new message arrives.
   final ValueNotifier<int> _chatRevision = ValueNotifier<int>(0);
 
   final Set<String> _seenNegotiationEvents = {};
@@ -47592,17 +47749,12 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
   String? _lastDriverEventKey;
   String? _lastRiderEventKey;
 
-  // ==========================================================================
-  // INIT
-  // ==========================================================================
-
   @override
   void initState() {
     super.initState();
 
     _currentDriverOffer = widget.price;
 
-    // Show the original offer immediately, even before the first snapshot.
     _chatMessages.add(
       _LocalNegotiationMessage(
         actor: 'driver',
@@ -47628,14 +47780,15 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
     _listenForRide();
   }
 
-  // ==========================================================================
+  // ===========================================================================
   // COUNTDOWN
-  // ==========================================================================
+  // ===========================================================================
 
   void _startOfferCountdown() {
     if (!mounted ||
         _offerExpired ||
         _hasNavigatedToRideStarted ||
+        _hasEnteredNegotiation ||
         _isSubmitting) {
       return;
     }
@@ -47657,9 +47810,9 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
   int get _secondsRemaining =>
       (_countdownRemaining * _offerTimeoutSeconds).ceil();
 
-  // ==========================================================================
+  // ===========================================================================
   // FIRESTORE LISTENER
-  // ==========================================================================
+  // ===========================================================================
 
   void _listenForRide() {
     _rideSubscription = FirebaseFirestore.instance
@@ -47674,26 +47827,13 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
     );
   }
 
-  // ==========================================================================
-  // SAFE DOUBLE
-  // ==========================================================================
-
   double? _readDouble(dynamic value) {
     if (value == null) return null;
 
-    if (value is num) {
-      return value.toDouble();
-    }
+    if (value is num) return value.toDouble();
 
     return double.tryParse(value.toString());
   }
-
-  // ==========================================================================
-  // SNAPSHOT EVENT KEY
-  //
-  // We use the existing lastNegotiation fields to identify a new event.
-  // No new Firestore history field is required.
-  // ==========================================================================
 
   String _buildEventKey(
     Map<String, dynamic> data,
@@ -47714,18 +47854,12 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
     return '$actor|$type|${price.toStringAsFixed(2)}|$timestampKey';
   }
 
-  // ==========================================================================
-  // ADD A LOCAL CHAT MESSAGE
-  // ==========================================================================
-
   void _addLocalChatMessage({
     required String actor,
     required double price,
     required String eventKey,
   }) {
-    if (_seenNegotiationEvents.contains(eventKey)) {
-      return;
-    }
+    if (_seenNegotiationEvents.contains(eventKey)) return;
 
     _seenNegotiationEvents.add(eventKey);
 
@@ -47753,9 +47887,9 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
     _chatRevision.value++;
   }
 
-  // ==========================================================================
+  // ===========================================================================
   // HANDLE FIRESTORE UPDATE
-  // ==========================================================================
+  // ===========================================================================
 
   void _handleRideUpdate(
     DocumentSnapshot<Map<String, dynamic>> snapshot,
@@ -47772,17 +47906,21 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
       data['driverOfferPrice'] ?? data['price'],
     );
 
-    final double? riderCounter = _readDouble(
-      data['userCounterPrice'],
-    );
+    final double? riderCounter = _readDouble(data['userCounterPrice']);
 
     final String actor = data['lastNegotiationActor']?.toString() ?? '';
 
     final String type = data['lastNegotiationType']?.toString() ?? '';
 
-    // ------------------------------------------------------------------------
-    // RIDE ACCEPTED / STARTED
-    // ------------------------------------------------------------------------
+    // Entering negotiation permanently disables the countdown.
+    if (status == 'innegotiation') {
+      _hasEnteredNegotiation = true;
+      _stopOfferCountdown();
+    }
+
+    // -----------------------------------------------------------------------
+    // ACCEPTED / STARTED
+    // -----------------------------------------------------------------------
 
     if (status == 'accepted' || status == 'ride_started') {
       _stopOfferCountdown();
@@ -47801,14 +47939,15 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
       return;
     }
 
-    // ------------------------------------------------------------------------
+    // -----------------------------------------------------------------------
     // CANCELLED
-    // ------------------------------------------------------------------------
+    // -----------------------------------------------------------------------
 
     if (status == 'cancelled') {
       _stopOfferCountdown();
 
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('The ride offer has been cancelled.'),
@@ -47824,12 +47963,9 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
       return;
     }
 
-    // ------------------------------------------------------------------------
+    // -----------------------------------------------------------------------
     // DRIVER OFFER
-    //
-    // Append a message only when the existing negotiation fields identify a
-    // new driver offer. Ordinary snapshot updates won't duplicate the bubble.
-    // ------------------------------------------------------------------------
+    // -----------------------------------------------------------------------
 
     if (actor == 'driver' && type == 'offer' && driverOffer != null) {
       final eventKey = _buildEventKey(
@@ -47841,8 +47977,6 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
 
       final bool isNewEvent = !_seenNegotiationEvents.contains(eventKey);
 
-      // The first driver offer is already represented by the initial bubble.
-      // Avoid adding it twice when the first snapshot arrives.
       final bool matchesInitialOffer = _chatMessages.length == 1 &&
           (driverOffer - widget.price).abs() < 0.01;
 
@@ -47857,28 +47991,27 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
         );
       }
 
-      if (isNewEvent && mounted) {
+      if (mounted) {
         setState(() {
           _currentDriverOffer = driverOffer;
-          _isSubmitting = false;
-        });
-      } else if (mounted) {
-        setState(() {
-          _currentDriverOffer = driverOffer;
+          if (isNewEvent) {
+            _isSubmitting = false;
+          }
         });
       }
 
-      // Give every new driver offer its own 30-second response window.
-      if (isNewEvent && status == 'innegotiation') {
+      // Never restart the timer for an offer received during negotiation.
+      // Only the original driver_offered state has a response countdown.
+      if (isNewEvent && status == 'driver_offered' && !_hasEnteredNegotiation) {
         _startOfferCountdown();
       }
     } else if (driverOffer != null) {
       _currentDriverOffer = driverOffer;
     }
 
-    // ------------------------------------------------------------------------
+    // -----------------------------------------------------------------------
     // RIDER COUNTER
-    // ------------------------------------------------------------------------
+    // -----------------------------------------------------------------------
 
     if (actor == 'rider' && type == 'counter' && riderCounter != null) {
       final eventKey = _buildEventKey(
@@ -47905,15 +48038,15 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
         }
       }
 
-      // A rider has responded, so the previous driver-offer timer stops.
+      _hasEnteredNegotiation = true;
       _stopOfferCountdown();
     } else if (riderCounter != null) {
       _myCounterOffer = riderCounter;
     }
 
-    // ------------------------------------------------------------------------
-    // OPEN CHAT AUTOMATICALLY DURING NEGOTIATION
-    // ------------------------------------------------------------------------
+    // -----------------------------------------------------------------------
+    // OPEN NEGOTIATION CHAT
+    // -----------------------------------------------------------------------
 
     if (status == 'innegotiation' &&
         !_negotiationSheetOpen &&
@@ -47928,25 +48061,22 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
       });
     }
 
-    // Stop the timer if this is no longer an active initial offer and it
-    // wasn't a fresh driver offer that restarted the timer above.
-    if (status != 'driver_offered' && !(actor == 'driver' && type == 'offer')) {
+    // Do not leave the countdown running after the initial offer state.
+    if (status != 'driver_offered' || _hasEnteredNegotiation) {
       _stopOfferCountdown();
     }
   }
 
-  // ==========================================================================
-  // EXPIRE OFFER
-  //
-  // If the rider does not respond in time, release the driver offer and return
-  // this ride request to pending so the waiting screen can continue searching.
-  // ==========================================================================
+  // ===========================================================================
+  // EXPIRE INITIAL DRIVER OFFER
+  // ===========================================================================
 
   Future<void> _expireDriverOffer() async {
     if (!mounted ||
         _offerExpired ||
         _expiryInProgress ||
-        _hasNavigatedToRideStarted) {
+        _hasNavigatedToRideStarted ||
+        _hasEnteredNegotiation) {
       return;
     }
 
@@ -47971,28 +48101,21 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
 
           final String status = data['Status']?.toString() ?? '';
 
-          // Never expire an accepted ride.
-          if (status == 'accepted' || status == 'ride_started') {
+          // Negotiation and accepted rides must never expire here.
+          if (status != 'driver_offered') return;
+
+          if (data['lastNegotiationActor']?.toString() == 'rider') {
             return;
           }
-
-          if (status == 'cancelled') return;
 
           final double? latestOffer = _readDouble(
             data['driverOfferPrice'] ?? data['price'],
           );
 
-          final bool validStatus = status == 'driver_offered' ||
-              (status == 'innegotiation' &&
-                  data['lastNegotiationActor']?.toString() == 'driver' &&
-                  data['lastNegotiationType']?.toString() == 'offer');
-
-          if (!validStatus || latestOffer == null) return;
+          if (latestOffer == null) return;
 
           final double displayedOffer = _currentDriverOffer ?? widget.price;
 
-          // Protect against resetting a newer offer that arrived as the timer
-          // was expiring.
           if ((latestOffer - displayedOffer).abs() > 0.01) {
             return;
           }
@@ -48037,8 +48160,6 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
           Navigator.pop(context);
         }
       } else {
-        // The offer may have changed or the ride may already have been
-        // accepted. Let the Firestore listener determine the next state.
         _stopOfferCountdown();
       }
     } catch (e) {
@@ -48049,9 +48170,9 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
     }
   }
 
-  // ==========================================================================
+  // ===========================================================================
   // NAVIGATE TO RIDE STARTED
-  // ==========================================================================
+  // ===========================================================================
 
   void _navigateToRideStarted(double finalPrice) {
     if (!mounted || _hasNavigatedToRideStarted) return;
@@ -48082,9 +48203,9 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
     );
   }
 
-  // ==========================================================================
-  // ACCEPT CURRENT DRIVER OFFER
-  // ==========================================================================
+  // ===========================================================================
+  // ACCEPT DRIVER OFFER
+  // ===========================================================================
 
   Future<void> _acceptOffer() async {
     if (_isSubmitting || _offerExpired) return;
@@ -48114,7 +48235,7 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
 
           if (data == null) return;
 
-          final status = data['Status']?.toString();
+          final String status = data['Status']?.toString() ?? '';
 
           if (status != 'driver_offered' && status != 'innegotiation') {
             return;
@@ -48159,12 +48280,15 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
           ),
         );
 
-        // Restart the countdown only if the offer is still active.
-        _startOfferCountdown();
+        // Only the initial offer is allowed to restart its countdown.
+        if (!_hasEnteredNegotiation) {
+          _startOfferCountdown();
+        }
+
         return;
       }
 
-      // Firestore listener navigates to RideStartedScreen.
+      // The Firestore listener navigates to RideStartedScreen.
     } catch (e) {
       debugPrint('Accept offer error: $e');
 
@@ -48182,168 +48306,346 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
         ),
       );
 
-      _startOfferCountdown();
+      if (!_hasEnteredNegotiation) {
+        _startOfferCountdown();
+      }
     }
   }
 
-  // ==========================================================================
-  // COUNTER OFFER SHEET
-  // ==========================================================================
+  // ===========================================================================
+  // COUNTER OPTIONS: 90%, 80%, AND 70% OF THE DRIVER'S OFFER
+  // ===========================================================================
+
+  List<double> _counterOfferOptions() {
+    final double offer = _currentDriverOffer ?? widget.price;
+
+    return [
+      (offer * 0.90).roundToDouble(),
+      (offer * 0.80).roundToDouble(),
+      (offer * 0.70).roundToDouble(),
+    ];
+  }
 
   void _showCounterOfferSheet() {
     if (_isSubmitting || _offerExpired) return;
 
-    _counterPriceController.text =
-        (_currentDriverOffer ?? widget.price).toStringAsFixed(0);
+    final double driverOffer = _currentDriverOffer ?? widget.price;
+    final List<double> options = _counterOfferOptions();
+
+    if (driverOffer <= 0 || options.any((price) => price <= 0)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to calculate counter-offer options.'),
+        ),
+      );
+      return;
+    }
+
+    double selectedPrice = options.first;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
-          ),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 25),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(
-                top: Radius.circular(28),
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
               ),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 45,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 25),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(28),
                   ),
                 ),
-                const SizedBox(height: 22),
-                const Text(
-                  'Counter Offer',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Make a new offer to the driver.',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey.shade600,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                TextField(
-                  controller: _counterPriceController,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  autofocus: true,
-                  decoration: InputDecoration(
-                    prefixText: '₦ ',
-                    hintText: 'Enter your price',
-                    filled: true,
-                    fillColor: Colors.grey.shade100,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide.none,
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(
-                        color: Colors.black,
-                        width: 1.5,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 45,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
                       ),
                     ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      final value = _counterPriceController.text.trim();
-                      final counterPrice = double.tryParse(value);
-
-                      if (counterPrice == null || counterPrice <= 0) {
-                        ScaffoldMessenger.of(sheetContext).showSnackBar(
-                          const SnackBar(
-                            content: Text('Enter a valid price.'),
-                          ),
-                        );
-                        return;
-                      }
-
-                      Navigator.pop(sheetContext);
-
-                      await _submitCounterOffer(counterPrice);
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.black,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(28),
-                      ),
-                    ),
-                    child: const Text(
-                      'Send Counter Offer',
+                    const SizedBox(height: 22),
+                    const Text(
+                      'Counter Offer',
                       style: TextStyle(
-                        fontSize: 15,
+                        fontSize: 22,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                  ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'The driver offered ₦'
+                      '${driverOffer.toStringAsFixed(0)}. '
+                      'Choose one of the available counter prices.',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Only the three permitted prices are selectable.
+                    ...options.map((price) {
+                      final bool selected =
+                          (selectedPrice - price).abs() < 0.01;
+
+                      final int percentage = price == options[0]
+                          ? 90
+                          : price == options[1]
+                              ? 80
+                              : 70;
+
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: InkWell(
+                          onTap: () {
+                            setSheetState(() {
+                              selectedPrice = price;
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(16),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 15,
+                            ),
+                            decoration: BoxDecoration(
+                              color: selected
+                                  ? Colors.green.shade50
+                                  : Colors.grey.shade50,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: selected
+                                    ? Colors.green.shade700
+                                    : Colors.grey.shade300,
+                                width: selected ? 1.5 : 1,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  selected
+                                      ? Icons.radio_button_checked
+                                      : Icons.radio_button_off,
+                                  color: selected
+                                      ? Colors.green.shade700
+                                      : Colors.grey.shade500,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '$percentage% of driver offer',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        '₦${price.toStringAsFixed(0)}',
+                                        style: const TextStyle(
+                                          fontSize: 19,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.black,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: ElevatedButton(
+                        onPressed: _isSubmitting
+                            ? null
+                            : () async {
+                                // Recheck the options against the latest
+                                // driver offer before submitting.
+                                final latestOffer =
+                                    _currentDriverOffer ?? widget.price;
+
+                                final latestOptions = [
+                                  (latestOffer * 0.90).roundToDouble(),
+                                  (latestOffer * 0.80).roundToDouble(),
+                                  (latestOffer * 0.70).roundToDouble(),
+                                ];
+
+                                final bool validSelection = latestOptions.any(
+                                  (value) =>
+                                      (value - selectedPrice).abs() < 0.01,
+                                );
+
+                                if (!validSelection) {
+                                  Navigator.pop(sheetContext);
+
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'The driver offer changed. '
+                                          'Please choose a new counter.',
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                  return;
+                                }
+
+                                Navigator.pop(sheetContext);
+
+                                await _submitCounterOffer(selectedPrice);
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.black,
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor: Colors.grey.shade400,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(28),
+                          ),
+                        ),
+                        child: const Text(
+                          'Send Counter Offer',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );
   }
 
-  // ==========================================================================
+  // ===========================================================================
   // SUBMIT COUNTER
-  // ==========================================================================
+  // ===========================================================================
 
   Future<void> _submitCounterOffer(double counterPrice) async {
     if (_isSubmitting || _offerExpired) return;
 
+    // Entering negotiation stops the countdown and prevents it from
+    // restarting, including after future Firestore snapshots.
+    _hasEnteredNegotiation = true;
     _stopOfferCountdown();
+
+    final double offer = _currentDriverOffer ?? widget.price;
+
+    final List<double> allowedOptions = [
+      (offer * 0.90).roundToDouble(),
+      (offer * 0.80).roundToDouble(),
+      (offer * 0.70).roundToDouble(),
+    ];
+
+    if (!allowedOptions.any(
+      (value) => (value - counterPrice).abs() < 0.01,
+    )) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Please choose one of the three available counter offers.',
+          ),
+        ),
+      );
+      return;
+    }
 
     setState(() {
       _isSubmitting = true;
     });
 
     try {
-      await FirebaseFirestore.instance
-          .collection('ride_requests')
-          .doc(widget.rideId)
-          .update({
-        'Status': 'innegotiation',
-        'userCounterPrice': counterPrice,
-        'userCounterAt': FieldValue.serverTimestamp(),
-        'lastNegotiationActor': 'rider',
-        'lastNegotiationType': 'counter',
-        'lastNegotiationPrice': counterPrice,
-        'lastNegotiationAt': FieldValue.serverTimestamp(),
-      });
+      // A transaction protects against submitting a counter based on an
+      // offer that changed while the counter sheet was open.
+      await FirebaseFirestore.instance.runTransaction(
+        (transaction) async {
+          final ref = FirebaseFirestore.instance
+              .collection('ride_requests')
+              .doc(widget.rideId);
+
+          final snapshot = await transaction.get(ref);
+
+          if (!snapshot.exists) {
+            throw Exception('Ride request no longer exists.');
+          }
+
+          final data = snapshot.data();
+
+          if (data == null) {
+            throw Exception('Ride request data is unavailable.');
+          }
+
+          final String status = data['Status']?.toString() ?? '';
+
+          if (status != 'driver_offered' && status != 'innegotiation') {
+            throw Exception('This driver offer is no longer active.');
+          }
+
+          final double? latestOffer = _readDouble(
+            data['driverOfferPrice'] ?? data['price'],
+          );
+
+          if (latestOffer == null || (latestOffer - offer).abs() > 0.01) {
+            throw Exception('The driver offer has changed.');
+          }
+
+          final List<double> latestOptions = [
+            (latestOffer * 0.90).roundToDouble(),
+            (latestOffer * 0.80).roundToDouble(),
+            (latestOffer * 0.70).roundToDouble(),
+          ];
+
+          if (!latestOptions.any(
+            (value) => (value - counterPrice).abs() < 0.01,
+          )) {
+            throw Exception('Invalid counter-offer amount.');
+          }
+
+          transaction.update(ref, {
+            'Status': 'innegotiation',
+            'userCounterPrice': counterPrice,
+            'userCounterAt': FieldValue.serverTimestamp(),
+            'lastNegotiationActor': 'rider',
+            'lastNegotiationType': 'counter',
+            'lastNegotiationPrice': counterPrice,
+            'lastNegotiationAt': FieldValue.serverTimestamp(),
+          });
+        },
+      );
 
       if (!mounted) return;
 
-      // The Firestore listener will add the counter to the local chat.
       setState(() {
         _myCounterOffer = counterPrice;
         _isSubmitting = false;
@@ -48358,20 +48660,23 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
-            'Unable to send counter offer. Please try again.',
+            e.toString().contains('changed')
+                ? 'The driver offer changed. Please review the latest offer.'
+                : 'Unable to send counter offer. Please try again.',
           ),
         ),
       );
     }
   }
 
-  // ==========================================================================
-  // COUNTDOWN ACCEPT BUTTON
+  // ===========================================================================
+  // ACCEPT BUTTON
   //
-  // The colored overlay shrinks from right to left as the timer counts down.
-  // ==========================================================================
+  // The button now has one centered label only. The countdown is displayed
+  // only before negotiation begins.
+  // ===========================================================================
 
   Widget _buildCountdownAcceptButton({
     required VoidCallback onPressed,
@@ -48379,6 +48684,10 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
     return AnimatedBuilder(
       animation: _countdownController,
       builder: (context, child) {
+        final bool showCountdown = !_hasEnteredNegotiation &&
+            !_offerExpired &&
+            !_hasNavigatedToRideStarted;
+
         final double remaining = _countdownRemaining;
 
         return SizedBox(
@@ -48393,30 +48702,18 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  const Center(
-                    child: Text(
-                      'Accept Offer',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-
-                  // Remaining time overlay. Its right edge moves left as
-                  // the countdown decreases.
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: FractionallySizedBox(
-                      widthFactor: remaining,
-                      heightFactor: 1,
+                  if (showCountdown)
+                    Align(
                       alignment: Alignment.centerLeft,
-                      child: Container(
-                        color: Colors.green.shade700.withOpacity(.72),
+                      child: FractionallySizedBox(
+                        widthFactor: remaining,
+                        heightFactor: 1,
+                        alignment: Alignment.centerLeft,
+                        child: Container(
+                          color: Colors.green.shade700.withOpacity(.72),
+                        ),
                       ),
                     ),
-                  ),
-
                   Center(
                     child: _isSubmitting
                         ? const SizedBox(
@@ -48428,7 +48725,9 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
                             ),
                           )
                         : Text(
-                            'Accept Offer · ${_secondsRemaining}s',
+                            showCountdown
+                                ? 'Accept Offer · ${_secondsRemaining}s'
+                                : 'Accept Offer',
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
@@ -48444,9 +48743,9 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
     );
   }
 
-  // ==========================================================================
+  // ===========================================================================
   // FOUR-DOT LOADER
-  // ==========================================================================
+  // ===========================================================================
 
   Widget _buildFourDotLoader() {
     return Row(
@@ -48468,14 +48767,17 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
     );
   }
 
-  // ==========================================================================
+  // ===========================================================================
   // NEGOTIATION CHAT
-  // ==========================================================================
+  // ===========================================================================
 
   void _openNegotiationChat() {
     if (!mounted || _negotiationSheetOpen || _hasNavigatedToRideStarted) {
       return;
     }
+
+    _hasEnteredNegotiation = true;
+    _stopOfferCountdown();
 
     _negotiationSheetOpen = true;
 
@@ -48518,14 +48820,11 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
                 ],
               ),
               const SizedBox(height: 18),
-
-              // This listens to local state changes, not a Firestore history.
               Expanded(
                 child: ValueListenableBuilder<int>(
                   valueListenable: _chatRevision,
                   builder: (context, revision, child) {
                     return ListView.builder(
-                      reverse: false,
                       itemCount: _chatMessages.length + (_isSubmitting ? 1 : 0),
                       itemBuilder: (context, index) {
                         if (_isSubmitting && index == _chatMessages.length) {
@@ -48554,7 +48853,6 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 12),
                           child: Align(
-                            // Driver offers right, rider counters left.
                             alignment: message.isDriver
                                 ? Alignment.centerRight
                                 : Alignment.centerLeft,
@@ -48573,7 +48871,6 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
                   },
                 ),
               ),
-
               const SizedBox(height: 12),
               Row(
                 children: [
@@ -48619,9 +48916,9 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
     });
   }
 
-  // ==========================================================================
+  // ===========================================================================
   // CHAT BUBBLE
-  // ==========================================================================
+  // ===========================================================================
 
   Widget _buildChatBubble({
     required String label,
@@ -48689,26 +48986,26 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
     );
   }
 
-  // ==========================================================================
+  // ===========================================================================
   // DISPOSE
-  // ==========================================================================
+  // ===========================================================================
 
   @override
   void dispose() {
     _rideSubscription?.cancel();
     _countdownController.dispose();
-    _counterPriceController.dispose();
     _chatRevision.dispose();
     super.dispose();
   }
 
-  // ==========================================================================
+  // ===========================================================================
   // BUILD
-  // ==========================================================================
+  // ===========================================================================
 
   @override
   Widget build(BuildContext context) {
-    final displayedPrice = _currentDriverOffer ?? widget.price;
+    final double displayedPrice = _currentDriverOffer ?? widget.price;
+
     final bool negotiating = _myCounterOffer != null;
 
     return Scaffold(
@@ -48789,11 +49086,6 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
                 ],
               ),
               const SizedBox(height: 18),
-
-              // ==============================================================
-              // DRIVER OFFER CARD
-              // ==============================================================
-
               Center(
                 child: Container(
                   width: 350,
@@ -48824,11 +49116,7 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
                             child: Image.asset(
                               'assets/images/driver.png',
                               fit: BoxFit.cover,
-                              errorBuilder: (
-                                context,
-                                error,
-                                stackTrace,
-                              ) {
+                              errorBuilder: (context, error, stackTrace) {
                                 return Container(
                                   color: Colors.grey.shade200,
                                   child: const Icon(
@@ -48902,11 +49190,6 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
                         ],
                       ),
                       const SizedBox(height: 14),
-
-                      // ------------------------------------------------------
-                      // COUNTER SUMMARY
-                      // ------------------------------------------------------
-
                       if (negotiating)
                         Container(
                           width: double.infinity,
@@ -48939,13 +49222,7 @@ class _DriverOfferScreenState extends State<DriverOfferScreen>
                             ],
                           ),
                         ),
-
                       const SizedBox(height: 12),
-
-                      // ------------------------------------------------------
-                      // COUNTER AND ACCEPT BUTTONS
-                      // ------------------------------------------------------
-
                       Row(
                         children: [
                           Expanded(
@@ -49992,67 +50269,328 @@ class RideStartedScreen extends StatefulWidget {
 
 class _RideStartedScreenState extends State<RideStartedScreen>
     with SingleTickerProviderStateMixin {
+  final LatLng _defaultCenter = const LatLng(6.5244, 3.3792);
+
   final String? email =
       FirebaseAuth.instance.currentUser?.email ?? 'default@deck.com';
 
+  LatLng? userLocation;
   GoogleMapController? _mapController;
 
   Set<Marker> _markers = {};
   Set<Polyline> _polylines = {};
+
   List<LatLng> _routePoints = [];
 
   Timer? _routeAnimationTimer;
-  Timer? _tripTimer;
 
-  StreamSubscription<DocumentSnapshot>? _rideStatusSubscription;
+  // ---------------------------------------------------------------------------
+  // RIDE TIMER AND CODE
+  // ---------------------------------------------------------------------------
+
+  Timer? _rideTimer;
+
+  DateTime? _rideTimerStartedAt;
+
+  int _elapsedRideSeconds = 0;
+
+  String _rideCode = '----';
+
+  bool _isInitializingRideTimer = true;
+  bool _isCompletingRide = false;
+  bool _rideCompletionSaved = false;
+
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+      _rideDetailsSubscription;
 
   bool _isLoadingRoute = true;
-  bool _isLoadingVehicleImage = true;
-  bool _tripTimerStarted = false;
-  bool _tripDurationSaved = false;
-  bool _completionDialogShown = false;
 
   int _visibleRoutePoints = 0;
-  int _tripElapsedSeconds = 0;
-
-  DateTime? _tripStartedAt;
-
-  String _driverStatus = 'awaiting_pickup';
-  String _rideStatus = '';
-  String? _vehicleImageUrl;
-
-  String _distanceText = 'Calculating distance...';
-  String _durationText = 'Calculating time...';
-
-  ScreenCoordinate? _pickupScreenPosition;
-  ScreenCoordinate? _destinationScreenPosition;
 
   static const String _googleRoutesApiUrl =
       'https://routes.googleapis.com/directions/v2:computeRoutes';
 
-  // Your original Google Routes API key is preserved.
   static const String _googleMapsApiKey =
       'AIzaSyAxmD8Gvtn1KGomBFy3pWXRFgvw0c4a-48';
-
-  DocumentReference<Map<String, dynamic>> get _rideRef =>
-      FirebaseFirestore.instance.collection('ride_requests').doc(widget.rideId);
 
   @override
   void initState() {
     super.initState();
 
     _setupRideMap();
-    _listenToRideStatus();
-    _loadVehicleImage();
+
+    // Start and persist the timer when this screen opens.
+    _initializeRideTimer();
+
+    // Fetch the ride code and keep it updated from Firestore.
+    _listenForRideDetails();
+
+    FirebaseFirestore.instance
+        .collection('ride_requests')
+        .doc(widget.rideId)
+        .update({
+      'DriverStatus': 'awaiting_pickup',
+    }).catchError((error) {
+      debugPrint('Unable to update driver status: $error');
+    });
   }
 
   @override
   void dispose() {
     _routeAnimationTimer?.cancel();
-    _tripTimer?.cancel();
-    _rideStatusSubscription?.cancel();
+    _rideTimer?.cancel();
+    _rideDetailsSubscription?.cancel();
     _mapController?.dispose();
     super.dispose();
+  }
+
+  // ---------------------------------------------------------------------------
+  // INITIALIZE PERSISTENT RIDE TIMER
+  // ---------------------------------------------------------------------------
+
+  Future<void> _initializeRideTimer() async {
+    final rideRef = FirebaseFirestore.instance
+        .collection('ride_requests')
+        .doc(widget.rideId);
+
+    try {
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        final snapshot = await transaction.get(rideRef);
+
+        if (!snapshot.exists) {
+          throw Exception('Ride document does not exist.');
+        }
+
+        final data = snapshot.data() as Map<String, dynamic>?;
+
+        if (data == null) {
+          throw Exception('Ride data is unavailable.');
+        }
+
+        final existingStart = data['rideTimerStartedAt'];
+
+        if (existingStart is Timestamp) {
+          _rideTimerStartedAt = existingStart.toDate();
+        } else {
+          // The timer starts once when the rider enters RideStartedScreen.
+          final DateTime startTime = DateTime.now();
+
+          transaction.update(rideRef, {
+            'rideTimerStartedAt': Timestamp.fromDate(startTime),
+          });
+
+          _rideTimerStartedAt = startTime;
+        }
+      });
+
+      if (!mounted) return;
+
+      setState(() {
+        _isInitializingRideTimer = false;
+        _updateElapsedRideTime();
+      });
+
+      _startRideTimer();
+    } catch (e) {
+      debugPrint('Unable to initialize ride timer: $e');
+
+      if (!mounted) return;
+
+      // Keep the timer usable even if persisting the start time fails.
+      _rideTimerStartedAt ??= DateTime.now();
+
+      setState(() {
+        _isInitializingRideTimer = false;
+        _updateElapsedRideTime();
+      });
+
+      _startRideTimer();
+    }
+  }
+
+  void _startRideTimer() {
+    _rideTimer?.cancel();
+
+    _updateElapsedRideTime();
+
+    _rideTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) {
+        if (!mounted || _rideCompletionSaved) return;
+
+        setState(() {
+          _updateElapsedRideTime();
+        });
+      },
+    );
+  }
+
+  void _updateElapsedRideTime() {
+    final startTime = _rideTimerStartedAt;
+
+    if (startTime == null) {
+      _elapsedRideSeconds = 0;
+      return;
+    }
+
+    _elapsedRideSeconds = DateTime.now().difference(startTime).inSeconds;
+
+    if (_elapsedRideSeconds < 0) {
+      _elapsedRideSeconds = 0;
+    }
+  }
+
+  String _formatDuration(int totalSeconds) {
+    final int hours = totalSeconds ~/ 3600;
+    final int minutes = (totalSeconds % 3600) ~/ 60;
+    final int seconds = totalSeconds % 60;
+
+    final String hh = hours.toString().padLeft(2, '0');
+    final String mm = minutes.toString().padLeft(2, '0');
+    final String ss = seconds.toString().padLeft(2, '0');
+
+    return '$hh:$mm:$ss';
+  }
+
+  // ---------------------------------------------------------------------------
+  // FETCH RIDE CODE
+  // ---------------------------------------------------------------------------
+
+  void _listenForRideDetails() {
+    _rideDetailsSubscription = FirebaseFirestore.instance
+        .collection('ride_requests')
+        .doc(widget.rideId)
+        .snapshots()
+        .listen(
+      (snapshot) {
+        if (!mounted || !snapshot.exists) return;
+
+        final data = snapshot.data();
+
+        if (data == null) return;
+
+        // Support the existing Code field and common alternate field names.
+        final dynamic rawCode =
+            data['Code'] ?? data['code'] ?? data['rideCode'];
+
+        final String fetchedCode = rawCode?.toString().trim() ?? '';
+
+        if (fetchedCode.isNotEmpty && fetchedCode != _rideCode) {
+          setState(() {
+            _rideCode = fetchedCode;
+          });
+        }
+
+        // If another operation has already completed the ride, stop the
+        // display timer. Do not overwrite the completion data.
+        final String status =
+            (data['status'] ?? data['Status'] ?? '').toString().toLowerCase();
+
+        if (status == 'completed' && !_rideCompletionSaved) {
+          _rideTimer?.cancel();
+
+          setState(() {
+            _rideCompletionSaved = true;
+          });
+        }
+      },
+      onError: (error) {
+        debugPrint('Ride details listener error: $error');
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // COMPLETE RIDE AND SAVE ELAPSED TIME
+  // ---------------------------------------------------------------------------
+
+  Future<void> _completeRideAndSaveDuration() async {
+    if (_isCompletingRide || _rideCompletionSaved) return;
+
+    _isCompletingRide = true;
+
+    try {
+      final rideRef = FirebaseFirestore.instance
+          .collection('ride_requests')
+          .doc(widget.rideId);
+
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        final snapshot = await transaction.get(rideRef);
+
+        if (!snapshot.exists) {
+          throw Exception('Ride document does not exist.');
+        }
+
+        final data = snapshot.data() as Map<String, dynamic>?;
+
+        if (data == null) {
+          throw Exception('Ride data is unavailable.');
+        }
+
+        final String currentStatus =
+            (data['status'] ?? data['Status'] ?? '').toString().toLowerCase();
+
+        // Avoid replacing the original completion time if the ride was
+        // already completed by another operation.
+        if (currentStatus == 'completed') {
+          return;
+        }
+
+        final DateTime completedAt = DateTime.now();
+
+        DateTime startTime = _rideTimerStartedAt ?? completedAt;
+
+        final dynamic storedStart = data['rideTimerStartedAt'];
+
+        if (storedStart is Timestamp) {
+          startTime = storedStart.toDate();
+        }
+
+        int durationSeconds = completedAt.difference(startTime).inSeconds;
+
+        if (durationSeconds < 0) {
+          durationSeconds = 0;
+        }
+
+        final String formattedDuration = _formatDuration(durationSeconds);
+
+        transaction.update(rideRef, {
+          // Preserve the existing payment completion status field.
+          'status': 'completed',
+
+          // Save the elapsed ride time with the ride document.
+          'rideTimerStartedAt': Timestamp.fromDate(startTime),
+          'rideCompletedAt': FieldValue.serverTimestamp(),
+          'rideDurationSeconds': durationSeconds,
+          'rideDuration': formattedDuration,
+        });
+      });
+
+      if (!mounted) return;
+
+      _rideTimer?.cancel();
+
+      setState(() {
+        _rideCompletionSaved = true;
+        _isCompletingRide = false;
+      });
+
+      _showRideCompletedDialog(context);
+    } catch (e) {
+      debugPrint('Unable to complete ride and save duration: $e');
+
+      _isCompletingRide = false;
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Unable to update ride completion. Please try again.',
+            ),
+          ),
+        );
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -50064,25 +50602,29 @@ class _RideStartedScreenState extends State<RideStartedScreen>
 
     await _getRoute();
 
-    if (!mounted) return;
+    if (mounted) {
+      setState(() {
+        _isLoadingRoute = false;
+      });
+    }
 
-    setState(() {
-      _isLoadingRoute = false;
-    });
-
-    await Future.delayed(const Duration(milliseconds: 350));
+    await Future.delayed(const Duration(milliseconds: 300));
 
     if (mounted) {
-      await _fitRouteOnMap();
-      await _updateMarkerLabelPositions();
+      _fitRouteOnMap();
     }
   }
 
   void _setRideMarkers() {
-    final pickup = LatLng(widget.pickupLat, widget.pickupLng);
-    final destination = LatLng(widget.destinationLat, widget.destinationLng);
+    final LatLng pickup = LatLng(
+      widget.pickupLat,
+      widget.pickupLng,
+    );
 
-    if (!mounted) return;
+    final LatLng destination = LatLng(
+      widget.destinationLat,
+      widget.destinationLng,
+    );
 
     setState(() {
       _markers = {
@@ -50113,121 +50655,6 @@ class _RideStartedScreenState extends State<RideStartedScreen>
   }
 
   // ---------------------------------------------------------------------------
-  // MAP ADDRESS LABELS
-  // ---------------------------------------------------------------------------
-
-  Future<void> _updateMarkerLabelPositions() async {
-    final controller = _mapController;
-    if (controller == null || !mounted) return;
-
-    try {
-      final pickupPosition = await controller.getScreenCoordinate(
-        LatLng(widget.pickupLat, widget.pickupLng),
-      );
-
-      final destinationPosition = await controller.getScreenCoordinate(
-        LatLng(widget.destinationLat, widget.destinationLng),
-      );
-
-      if (!mounted) return;
-
-      setState(() {
-        _pickupScreenPosition = pickupPosition;
-        _destinationScreenPosition = destinationPosition;
-      });
-    } catch (e) {
-      debugPrint('Could not update map address labels: $e');
-    }
-  }
-
-  Widget _buildMapAddressLabel({
-    required String address,
-    required Color accentColor,
-    required IconData icon,
-  }) {
-    return Container(
-      constraints: const BoxConstraints(maxWidth: 190),
-      padding: const EdgeInsets.symmetric(
-        horizontal: 10,
-        vertical: 8,
-      ),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: accentColor.withOpacity(0.35),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.12),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: accentColor, size: 17),
-          const SizedBox(width: 6),
-          Flexible(
-            child: Text(
-              address.trim().isEmpty ? 'Location' : address,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 11,
-                height: 1.2,
-                fontWeight: FontWeight.w600,
-                color: Colors.black87,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPositionedAddressLabel({
-    required ScreenCoordinate? position,
-    required String address,
-    required Color color,
-    required IconData icon,
-    required Size screenSize,
-  }) {
-    if (position == null) return const SizedBox.shrink();
-
-    final double ratio = MediaQuery.of(context).devicePixelRatio;
-
-    final double x = position.x / ratio;
-    final double y = position.y / ratio;
-
-    // Keep the label within the visible screen area.
-    final double left = (x + 14).clamp(
-      8.0,
-      math.max(8.0, screenSize.width - 205),
-    );
-
-    final double top = (y - 16).clamp(
-      MediaQuery.of(context).padding.top + 55,
-      math.max(
-        MediaQuery.of(context).padding.top + 55,
-        screenSize.height * 0.70,
-      ),
-    );
-
-    return Positioned(
-      left: left,
-      top: top,
-      child: _buildMapAddressLabel(
-        address: address,
-        accentColor: color,
-        icon: icon,
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
   // GOOGLE ROUTES API
   // ---------------------------------------------------------------------------
 
@@ -50241,16 +50668,16 @@ class _RideStartedScreenState extends State<RideStartedScreen>
             'latLng': {
               'latitude': widget.pickupLat,
               'longitude': widget.pickupLng,
-            },
-          },
+            }
+          }
         },
         'destination': {
           'location': {
             'latLng': {
               'latitude': widget.destinationLat,
               'longitude': widget.destinationLng,
-            },
-          },
+            }
+          }
         },
         'travelMode': 'DRIVE',
         'routingPreference': 'TRAFFIC_AWARE',
@@ -50263,8 +50690,7 @@ class _RideStartedScreenState extends State<RideStartedScreen>
         headers: {
           'Content-Type': 'application/json',
           'X-Goog-Api-Key': _googleMapsApiKey,
-          'X-Goog-FieldMask':
-              'routes.polyline.geoJsonLinestring,routes.distanceMeters,routes.duration',
+          'X-Goog-FieldMask': 'routes.polyline.geoJsonLinestring',
         },
         body: jsonEncode(body),
       );
@@ -50275,7 +50701,6 @@ class _RideStartedScreenState extends State<RideStartedScreen>
           '${response.statusCode} ${response.body}',
         );
 
-        _setFallbackDistanceAndDuration();
         return _fallbackStraightRoute();
       }
 
@@ -50285,133 +50710,111 @@ class _RideStartedScreenState extends State<RideStartedScreen>
       final List<dynamic>? routes = responseData['routes'] as List<dynamic>?;
 
       if (routes == null || routes.isEmpty) {
-        _setFallbackDistanceAndDuration();
+        debugPrint('Google Routes API returned no routes.');
         return _fallbackStraightRoute();
       }
 
       final Map<String, dynamic> route = routes.first as Map<String, dynamic>;
 
-      // Read actual road distance and estimated duration.
-      final dynamic distanceMeters = route['distanceMeters'];
-      final dynamic durationValue = route['duration'];
-
-      if (distanceMeters is num) {
-        _distanceText = distanceMeters >= 1000
-            ? '${(distanceMeters / 1000).toStringAsFixed(1)} km'
-            : '${distanceMeters.round()} m';
-      }
-
-      if (durationValue is String) {
-        final seconds = int.tryParse(
-          durationValue.replaceAll('s', ''),
-        );
-
-        if (seconds != null) {
-          _durationText = _formatDuration(seconds);
-        }
-      }
-
       final Map<String, dynamic>? polyline =
           route['polyline'] as Map<String, dynamic>?;
 
+      if (polyline == null) {
+        debugPrint('No polyline found in Google Routes response.');
+        return _fallbackStraightRoute();
+      }
+
       final Map<String, dynamic>? geoJson =
-          polyline?['geoJsonLinestring'] as Map<String, dynamic>?;
+          polyline['geoJsonLinestring'] as Map<String, dynamic>?;
+
+      if (geoJson == null) {
+        debugPrint('No geoJsonLinestring found in response.');
+        return _fallbackStraightRoute();
+      }
 
       final List<dynamic>? coordinates =
-          geoJson?['coordinates'] as List<dynamic>?;
+          geoJson['coordinates'] as List<dynamic>?;
 
       if (coordinates == null || coordinates.isEmpty) {
-        _setFallbackDistanceAndDuration();
+        debugPrint('Route coordinates are empty.');
         return _fallbackStraightRoute();
       }
 
       final List<LatLng> points = [];
 
-      // GeoJSON coordinate order is [longitude, latitude].
       for (final dynamic coordinate in coordinates) {
         if (coordinate is List && coordinate.length >= 2) {
-          final first = coordinate[0];
-          final second = coordinate[1];
+          final double longitude = (coordinate[0] as num).toDouble();
 
-          if (first is num && second is num) {
-            points.add(
-              LatLng(
-                second.toDouble(),
-                first.toDouble(),
-              ),
-            );
-          }
+          final double latitude = (coordinate[1] as num).toDouble();
+
+          points.add(
+            LatLng(
+              latitude,
+              longitude,
+            ),
+          );
         }
       }
 
       if (points.length < 2) {
-        _setFallbackDistanceAndDuration();
         return _fallbackStraightRoute();
       }
 
-      // Ensure the route includes the exact coordinates passed to this page.
-      points.insert(0, LatLng(widget.pickupLat, widget.pickupLng));
+      points.insert(
+        0,
+        LatLng(
+          widget.pickupLat,
+          widget.pickupLng,
+        ),
+      );
+
       points.add(
-        LatLng(widget.destinationLat, widget.destinationLng),
+        LatLng(
+          widget.destinationLat,
+          widget.destinationLng,
+        ),
       );
 
       return points;
     } catch (e) {
       debugPrint('Error getting ride route: $e');
-      _setFallbackDistanceAndDuration();
       return _fallbackStraightRoute();
     }
   }
 
-  void _setFallbackDistanceAndDuration() {
-    final double distanceMeters = Geolocator.distanceBetween(
+  // ---------------------------------------------------------------------------
+  // FALLBACK ROUTE
+  // ---------------------------------------------------------------------------
+
+  List<LatLng> _fallbackStraightRoute() {
+    final LatLng start = LatLng(
       widget.pickupLat,
       widget.pickupLng,
+    );
+
+    final LatLng end = LatLng(
       widget.destinationLat,
       widget.destinationLng,
     );
 
-    _distanceText = distanceMeters >= 1000
-        ? '${(distanceMeters / 1000).toStringAsFixed(1)} km approx.'
-        : '${distanceMeters.round()} m approx.';
-
-    // Approximate duration for display only when the road route is unavailable.
-    final int estimatedSeconds = ((distanceMeters / 1000) / 30 * 3600).round();
-    _durationText = '${_formatDuration(estimatedSeconds)} approx.';
-  }
-
-  String _formatDuration(int seconds) {
-    final int safeSeconds = seconds < 0 ? 0 : seconds;
-    final int minutes = (safeSeconds / 60).ceil();
-
-    if (minutes < 60) {
-      return '$minutes min';
-    }
-
-    final int hours = minutes ~/ 60;
-    final int remainingMinutes = minutes % 60;
-
-    if (remainingMinutes == 0) {
-      return '$hours hr';
-    }
-
-    return '$hours hr $remainingMinutes min';
-  }
-
-  List<LatLng> _fallbackStraightRoute() {
-    final LatLng start = LatLng(widget.pickupLat, widget.pickupLng);
-    final LatLng end = LatLng(widget.destinationLat, widget.destinationLng);
-
     const int numberOfPoints = 40;
+
     final List<LatLng> points = [];
 
     for (int i = 0; i <= numberOfPoints; i++) {
       final double t = i / numberOfPoints;
 
+      final double latitude =
+          start.latitude + ((end.latitude - start.latitude) * t);
+
+      final double longitude =
+          start.longitude + ((end.longitude - start.longitude) * t);
+
       points.add(
         LatLng(
-          start.latitude + ((end.latitude - start.latitude) * t),
-          start.longitude + ((end.longitude - start.longitude) * t),
+          latitude,
+          longitude,
         ),
       );
     }
@@ -50428,19 +50831,21 @@ class _RideStartedScreenState extends State<RideStartedScreen>
       _routePoints = points;
     });
 
-    if (points.length >= 2) {
+    if (points.isNotEmpty) {
       _animateRoute();
     }
   }
 
   // ---------------------------------------------------------------------------
-  // ANIMATED ROUTE
+  // ANIMATED GREEN ROUTE
   // ---------------------------------------------------------------------------
 
   void _animateRoute() {
     _routeAnimationTimer?.cancel();
 
-    if (_routePoints.length < 2) return;
+    if (_routePoints.length < 2) {
+      return;
+    }
 
     setState(() {
       _visibleRoutePoints = 1;
@@ -50494,15 +50899,24 @@ class _RideStartedScreenState extends State<RideStartedScreen>
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // FIT ROUTE ON MAP
+  // ---------------------------------------------------------------------------
+
   Future<void> _fitRouteOnMap() async {
-    final controller = _mapController;
-    if (controller == null) return;
+    if (_mapController == null) return;
 
     final List<LatLng> points = _routePoints.isNotEmpty
         ? _routePoints
         : [
-            LatLng(widget.pickupLat, widget.pickupLng),
-            LatLng(widget.destinationLat, widget.destinationLng),
+            LatLng(
+              widget.pickupLat,
+              widget.pickupLng,
+            ),
+            LatLng(
+              widget.destinationLat,
+              widget.destinationLng,
+            ),
           ];
 
     double minLat = points.first.latitude;
@@ -50517,759 +50931,43 @@ class _RideStartedScreenState extends State<RideStartedScreen>
       maxLng = math.max(maxLng, point.longitude);
     }
 
-    // Avoid invalid bounds if pickup and destination are extremely close.
-    if ((maxLat - minLat).abs() < 0.0001) {
-      minLat -= 0.0005;
-      maxLat += 0.0005;
-    }
-
-    if ((maxLng - minLng).abs() < 0.0001) {
-      minLng -= 0.0005;
-      maxLng += 0.0005;
-    }
+    final LatLngBounds bounds = LatLngBounds(
+      southwest: LatLng(
+        minLat,
+        minLng,
+      ),
+      northeast: LatLng(
+        maxLat,
+        maxLng,
+      ),
+    );
 
     try {
-      await controller.animateCamera(
+      await _mapController!.animateCamera(
         CameraUpdate.newLatLngBounds(
-          LatLngBounds(
-            southwest: LatLng(minLat, minLng),
-            northeast: LatLng(maxLat, maxLng),
-          ),
+          bounds,
           90,
         ),
       );
-
-      await _updateMarkerLabelPositions();
     } catch (e) {
       debugPrint('Unable to fit route on map: $e');
 
-      try {
-        await controller.animateCamera(
-          CameraUpdate.newCameraPosition(
-            CameraPosition(
-              target: LatLng(widget.pickupLat, widget.pickupLng),
-              zoom: 14,
+      await _mapController!.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(
+            target: LatLng(
+              widget.pickupLat,
+              widget.pickupLng,
             ),
+            zoom: 14,
           ),
-        );
-      } catch (cameraError) {
-        debugPrint('Fallback camera movement failed: $cameraError');
-      }
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // DRIVER VEHICLE IMAGE
-  // ---------------------------------------------------------------------------
-
-  Future<void> _loadVehicleImage() async {
-    String? imageUrl;
-
-    bool isUsableImageUrl(dynamic value) {
-      if (value is! String || value.trim().isEmpty) return false;
-
-      final uri = Uri.tryParse(value.trim());
-
-      return uri != null &&
-          (uri.scheme == 'https' || uri.scheme == 'http') &&
-          uri.host.isNotEmpty;
-    }
-
-    try {
-      final rideSnapshot = await _rideRef.get();
-      final rideData = rideSnapshot.data();
-
-      if (rideData != null) {
-        final possibleKeys = [
-          'vehicleImage',
-          'vehicleImageUrl',
-          'driverVehicleImage',
-          'vehiclePhoto',
-          'vehicleImageURL',
-          'carImage',
-        ];
-
-        for (final key in possibleKeys) {
-          final value = rideData[key];
-
-          if (isUsableImageUrl(value)) {
-            imageUrl = (value as String).trim();
-            break;
-          }
-        }
-
-        // If the ride contains a driver UID, use it first.
-        if (imageUrl == null) {
-          final dynamic driverUid = rideData['driverUid'] ??
-              rideData['driverId'] ??
-              rideData['acceptedBy'];
-
-          if (driverUid is String && driverUid.trim().isNotEmpty) {
-            final driverDoc = await FirebaseFirestore.instance
-                .collection('Drivers')
-                .doc(driverUid.trim())
-                .get();
-
-            final driverData = driverDoc.data();
-
-            if (driverData != null) {
-              for (final key in possibleKeys) {
-                if (isUsableImageUrl(driverData[key])) {
-                  imageUrl = (driverData[key] as String).trim();
-                  break;
-                }
-              }
-            }
-          }
-        }
-      }
-
-      // Last attempt: locate the driver by name.
-      if (imageUrl == null && widget.driverName.trim().isNotEmpty) {
-        final driverQuery = await FirebaseFirestore.instance
-            .collection('Drivers')
-            .where('name', isEqualTo: widget.driverName)
-            .limit(1)
-            .get();
-
-        if (driverQuery.docs.isNotEmpty) {
-          final driverData = driverQuery.docs.first.data();
-
-          for (final key in [
-            'vehicleImage',
-            'vehicleImageUrl',
-            'driverVehicleImage',
-            'vehiclePhoto',
-            'vehicleImageURL',
-            'carImage',
-          ]) {
-            if (isUsableImageUrl(driverData[key])) {
-              imageUrl = (driverData[key] as String).trim();
-              break;
-            }
-          }
-        }
-      }
-    } catch (e) {
-      // Missing documents, fields, or permissions must not break the page.
-      debugPrint('Unable to load driver vehicle image: $e');
-    }
-
-    if (!mounted) return;
-
-    setState(() {
-      _vehicleImageUrl = imageUrl;
-      _isLoadingVehicleImage = false;
-    });
-  }
-
-  Widget _buildVehicleAvatar() {
-    final String? url = _vehicleImageUrl;
-
-    Widget fallback() {
-      return Container(
-        width: 62,
-        height: 62,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: Colors.grey.shade200,
-          border: Border.all(color: Colors.grey.shade300),
-        ),
-        child: Icon(
-          Icons.directions_car_rounded,
-          color: Colors.grey.shade700,
-          size: 30,
         ),
       );
     }
-
-    if (_isLoadingVehicleImage) {
-      return Container(
-        width: 62,
-        height: 62,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: Colors.grey.shade100,
-          border: Border.all(color: Colors.grey.shade300),
-        ),
-        child: const Padding(
-          padding: EdgeInsets.all(19),
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      );
-    }
-
-    if (url == null || url.trim().isEmpty) {
-      return fallback();
-    }
-
-    final uri = Uri.tryParse(url);
-
-    if (uri == null ||
-        (uri.scheme != 'http' && uri.scheme != 'https') ||
-        uri.host.isEmpty) {
-      return fallback();
-    }
-
-    return ClipOval(
-      child: SizedBox(
-        width: 62,
-        height: 62,
-        child: Image.network(
-          url,
-          width: 62,
-          height: 62,
-          fit: BoxFit.cover,
-          loadingBuilder: (context, child, loadingProgress) {
-            if (loadingProgress == null) return child;
-
-            return Container(
-              color: Colors.grey.shade100,
-              alignment: Alignment.center,
-              child: const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            );
-          },
-          errorBuilder: (context, error, stackTrace) {
-            // Broken URLs and missing images safely show a vehicle icon.
-            return fallback();
-          },
-        ),
-      ),
-    );
   }
 
   // ---------------------------------------------------------------------------
-  // DRIVER STATUS AND TRIP TIMER
-  // ---------------------------------------------------------------------------
-
-  String _normalizeStatus(dynamic value) {
-    if (value == null) return '';
-    return value.toString().trim().toLowerCase().replaceAll(' ', '_');
-  }
-
-  bool _isCompletedStatus(String status) {
-    return status == 'completed' ||
-        status == 'ride_completed' ||
-        status == 'finished';
-  }
-
-  bool _isEnRouteStatus(String status) {
-    return status == 'en_route' ||
-        status == 'driver_on_the_way' ||
-        status == 'on_the_way';
-  }
-
-  void _listenToRideStatus() {
-    _rideStatusSubscription = _rideRef.snapshots().listen(
-      (snapshot) async {
-        if (!snapshot.exists) return;
-
-        final data = snapshot.data();
-        if (data == null) return;
-
-        final String newDriverStatus = _normalizeStatus(data['DriverStatus']);
-
-        final String newRideStatus = _normalizeStatus(
-          data['status'] ?? data['Status'],
-        );
-
-        if (!mounted) return;
-
-        setState(() {
-          _driverStatus =
-              newDriverStatus.isEmpty ? 'awaiting_pickup' : newDriverStatus;
-          _rideStatus = newRideStatus;
-        });
-
-        // The actual trip timer begins only after the driver status changes
-        // to "Driver On His Way" (DriverStatus = en_route).
-        if (_isEnRouteStatus(newDriverStatus)) {
-          await _startTripTimer();
-        }
-
-        if (_isCompletedStatus(newDriverStatus) ||
-            _isCompletedStatus(newRideStatus)) {
-          await _stopAndSaveTripTimer();
-        }
-      },
-      onError: (error) {
-        debugPrint('Ride status listener error: $error');
-      },
-    );
-  }
-
-  Future<void> _startTripTimer() async {
-    if (_tripTimerStarted || _tripDurationSaved) return;
-
-    try {
-      final snapshot = await _rideRef.get();
-      final data = snapshot.data() ?? {};
-
-      DateTime? startedAt;
-
-      final dynamic existingTimestamp =
-          data['tripStartedAt'] ?? data['actualTripStartedAt'];
-
-      if (existingTimestamp is Timestamp) {
-        startedAt = existingTimestamp.toDate();
-      } else if (existingTimestamp is DateTime) {
-        startedAt = existingTimestamp;
-      }
-
-      startedAt ??= DateTime.now();
-
-      // Store the start timestamp once, so reopening the screen does not
-      // reset the actual trip start time.
-      await _rideRef.set({
-        'tripStartedAt': Timestamp.fromDate(startedAt),
-        'tripStartedAtDriverStatus': 'en_route',
-      }, SetOptions(merge: true));
-
-      if (!mounted) return;
-
-      setState(() {
-        _tripStartedAt = startedAt;
-        _tripTimerStarted = true;
-        _tripElapsedSeconds =
-            DateTime.now().difference(startedAt!).inSeconds.clamp(0, 1 << 30);
-      });
-
-      _tripTimer?.cancel();
-
-      _tripTimer = Timer.periodic(
-        const Duration(seconds: 1),
-        (_) {
-          if (!mounted || _tripStartedAt == null) return;
-
-          final elapsed = DateTime.now().difference(_tripStartedAt!).inSeconds;
-
-          setState(() {
-            _tripElapsedSeconds = elapsed < 0 ? 0 : elapsed;
-          });
-        },
-      );
-    } catch (e) {
-      debugPrint('Could not start trip timer: $e');
-    }
-  }
-
-  Future<void> _stopAndSaveTripTimer() async {
-    if (_tripDurationSaved) return;
-
-    _tripTimer?.cancel();
-
-    try {
-      final snapshot = await _rideRef.get();
-      final data = snapshot.data() ?? {};
-
-      DateTime? startedAt = _tripStartedAt;
-
-      final dynamic savedTimestamp =
-          data['tripStartedAt'] ?? data['actualTripStartedAt'];
-
-      if (startedAt == null && savedTimestamp is Timestamp) {
-        startedAt = savedTimestamp.toDate();
-      }
-
-      int elapsedSeconds = _tripElapsedSeconds;
-
-      if (startedAt != null) {
-        elapsedSeconds = DateTime.now().difference(startedAt).inSeconds;
-      }
-
-      if (elapsedSeconds < 0) elapsedSeconds = 0;
-
-      await _rideRef.set({
-        'tripDurationSeconds': elapsedSeconds,
-        'tripDurationText': _formatDurationWithSeconds(elapsedSeconds),
-        'tripCompletedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-
-      if (!mounted) return;
-
-      setState(() {
-        _tripElapsedSeconds = elapsedSeconds;
-        _tripDurationSaved = true;
-      });
-    } catch (e) {
-      debugPrint('Could not save trip duration: $e');
-    }
-  }
-
-  String _formatDurationWithSeconds(int seconds) {
-    final int safeSeconds = seconds < 0 ? 0 : seconds;
-    final int hours = safeSeconds ~/ 3600;
-    final int minutes = (safeSeconds % 3600) ~/ 60;
-    final int remainingSeconds = safeSeconds % 60;
-
-    String twoDigits(int value) => value.toString().padLeft(2, '0');
-
-    if (hours > 0) {
-      return '${twoDigits(hours)}:${twoDigits(minutes)}:${twoDigits(remainingSeconds)}';
-    }
-
-    return '${twoDigits(minutes)}:${twoDigits(remainingSeconds)}';
-  }
-
-  Widget _buildTripTimer() {
-    final bool running = _tripTimerStarted && !_tripDurationSaved;
-
-    return Container(
-      width: 76,
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
-      decoration: BoxDecoration(
-        color: running ? Colors.green.shade50 : Colors.grey.shade100,
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: running ? Colors.green.shade600 : Colors.grey.shade300,
-          width: 2,
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            running ? Icons.timer_rounded : Icons.schedule_rounded,
-            size: 17,
-            color: running ? Colors.green.shade800 : Colors.grey.shade700,
-          ),
-          const SizedBox(height: 3),
-          FittedBox(
-            child: Text(
-              _formatDurationWithSeconds(_tripElapsedSeconds),
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                color: running ? Colors.green.shade900 : Colors.black87,
-                fontFeatures: const [],
-              ),
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            _tripDurationSaved
-                ? 'Saved'
-                : running
-                    ? 'Trip time'
-                    : 'Waiting',
-            style: TextStyle(
-              fontSize: 9,
-              color: running ? Colors.green.shade800 : Colors.grey.shade600,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // DRIVER STATUS CARD
-  // ---------------------------------------------------------------------------
-
-  String get _driverStatusTitle {
-    if (_isEnRouteStatus(_driverStatus)) return 'Driver On His Way';
-    if (_driverStatus == 'arrived' || _driverStatus == 'driver_arrived') {
-      return 'Your Driver Has Arrived';
-    }
-    if (_driverStatus == 'in_progress' || _driverStatus == 'ride_started') {
-      return 'Your Trip Is In Progress';
-    }
-    if (_isCompletedStatus(_driverStatus) || _isCompletedStatus(_rideStatus)) {
-      return 'Trip Completed';
-    }
-    if (_driverStatus == 'cancelled' || _driverStatus == 'driver_cancelled') {
-      return 'Ride Cancelled';
-    }
-
-    return 'Waiting for Driver';
-  }
-
-  String get _driverStatusSubtitle {
-    if (_isEnRouteStatus(_driverStatus)) {
-      return 'Your driver is heading to your pickup location.';
-    }
-
-    if (_driverStatus == 'arrived' || _driverStatus == 'driver_arrived') {
-      return 'Your driver has reached the pickup point.';
-    }
-
-    if (_driverStatus == 'in_progress' || _driverStatus == 'ride_started') {
-      return 'Have a safe and comfortable trip.';
-    }
-
-    if (_isCompletedStatus(_driverStatus) || _isCompletedStatus(_rideStatus)) {
-      return 'Your trip time has been saved.';
-    }
-
-    if (_driverStatus == 'cancelled' || _driverStatus == 'driver_cancelled') {
-      return 'Please contact support if you need assistance.';
-    }
-
-    return 'We will update you as soon as your driver moves.';
-  }
-
-  IconData get _driverStatusIcon {
-    if (_isEnRouteStatus(_driverStatus)) {
-      return Icons.directions_car_rounded;
-    }
-
-    if (_driverStatus == 'arrived' || _driverStatus == 'driver_arrived') {
-      return Icons.location_on_rounded;
-    }
-
-    if (_driverStatus == 'in_progress' || _driverStatus == 'ride_started') {
-      return Icons.route_rounded;
-    }
-
-    if (_isCompletedStatus(_driverStatus) || _isCompletedStatus(_rideStatus)) {
-      return Icons.check_circle_rounded;
-    }
-
-    if (_driverStatus == 'cancelled' || _driverStatus == 'driver_cancelled') {
-      return Icons.info_outline_rounded;
-    }
-
-    return Icons.hourglass_top_rounded;
-  }
-
-  Color get _driverStatusColor {
-    if (_isCompletedStatus(_driverStatus) || _isCompletedStatus(_rideStatus)) {
-      return Colors.green.shade700;
-    }
-
-    if (_driverStatus == 'cancelled' || _driverStatus == 'driver_cancelled') {
-      return Colors.red.shade700;
-    }
-
-    return Colors.black87;
-  }
-
-  Widget _buildDriverStatusCard() {
-    final Color accent = _driverStatusColor;
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 250),
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: accent.withOpacity(0.055),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: accent.withOpacity(0.20),
-        ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: accent.withOpacity(0.10),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Icon(
-              _driverStatusIcon,
-              color: accent,
-              size: 25,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _driverStatusTitle,
-                  style: TextStyle(
-                    color: accent,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 15,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _driverStatusSubtitle,
-                  style: TextStyle(
-                    color: Colors.grey.shade700,
-                    fontSize: 12,
-                    height: 1.35,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 6),
-          if (!_isCompletedStatus(_driverStatus) &&
-              !_isCompletedStatus(_rideStatus))
-            Container(
-              width: 8,
-              height: 8,
-              margin: const EdgeInsets.only(top: 5),
-              decoration: BoxDecoration(
-                color: _isEnRouteStatus(_driverStatus)
-                    ? Colors.green
-                    : Colors.orange,
-                shape: BoxShape.circle,
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // DRIVER CARD
-  // ---------------------------------------------------------------------------
-
-  Widget _buildDriverCard() {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Row(
-        children: [
-          _buildVehicleAvatar(),
-          const SizedBox(width: 13),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  widget.driverName.trim().isEmpty
-                      ? 'Your Driver'
-                      : widget.driverName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 15,
-                    color: Colors.black87,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  widget.vehicleDescription.trim().isNotEmpty
-                      ? widget.vehicleDescription
-                      : widget.vehicleType,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.grey.shade700,
-                    fontSize: 12,
-                  ),
-                ),
-                const SizedBox(height: 7),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.verified_rounded,
-                      color: Colors.green.shade700,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      'Verified',
-                      style: TextStyle(
-                        color: Colors.green.shade700,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // TRIP DISTANCE AND ESTIMATED TIME
-  // ---------------------------------------------------------------------------
-
-  Widget _buildTripMetrics() {
-    return Row(
-      children: [
-        Expanded(
-          child: _buildMetricItem(
-            icon: Icons.route_rounded,
-            label: 'Trip distance',
-            value: _distanceText,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _buildMetricItem(
-            icon: Icons.access_time_rounded,
-            label: 'Estimated time',
-            value: _durationText,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildMetricItem({
-    required IconData icon,
-    required String label,
-    required String value,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(15),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, size: 20, color: Colors.green.shade800),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.grey.shade600,
-                    fontSize: 10,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  value,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.black87,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // PAYSTACK - ORIGINAL PAYMENT FLOW PRESERVED
+  // PAYSTACK
   // ---------------------------------------------------------------------------
 
   Future<void> _initiatePaystackPayment(BuildContext context) async {
@@ -51312,24 +51010,14 @@ class _RideStartedScreenState extends State<RideStartedScreen>
             mode: LaunchMode.externalApplication,
           );
 
-          // Preserved from your original code.
+          // Preserve the existing payment flow, then save completion and
+          // the elapsed ride duration together.
           Future.delayed(
             const Duration(seconds: 8),
-            () {
-              FirebaseFirestore.instance
-                  .collection('ride_requests')
-                  .doc(widget.rideId)
-                  .update({
-                'status': 'completed',
-              }).then((_) async {
-                await _stopAndSaveTripTimer();
+            () async {
+              if (!mounted) return;
 
-                if (mounted) {
-                  _showRideCompletedDialog(context);
-                }
-              }).catchError((error) {
-                debugPrint('Could not update ride status: $error');
-              });
+              await _completeRideAndSaveDuration();
             },
           );
         } else {
@@ -51364,31 +51052,23 @@ class _RideStartedScreenState extends State<RideStartedScreen>
   }
 
   void _showRideCompletedDialog(BuildContext context) {
-    if (_completionDialogShown || !mounted) return;
-
-    _completionDialogShown = true;
-
     showDialog(
       context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+      builder: (context) => AlertDialog(
+        title: const Text(
+          "Ride Completed 🎉",
         ),
-        title: const Text('Ride Completed 🎉'),
         content: Text(
-          'Thank you for riding with Deck Mobility!\n\n'
-          'Trip duration: ${_formatDurationWithSeconds(_tripElapsedSeconds)}',
+          "Thank you for riding with Deck Mobility!\n\n"
+          "Ride duration: ${_formatDuration(_elapsedRideSeconds)}",
         ),
         actions: [
           TextButton(
             onPressed: () {
-              Navigator.of(dialogContext).pop();
-              if (Navigator.of(context).canPop()) {
-                Navigator.of(context).pop();
-              }
+              Navigator.of(context).pop();
+              Navigator.of(context).pop();
             },
-            child: const Text('Close'),
+            child: const Text("Close"),
           ),
         ],
       ),
@@ -51396,25 +51076,138 @@ class _RideStartedScreenState extends State<RideStartedScreen>
   }
 
   // ---------------------------------------------------------------------------
-  // USER LOCATION - RETAINED
+  // RIDE CODE AND TIMER DISPLAY
+  // ---------------------------------------------------------------------------
+
+  Widget _buildRideInfoBar() {
+    return Row(
+      children: [
+        // Ride code displayed beside the timer.
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 10,
+            ),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.confirmation_number_outlined,
+                  size: 18,
+                  color: Colors.grey.shade700,
+                ),
+                const SizedBox(width: 7),
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Ride Code',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _rideCode,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(width: 10),
+
+        // Timer positioned on the right.
+        Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 10,
+          ),
+          decoration: BoxDecoration(
+            color: Colors.black,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.timer_outlined,
+                size: 18,
+                color: Colors.greenAccent,
+              ),
+              const SizedBox(width: 6),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  const Text(
+                    'Ride time',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.white70,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _isInitializingRideTimer
+                        ? '--:--:--'
+                        : _formatDuration(_elapsedRideSeconds),
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      fontFeatures: [
+                        FontFeature.tabularFigures(),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // USER LOCATION
   // ---------------------------------------------------------------------------
 
   Future<void> _getUserLocation() async {
     try {
-      final Position position = await Geolocator.getCurrentPosition(
+      Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
 
       if (!mounted) return;
 
-      // The current location is not used to replace the ride's exact
-      // pickup/destination coordinates.
-      debugPrint(
-        'Current user location: '
-        '${position.latitude}, ${position.longitude}',
-      );
+      setState(() {
+        userLocation = LatLng(
+          position.latitude,
+          position.longitude,
+        );
+      });
     } catch (e) {
-      debugPrint('Could not get current user location: $e');
+      debugPrint(
+        'Could not get current user location: $e',
+      );
     }
   }
 
@@ -51424,29 +51217,33 @@ class _RideStartedScreenState extends State<RideStartedScreen>
 
   @override
   Widget build(BuildContext context) {
-    final Size screenSize = MediaQuery.of(context).size;
-
     return Scaffold(
-      backgroundColor: Colors.white,
       body: Stack(
         children: [
-          // MAP
+          // -------------------------------------------------------------------
+          // MAP BACKGROUND
+          // -------------------------------------------------------------------
+
           GoogleMap(
             onMapCreated: (controller) {
               _mapController = controller;
 
-              Future.delayed(
-                const Duration(milliseconds: 350),
-                () async {
-                  if (!mounted) return;
-                  await _fitRouteOnMap();
-                  await _updateMarkerLabelPositions();
-                },
-              );
+              if (_routePoints.isNotEmpty) {
+                Future.delayed(
+                  const Duration(milliseconds: 300),
+                  () {
+                    if (mounted) {
+                      _fitRouteOnMap();
+                    }
+                  },
+                );
+              }
             },
-            onCameraIdle: _updateMarkerLabelPositions,
             initialCameraPosition: CameraPosition(
-              target: LatLng(widget.pickupLat, widget.pickupLng),
+              target: LatLng(
+                widget.pickupLat,
+                widget.pickupLng,
+              ),
               zoom: 14,
             ),
             markers: _markers,
@@ -51457,42 +51254,28 @@ class _RideStartedScreenState extends State<RideStartedScreen>
             mapToolbarEnabled: false,
             compassEnabled: false,
             padding: EdgeInsets.only(
-              bottom: screenSize.height * 0.49,
-              top: 65,
+              bottom: MediaQuery.of(context).size.height * 0.48,
+              top: 70,
             ),
           ),
 
-          // ADDRESS LABELS BESIDE THE MAP MARKERS
-          _buildPositionedAddressLabel(
-            position: _pickupScreenPosition,
-            address: widget.pickup,
-            color: Colors.green.shade700,
-            icon: Icons.trip_origin_rounded,
-            screenSize: screenSize,
-          ),
-
-          _buildPositionedAddressLabel(
-            position: _destinationScreenPosition,
-            address: widget.destination,
-            color: Colors.red.shade700,
-            icon: Icons.location_on_rounded,
-            screenSize: screenSize,
-          ),
-
+          // -------------------------------------------------------------------
           // ROUTE LOADING INDICATOR
+          // -------------------------------------------------------------------
+
           if (_isLoadingRoute)
             Positioned(
-              top: MediaQuery.of(context).padding.top + 12,
+              top: MediaQuery.of(context).padding.top + 15,
               left: 16,
               right: 16,
               child: Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 14,
-                  vertical: 11,
+                  vertical: 10,
                 ),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(15),
+                  borderRadius: BorderRadius.circular(20),
                   boxShadow: const [
                     BoxShadow(
                       color: Colors.black12,
@@ -51501,156 +51284,390 @@ class _RideStartedScreenState extends State<RideStartedScreen>
                   ],
                 ),
                 child: const Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     SizedBox(
-                      width: 17,
-                      height: 17,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                      ),
                     ),
                     SizedBox(width: 10),
                     Text(
-                      'Loading road route...',
-                      style: TextStyle(fontWeight: FontWeight.w600),
+                      'Loading route...',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ],
                 ),
               ),
             ),
 
-          // BOTTOM MODAL
+          // -------------------------------------------------------------------
+          // APP BAR OVERLAY
+          // -------------------------------------------------------------------
+
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 10,
+            left: 16,
+            right: 16,
+            child: const Row(
+              children: [
+                SizedBox(width: 12),
+                Center(
+                  child: Text(
+                    "",
+                    style: TextStyle(
+                      color: Colors.black,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // -------------------------------------------------------------------
+          // DETAILS AT THE BOTTOM
+          // -------------------------------------------------------------------
+
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
             child: Container(
-              constraints: BoxConstraints(
-                maxHeight: screenSize.height * 0.62,
-              ),
+              padding: const EdgeInsets.all(20),
               decoration: const BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(26),
+                  top: Radius.circular(24),
                 ),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black12,
-                    blurRadius: 15,
-                    offset: Offset(0, -3),
+                    blurRadius: 10,
+                    offset: Offset(0, -2),
                   ),
                 ],
               ),
-              child: SafeArea(
-                top: false,
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(18, 10, 18, 14),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // -----------------------------------------------------------
+                  // RIDE CODE AND TIMER
+                  // -----------------------------------------------------------
+
+                  _buildRideInfoBar(),
+
+                  const SizedBox(height: 16),
+
+                  // -----------------------------------------------------------
+                  // PICKUP / DESTINATION
+                  // -----------------------------------------------------------
+
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // MODAL HANDLE
-                      Center(
-                        child: Container(
-                          width: 38,
-                          height: 4,
-                          margin: const EdgeInsets.only(bottom: 13),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade300,
-                            borderRadius: BorderRadius.circular(10),
+                      Text(
+                        'Pickup Location',
+                        style: TextStyle(
+                          color: Colors.grey[400],
+                        ),
+                      ),
+                      Container(
+                        height: 50,
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.radio_button_checked,
+                                color: Colors.green,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  widget.pickup,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
-
-                      // STATUS AT THE TOP + TIMER AT TOP RIGHT
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(child: _buildDriverStatusCard()),
-                          const SizedBox(width: 10),
-                          _buildTripTimer(),
-                        ],
-                      ),
-
-                      const SizedBox(height: 14),
-
-                      // DISTANCE AND ESTIMATED TIME NEAR THE TOP
-                      _buildTripMetrics(),
-
-                      const SizedBox(height: 14),
-
-                      // DRIVER CARD: VEHICLE IMAGE, DRIVER NAME,
-                      // VEHICLE NAME AND VERIFIED INDICATOR
-                      const Text(
-                        'Your Driver',
+                      const SizedBox(height: 5),
+                      Text(
+                        'Destination',
                         style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
+                          color: Colors.grey[400],
                         ),
                       ),
+                      Container(
+                        height: 50,
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.location_on,
+                                color: Colors.red,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  widget.destination,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
 
-                      const SizedBox(height: 8),
+                  const SizedBox(height: 10),
 
-                      _buildDriverCard(),
+                  // -----------------------------------------------------------
+                  // DRIVER DETAILS
+                  // -----------------------------------------------------------
 
-                      const SizedBox(height: 14),
+                  const Center(
+                    child: Text(
+                      "Driver Details",
+                      style: TextStyle(
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
 
-                      // FARE AND PAYMENT
-                      Row(
+                  const SizedBox(height: 2),
+
+                  Card(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    elevation: 3,
+                    color: Colors.grey[100],
+                    margin: const EdgeInsets.symmetric(
+                      vertical: 8,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                          Row(
+                            children: [
+                              CircleAvatar(
+                                backgroundColor: Colors.grey.shade300,
+                                child: const Icon(
+                                  Icons.person,
+                                  color: Colors.black,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  widget.driverName,
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              CircleAvatar(
+                                backgroundColor: Colors.grey.shade300,
+                                child: const Icon(
+                                  Icons.directions_car,
+                                  color: Colors.black,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  widget.vehicleType,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          const Center(
+                            child: Row(
                               children: [
                                 Text(
-                                  'Ride fare',
+                                  'Status',
                                   style: TextStyle(
-                                    color: Colors.grey.shade600,
-                                    fontSize: 12,
+                                    color: Colors.black,
                                   ),
                                 ),
-                                const SizedBox(height: 3),
+                                Spacer(),
+                                Icon(
+                                  Icons.verified,
+                                  color: Colors.green,
+                                  size: 18,
+                                ),
+                                SizedBox(width: 6),
                                 Text(
-                                  '₦${widget.price.toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                    fontSize: 21,
-                                    fontWeight: FontWeight.w900,
-                                    color: Colors.black,
+                                  "Verified",
+                                  style: TextStyle(
+                                    color: Colors.green,
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            flex: 2,
-                            child: ElevatedButton(
-                              onPressed: () =>
-                                  _initiatePaystackPayment(context),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.black,
-                                foregroundColor: Colors.white,
-                                minimumSize: const Size(
-                                  double.infinity,
-                                  51,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                elevation: 0,
-                              ),
-                              child: Text(
-                                'Pay ₦${widget.price.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w800,
-                                ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 5),
+
+                  // -----------------------------------------------------------
+                  // DRIVER STATUS
+                  // -----------------------------------------------------------
+
+                  StreamBuilder<DocumentSnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('ride_requests')
+                        .doc(widget.rideId)
+                        .snapshots(),
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData) {
+                        return Container(
+                          height: 30,
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[500],
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Center(
+                            child: Text(
+                              'Awaiting Pickup',
+                              style: TextStyle(
+                                color: Colors.white,
                               ),
                             ),
                           ),
-                        ],
-                      ),
-                    ],
+                        );
+                      }
+
+                      final rawData = snapshot.data!.data();
+
+                      if (rawData == null || rawData is! Map<String, dynamic>) {
+                        return Container(
+                          height: 30,
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[500],
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Center(
+                            child: Text(
+                              'Awaiting Pickup',
+                              style: TextStyle(
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+
+                      final Map<String, dynamic> data = rawData;
+
+                      final dynamic status = data['DriverStatus'];
+
+                      String statusText = "Awaiting Pickup";
+
+                      if (status == 'en_route') {
+                        statusText = "Driver On His Way";
+                      }
+
+                      if (status == 'arrived') {
+                        statusText = "Your Driver Arrived";
+                      }
+
+                      return Container(
+                        height: 30,
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[500],
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Center(
+                          child: Text(
+                            statusText,
+                            style: const TextStyle(
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                ),
+
+                  const SizedBox(height: 10),
+
+                  // -----------------------------------------------------------
+                  // PAY BUTTON
+                  // -----------------------------------------------------------
+
+                  ElevatedButton(
+                    onPressed: _isCompletingRide || _rideCompletionSaved
+                        ? null
+                        : () => _initiatePaystackPayment(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.black,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(
+                        double.infinity,
+                        50,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(25),
+                      ),
+                    ),
+                    child: Text(
+                      _isCompletingRide
+                          ? 'Completing Ride...'
+                          : "Pay ₦${widget.price.toStringAsFixed(2)}",
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
