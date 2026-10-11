@@ -35505,7 +35505,6 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
 
   bool get _isWaybill {
     final type = widget.serviceType.trim().toLowerCase();
-
     return type.contains('waybill') || type.contains('way bill');
   }
 
@@ -35542,11 +35541,67 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
   String? _selectedToCity;
   int? _calculatedPrice;
 
+  // ================= DELIVERY FEE CALCULATION =================
+
+  /// Instant delivery has a fixed base fee of ₦500.
+  /// Waybill delivery uses the selected route's predefined price.
+  ///
+  /// Both package-size and estimated-value surcharges are calculated
+  /// independently against the base fee and added together.
+
+  double get _sizeSurchargeRate {
+    switch (_selectedSize?.toLowerCase()) {
+      case 'medium':
+        return 0.025;
+      case 'large':
+        return 0.04;
+      case 'small':
+      default:
+        return 0.0;
+    }
+  }
+
+  double get _valueSurchargeRate {
+    switch (_selectedEstimatedValue) {
+      case '₦10,000 - ₦50,000':
+        return 0.015;
+      case '₦50,000 - ₦100,000':
+        return 0.025;
+      case 'Above ₦100,000':
+        return 0.05;
+      case '₦1,000 - ₦10,000':
+      default:
+        return 0.0;
+    }
+  }
+
+  // Instant = ₦500; Waybill = selected route price.
+  double get _baseDeliveryFee {
+    if (_isInstant) return 500.0;
+
+    return (_calculatedPrice ?? 0).toDouble();
+  }
+
+  double get _sizeSurcharge =>
+      _baseDeliveryFee * _sizeSurchargeRate;
+
+  double get _valueSurcharge =>
+      _baseDeliveryFee * _valueSurchargeRate;
+
+  double get _totalDeliveryFee =>
+      _baseDeliveryFee + _sizeSurcharge + _valueSurcharge;
+
+  int get _finalDeliveryFee => _totalDeliveryFee.round();
+
+  bool get _receiverDetailsComplete =>
+      _receiverNameController.text.trim().isNotEmpty &&
+      _receiverContactController.text.trim().isNotEmpty &&
+      _deliveryAddressController.text.trim().isNotEmpty;
+
   @override
   void initState() {
     super.initState();
 
-    // City routes are needed only for Waybills.
     if (_isWaybill) {
       _fetchRoutes();
     }
@@ -35598,7 +35653,6 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
         setState(() {
           _loadingSenderProfile = false;
         });
-
         return;
       }
 
@@ -35607,46 +35661,34 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
       _senderType = data['senderType']?.toString();
 
       if (_senderType == 'business') {
-        _senderNameController.text = data['businessName']?.toString() ?? '';
-
-        _senderContactController.text = data['phone']?.toString() ?? '';
-
-        final address = data['address']?.toString() ?? '';
-        final city = data['city']?.toString() ?? '';
-        final state = data['state']?.toString() ?? '';
-
-        final addressParts = [
-          address,
-          city,
-          state,
-        ].where((part) => part.trim().isNotEmpty).toList();
-
-        _pickupAddressController.text = addressParts.join(', ');
+        _senderNameController.text =
+            data['businessName']?.toString() ?? '';
       } else {
         _senderNameController.text =
-            data['name']?.toString() ?? data['fullName']?.toString() ?? '';
-
-        _senderContactController.text = data['phone']?.toString() ?? '';
-
-        final address = data['address']?.toString() ?? '';
-        final city = data['city']?.toString() ?? '';
-        final state = data['state']?.toString() ?? '';
-
-        final addressParts = [
-          address,
-          city,
-          state,
-        ].where((part) => part.trim().isNotEmpty).toList();
-
-        _pickupAddressController.text = addressParts.join(', ');
+            data['name']?.toString() ??
+            data['fullName']?.toString() ??
+            '';
       }
+
+      _senderContactController.text =
+          data['phone']?.toString() ?? '';
+
+      final address = data['address']?.toString() ?? '';
+      final city = data['city']?.toString() ?? '';
+      final state = data['state']?.toString() ?? '';
+
+      _pickupAddressController.text = [
+        address,
+        city,
+        state,
+      ].where((part) => part.trim().isNotEmpty).join(', ');
 
       if (!mounted) return;
 
       setState(() {
         _loadingSenderProfile = false;
       });
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
 
       setState(() {
@@ -35659,8 +35701,9 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
 
   Future<void> _fetchRoutes() async {
     try {
-      final snapshot =
-          await FirebaseFirestore.instance.collection('logistics_routes').get();
+      final snapshot = await FirebaseFirestore.instance
+          .collection('logistics_routes')
+          .get();
 
       if (!mounted) return;
 
@@ -35708,13 +35751,14 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
     final destinations = _getDestinations(_selectedFromCity!);
 
     final match = destinations.firstWhere(
-      (destination) => destination['name']?.toString() == _selectedToCity,
+      (destination) =>
+          destination['name']?.toString() == _selectedToCity,
       orElse: () => <String, dynamic>{},
     );
 
-    setState(() {
-      final price = match['price'];
+    final price = match['price'];
 
+    setState(() {
       _calculatedPrice = price is num ? price.toInt() : null;
     });
   }
@@ -35726,12 +35770,17 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
 
     if (!_useSavedSender) return;
 
+    if (!mounted) return;
+
     setState(() {
-      _senderNameController.text = prefs.getString('senderName') ?? '';
+      _senderNameController.text =
+          prefs.getString('senderName') ?? '';
 
-      _senderContactController.text = prefs.getString('senderContact') ?? '';
+      _senderContactController.text =
+          prefs.getString('senderContact') ?? '';
 
-      _pickupAddressController.text = prefs.getString('pickupAddress') ?? '';
+      _pickupAddressController.text =
+          prefs.getString('pickupAddress') ?? '';
     });
   }
 
@@ -35759,7 +35808,8 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
   bool _validateStep(int step) {
     switch (step) {
       case 0:
-        final packageValid = _packageNameController.text.trim().isNotEmpty &&
+        final packageValid =
+            _packageNameController.text.trim().isNotEmpty &&
             _selectedCategory != null &&
             _selectedSize != null &&
             _selectedEstimatedValue != null;
@@ -35770,7 +35820,8 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
 
         return packageValid &&
             _selectedFromCity != null &&
-            _selectedToCity != null;
+            _selectedToCity != null &&
+            _calculatedPrice != null;
 
       case 1:
         return _senderNameController.text.trim().isNotEmpty &&
@@ -35778,9 +35829,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
             _pickupAddressController.text.trim().isNotEmpty;
 
       case 2:
-        return _receiverNameController.text.trim().isNotEmpty &&
-            _receiverContactController.text.trim().isNotEmpty &&
-            _deliveryAddressController.text.trim().isNotEmpty;
+        return _receiverDetailsComplete;
 
       default:
         return false;
@@ -35855,14 +35904,17 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
   // ================= PREVIEW =================
 
   void _goToPreview() {
-    if (!_validateStep(0) || !_validateStep(1) || !_validateStep(2)) {
+    if (!_validateStep(0) ||
+        !_validateStep(1) ||
+        !_validateStep(2)) {
       _showValidationMessage(
         'Please complete all required details before continuing.',
       );
       return;
     }
 
-    final trackingId = 'TRK-${const Uuid().v4().substring(0, 8).toUpperCase()}';
+    final trackingId =
+        'TRK-${const Uuid().v4().substring(0, 8).toUpperCase()}';
 
     final user = FirebaseAuth.instance.currentUser;
 
@@ -35889,10 +35941,25 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
       'estimatedValue': _selectedEstimatedValue,
 
       // Waybill route information.
-      // These values remain null for Instant services.
       'fromCity': _isWaybill ? _selectedFromCity : null,
       'toCity': _isWaybill ? _selectedToCity : null,
-      'price': _isWaybill ? _calculatedPrice : null,
+
+      // Final calculated price for BOTH services.
+      'price': _finalDeliveryFee,
+
+      // Base fee: ₦500 for instant, route fee for waybill.
+      'baseDeliveryFee': _baseDeliveryFee.round(),
+
+      // Package-size surcharge breakdown.
+      'sizeSurchargeRate': _sizeSurchargeRate,
+      'sizeSurcharge': _sizeSurcharge.round(),
+
+      // Estimated-value surcharge breakdown.
+      'valueSurchargeRate': _valueSurchargeRate,
+      'valueSurcharge': _valueSurcharge.round(),
+
+      // Final delivery fee for the preview/order summary.
+      'deliveryFee': _finalDeliveryFee,
     };
 
     Navigator.push(
@@ -36242,7 +36309,8 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
                     itemBuilder: (context, index) {
                       final destination = destinations[index];
 
-                      final name = destination['name']?.toString() ?? '';
+                      final name =
+                          destination['name']?.toString() ?? '';
 
                       final price = destination['price'];
 
@@ -36295,11 +36363,14 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
           vertical: 15,
         ),
         decoration: BoxDecoration(
-          color:
-              selected ? Colors.black.withOpacity(0.05) : Colors.grey.shade50,
+          color: selected
+              ? Colors.black.withOpacity(0.05)
+              : Colors.grey.shade50,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: selected ? Colors.black : Colors.grey.shade200,
+            color: selected
+                ? Colors.black
+                : Colors.grey.shade200,
             width: selected ? 1.2 : 1,
           ),
         ),
@@ -36340,7 +36411,9 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
                 shape: BoxShape.circle,
                 color: selected ? Colors.black : Colors.transparent,
                 border: Border.all(
-                  color: selected ? Colors.black : Colors.grey.shade400,
+                  color: selected
+                      ? Colors.black
+                      : Colors.grey.shade400,
                   width: 1.5,
                 ),
               ),
@@ -36402,8 +36475,12 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
                     hasValue ? value : (hint ?? 'Select'),
                     style: TextStyle(
                       fontSize: 15,
-                      fontWeight: hasValue ? FontWeight.w600 : FontWeight.w400,
-                      color: hasValue ? Colors.black : Colors.grey.shade600,
+                      fontWeight: hasValue
+                          ? FontWeight.w600
+                          : FontWeight.w400,
+                      color: hasValue
+                          ? Colors.black
+                          : Colors.grey.shade600,
                     ),
                   ),
                 ],
@@ -36526,29 +36603,20 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
           _packageNameController,
           'Package Name',
         ),
-
         const SizedBox(height: 20),
-
-        // No category icon or extra "Category" label.
         _buildSelectorField(
           value: _selectedCategory,
           hint: 'Select package category',
           onTap: _showCategorySheet,
         ),
-
         const SizedBox(height: 20),
-
-        // Package size behaves like a text field, opening options.
         _buildSelectorField(
           label: 'Package Size',
           value: _selectedSize,
           hint: 'Select package size',
           onTap: _showPackageSizeSheet,
         ),
-
         const SizedBox(height: 20),
-
-        // Estimated value is selected from the provided ranges.
         _buildSelectorField(
           label: 'Estimated Value',
           value: _selectedEstimatedValue,
@@ -36556,13 +36624,12 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
           onTap: _showEstimatedValueSheet,
         ),
 
-        // Pickup and destination city fields are Waybills-only.
+        // Route selection is required only for waybill delivery.
         if (_isWaybill) ...[
           const SizedBox(height: 20),
           _cityDropdown(),
           const SizedBox(height: 20),
           _destinationDropdown(),
-          _priceCard(),
         ],
       ],
     );
@@ -36610,7 +36677,9 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
                     color: Colors.black,
                     width: 1,
                   ),
-                  color: _useSavedSender ? Colors.black : Colors.transparent,
+                  color: _useSavedSender
+                      ? Colors.black
+                      : Colors.transparent,
                 ),
                 child: _useSavedSender
                     ? const Icon(
@@ -36628,10 +36697,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
             ],
           ),
         ),
-
         const SizedBox(height: 22),
-
-        // Circular profile icon and sender/business name.
         Row(
           children: [
             Container(
@@ -36664,9 +36730,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
             ),
           ],
         ),
-
         const SizedBox(height: 24),
-
         const Text(
           'Contact',
           style: TextStyle(
@@ -36675,9 +36739,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
             color: Colors.black,
           ),
         ),
-
         const SizedBox(height: 8),
-
         _buildTextField(
           _senderContactController,
           'Phone number',
@@ -36686,9 +36748,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
             setState(() {});
           },
         ),
-
         const SizedBox(height: 20),
-
         const Text(
           'Address',
           style: TextStyle(
@@ -36697,9 +36757,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
             color: Colors.black,
           ),
         ),
-
         const SizedBox(height: 8),
-
         _buildTextField(
           _pickupAddressController,
           'Enter sender address',
@@ -36717,18 +36775,28 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
         _buildTextField(
           _receiverNameController,
           'Receiver Name',
+          onChanged: (_) => setState(() {}),
         ),
         const SizedBox(height: 12),
         _buildTextField(
           _receiverContactController,
           'Phone',
           keyboardType: TextInputType.phone,
+          onChanged: (_) => setState(() {}),
         ),
         const SizedBox(height: 12),
         _buildTextField(
           _deliveryAddressController,
           'Delivery Address',
+          onChanged: (_) => setState(() {}),
         ),
+
+        // Display the fee for both instant and waybill deliveries
+        // once the receiver's details are complete.
+        if (_receiverDetailsComplete &&
+            (_isInstant || _calculatedPrice != null)) ...[
+          _priceCard(),
+        ],
       ],
     );
   }
@@ -36753,7 +36821,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
       case 0:
         return _isInstant
             ? "Tell us about the package you're sending."
-            : "Tell us about your package and select the pickup and destination cities.";
+            : 'Tell us about your package and select the pickup and destination cities.';
       case 1:
         return 'Who is sending this package?';
       case 2:
@@ -36802,38 +36870,43 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
     }
   }
 
-  // ================= PRICE CARD =================
+  // ================= DELIVERY FEE CARD =================
 
   Widget _priceCard() {
-    if (!_isWaybill || _calculatedPrice == null) {
-      return const SizedBox();
+    if (!_receiverDetailsComplete) {
+      return const SizedBox.shrink();
+    }
+
+    if (_isWaybill && _calculatedPrice == null) {
+      return const SizedBox.shrink();
     }
 
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.only(top: 20),
-      padding: const EdgeInsets.all(18),
+      margin: const EdgeInsets.only(top: 22),
+      padding: const EdgeInsets.symmetric(
+        horizontal: 18,
+        vertical: 20,
+      ),
       decoration: BoxDecoration(
         color: Colors.black,
         borderRadius: BorderRadius.circular(18),
       ),
       child: Row(
         children: [
-          const Icon(
-            Icons.local_shipping_rounded,
-            color: Colors.white,
-          ),
-          const SizedBox(width: 14),
           const Expanded(
             child: Text(
-              'Estimated Delivery Fee',
+              'Delivery Fee',
               style: TextStyle(
-                color: Colors.white70,
+                color: Colors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ),
+          const SizedBox(width: 12),
           Text(
-            '₦${NumberFormat("#,###").format(_calculatedPrice)}',
+            '₦${NumberFormat("#,##0").format(_finalDeliveryFee)}',
             style: const TextStyle(
               color: Colors.white,
               fontSize: 22,
@@ -36945,12 +37018,14 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
                               child: OutlinedButton(
                                 onPressed: _previousStep,
                                 style: OutlinedButton.styleFrom(
-                                  minimumSize: const Size.fromHeight(55),
+                                  minimumSize:
+                                      const Size.fromHeight(55),
                                   side: BorderSide(
                                     color: Colors.grey.shade300,
                                   ),
                                   shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14),
+                                    borderRadius:
+                                        BorderRadius.circular(14),
                                   ),
                                 ),
                                 child: const Text(
@@ -36961,7 +37036,8 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
                                 ),
                               ),
                             ),
-                          if (_currentStep > 0) const SizedBox(width: 14),
+                          if (_currentStep > 0)
+                            const SizedBox(width: 14),
                           Expanded(
                             child: ElevatedButton(
                               onPressed: () {
@@ -36973,13 +37049,17 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
                               },
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.black,
-                                minimumSize: const Size.fromHeight(55),
+                                minimumSize:
+                                    const Size.fromHeight(55),
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
+                                  borderRadius:
+                                      BorderRadius.circular(14),
                                 ),
                               ),
                               child: Text(
-                                _currentStep == 2 ? 'Continue' : 'Next',
+                                _currentStep == 2
+                                    ? 'Continue'
+                                    : 'Next',
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w600,
@@ -37047,45 +37127,102 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
   }
 }
 
+
+import 'dart:convert';
+import 'dart:math';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
+
+// Keep your existing import for OrderPlacedPage.
+
 class PackagePreviewPage extends StatelessWidget {
   final Map<String, dynamic> packageData;
 
-  const PackagePreviewPage({Key? key, required this.packageData})
-      : super(key: key);
+  const PackagePreviewPage({
+    Key? key,
+    required this.packageData,
+  }) : super(key: key);
+
+  // Prefer the final calculated fee from PackageDetailsPage.
+  // The fallback supports older packageData maps.
+  double get _deliveryFee {
+    final dynamic value =
+        packageData['deliveryFee'] ?? packageData['price'];
+
+    if (value is num) return value.toDouble();
+
+    if (value != null) {
+      return double.tryParse(
+            value.toString().replaceAll(',', '').replaceAll('₦', '').trim(),
+          ) ??
+          0.0;
+    }
+
+    // Fallback for data that contains the base fee and surcharge values.
+    final base = _number(packageData['baseDeliveryFee']);
+    final sizeSurcharge = _number(packageData['sizeSurcharge']);
+    final valueSurcharge = _number(packageData['valueSurcharge']);
+
+    return base + sizeSurcharge + valueSurcharge;
+  }
+
+  static double _number(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value == null) return 0.0;
+
+    return double.tryParse(
+          value.toString().replaceAll(',', '').replaceAll('₦', '').trim(),
+        ) ??
+        0.0;
+  }
+
+  String _naira(num value) {
+    final wholeAmount = value.round();
+    final formatted = wholeAmount.toString().replaceAllMapped(
+          RegExp(r'\B(?=(\d{3})+(?!\d))'),
+          (match) => ',',
+        );
+
+    return '₦$formatted';
+  }
+
+  String _text(dynamic value, {String fallback = '-'}) {
+    if (value == null || value.toString().trim().isEmpty) {
+      return fallback;
+    }
+    return value.toString();
+  }
+
+  bool get _isWaybill {
+    final service = _text(packageData['serviceType'], fallback: '')
+        .toLowerCase()
+        .replaceAll('-', ' ')
+        .trim();
+
+    return service.contains('waybill');
+  }
 
   @override
   Widget build(BuildContext context) {
-    final serviceType = packageData['serviceType'] ?? 'Package Details';
+    final serviceType = _text(
+      packageData['serviceType'],
+      fallback: 'Package Details',
+    );
 
-    Widget _buildSummaryRow(String label, String value) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 14),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                color: Colors.grey.shade600,
-                fontSize: 14,
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Text(
-                value,
-                textAlign: TextAlign.right,
-                style: const TextStyle(
-                  color: Colors.black,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
+    final hasRoute = packageData['fromCity'] != null ||
+        packageData['toCity'] != null;
+
+    final baseFee = _number(packageData['baseDeliveryFee']);
+    final sizeSurcharge = _number(packageData['sizeSurcharge']);
+    final valueSurcharge = _number(packageData['valueSurcharge']);
+
+    final hasSurchargeBreakdown = packageData.containsKey('baseDeliveryFee') ||
+        packageData.containsKey('sizeSurcharge') ||
+        packageData.containsKey('valueSurcharge');
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -37098,176 +37235,322 @@ class PackagePreviewPage extends StatelessWidget {
           child: GestureDetector(
             onTap: () => Navigator.pop(context),
             child: Container(
-              width: 25,
-              height: 25,
+              width: 36,
+              height: 36,
               decoration: BoxDecoration(
-                color: Colors.grey[100],
+                color: Colors.grey.shade100,
                 shape: BoxShape.circle,
               ),
+              alignment: Alignment.center,
               child: const Icon(
-                Icons.arrow_back_ios,
-                size: 14,
+                Icons.arrow_back_ios_new,
+                size: 15,
                 color: Colors.black,
               ),
             ),
           ),
         ),
-        title: const Padding(
-          padding: EdgeInsets.only(left: 8),
-          child: Text(
-            '',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: Colors.black,
-            ),
+        title: const Text(
+          'Review Package',
+          style: TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.bold,
+            color: Colors.black,
           ),
         ),
+        centerTitle: false,
       ),
-      body: Center(
+      body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 500),
-            child: Card(
-              elevation: 4,
-              color: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Center(
-                      child: Text(
-                        "Confirm Details",
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black,
+          padding: const EdgeInsets.all(16),
+          child: Center(
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 500),
+              child: Card(
+                elevation: 2,
+                shadowColor: Colors.black12,
+                color: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  side: BorderSide(color: Colors.grey.shade200),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(22),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Center(
+                        child: Text(
+                          'Confirm Details',
+                          style: TextStyle(
+                            fontSize: 21,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black,
+                          ),
                         ),
                       ),
-                    ),
 
-                    const SizedBox(height: 20),
+                      const SizedBox(height: 6),
 
-                    // FROM
-                    if (packageData['fromCity'] != null)
-                      _buildSummaryRow(
-                        "From",
-                        packageData['fromCity'].toString(),
+                      Center(
+                        child: Text(
+                          serviceType,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
                       ),
 
-                    // TO
-                    if (packageData['toCity'] != null)
+                      const SizedBox(height: 24),
+
+                      _sectionTitle('Package Information'),
+
                       _buildSummaryRow(
-                        "To",
-                        packageData['toCity'].toString(),
+                        'Service Type',
+                        serviceType,
                       ),
 
-                    // PACKAGE NAME
-                    if (packageData['packageName'] != null)
-                      _buildSummaryRow(
-                        "Package Name",
-                        packageData['packageName'].toString(),
-                      ),
+                      if (packageData['packageName'] != null)
+                        _buildSummaryRow(
+                          _isWaybill ? 'Item Name' : 'Package Name',
+                          _text(packageData['packageName']),
+                        ),
 
-                    // PICKUP ADDRESS
-                    if (packageData['pickupAddress'] != null)
-                      _buildSummaryRow(
-                        "Pickup Address",
-                        packageData['pickupAddress'].toString(),
-                      ),
+                      if (packageData['category'] != null)
+                        _buildSummaryRow(
+                          'Package Category',
+                          _text(packageData['category']),
+                        ),
 
-                    // DELIVERY ADDRESS
-                    if (packageData['deliveryAddress'] != null)
-                      _buildSummaryRow(
-                        "Delivery Address",
-                        packageData['deliveryAddress'].toString(),
-                      ),
+                      if (packageData['extraField'] != null)
+                        _buildSummaryRow(
+                          _isWaybill ? 'Invoice/Waybill' : 'Pickup Time',
+                          _text(packageData['extraField']),
+                        ),
 
-                    const SizedBox(height: 16),
+                      if (hasRoute) ...[
+                        const SizedBox(height: 10),
+                        _sectionTitle('Route'),
 
-                    // SERVICE PREVIEW
-                    //    _buildServicePreviewUI(serviceType),
+                        if (packageData['fromCity'] != null)
+                          _buildSummaryRow(
+                            'From',
+                            _text(packageData['fromCity']),
+                          ),
 
-                    // const SizedBox(height: 20),
+                        if (packageData['toCity'] != null)
+                          _buildSummaryRow(
+                            'To',
+                            _text(packageData['toCity']),
+                          ),
+                      ],
 
-                    // DELIVERY FEE
-                    if (packageData['price'] != null)
+                      if (packageData['pickupAddress'] != null ||
+                          packageData['deliveryAddress'] != null) ...[
+                        const SizedBox(height: 10),
+                        _sectionTitle('Delivery Addresses'),
+
+                        if (packageData['pickupAddress'] != null)
+                          _buildSummaryRow(
+                            'Pickup Address',
+                            _text(packageData['pickupAddress']),
+                          ),
+
+                        if (packageData['deliveryAddress'] != null)
+                          _buildSummaryRow(
+                            'Delivery Address',
+                            _text(packageData['deliveryAddress']),
+                          ),
+                      ],
+
+                      if (packageData['senderName'] != null ||
+                          packageData['senderContact'] != null ||
+                          packageData['receiverName'] != null ||
+                          packageData['receiverContact'] != null) ...[
+                        const SizedBox(height: 10),
+                        _sectionTitle('Sender & Receiver'),
+
+                        if (packageData['senderName'] != null)
+                          _buildSummaryRow(
+                            'Sender Name',
+                            _text(packageData['senderName']),
+                          ),
+
+                        if (packageData['senderContact'] != null)
+                          _buildSummaryRow(
+                            'Sender Contact',
+                            _text(packageData['senderContact']),
+                          ),
+
+                        if (packageData['receiverName'] != null)
+                          _buildSummaryRow(
+                            'Receiver Name',
+                            _text(packageData['receiverName']),
+                          ),
+
+                        if (packageData['receiverContact'] != null)
+                          _buildSummaryRow(
+                            'Receiver Contact',
+                            _text(packageData['receiverContact']),
+                          ),
+                      ],
+
+                      if (packageData['trackingId'] != null) ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Tracking ID',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                              const SizedBox(height: 5),
+                              SelectableText(
+                                _text(packageData['trackingId']),
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+
+                      const SizedBox(height: 22),
+
+                      _sectionTitle('Delivery Fee'),
+
+                      if (hasSurchargeBreakdown) ...[
+                        _buildFeeRow(
+                          'Base delivery fee',
+                          _naira(baseFee),
+                        ),
+
+                        if (sizeSurcharge > 0)
+                          _buildFeeRow(
+                            'Package size surcharge',
+                            '+${_naira(sizeSurcharge)}',
+                          ),
+
+                        if (valueSurcharge > 0)
+                          _buildFeeRow(
+                            'Estimated value surcharge',
+                            '+${_naira(valueSurcharge)}',
+                          ),
+
+                        const SizedBox(height: 10),
+                        Divider(color: Colors.grey.shade300),
+                        const SizedBox(height: 8),
+                      ],
+
                       Row(
                         children: [
-                          const Text(
-                            "Delivery Fee",
-                            style: TextStyle(
-                              color: Colors.black,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w500,
+                          const Expanded(
+                            child: Text(
+                              'Total Delivery Fee',
+                              style: TextStyle(
+                                color: Colors.black,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
-                          const Spacer(),
                           Text(
-                            "₦${packageData['price']}",
+                            _naira(_deliveryFee),
                             style: const TextStyle(
                               color: Colors.green,
-                              fontSize: 18,
+                              fontSize: 21,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
                         ],
                       ),
 
-                    const SizedBox(height: 24),
+                      const SizedBox(height: 8),
 
-                    // ACTION BUTTONS
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () => Navigator.pop(context),
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 14,
+                      Text(
+                        _isWaybill
+                            ? 'The fee includes the selected route and applicable package surcharges.'
+                            : 'The fee includes the ₦500 instant delivery base price and applicable package surcharges.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          height: 1.4,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+
+                      const SizedBox(height: 28),
+
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => Navigator.pop(context),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.black,
+                                side: BorderSide(
+                                  color: Colors.grey.shade300,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 15,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(30),
+                                ),
                               ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(30),
-                              ),
-                            ),
-                            child: const Text(
-                              "Go Back",
-                              style: TextStyle(
-                                color: Colors.black,
+                              child: const Text(
+                                'Go Back',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: () => _payAndCreateOrder(context),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.black,
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 14,
+
+                          const SizedBox(width: 12),
+
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: _deliveryFee > 0
+                                  ? () => _payAndCreateOrder(context)
+                                  : null,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.black,
+                                disabledBackgroundColor: Colors.grey.shade400,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 15,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(30),
+                                ),
                               ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(30),
-                              ),
-                            ),
-                            child: const Text(
-                              "Pay",
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
+                              child: const Text(
+                                'Pay',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -37277,20 +37560,130 @@ class PackagePreviewPage extends StatelessWidget {
     );
   }
 
-  /// 🔥 PAYSTACK + ORDER CREATION
+  Widget _sectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14, top: 4),
+      child: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.bold,
+          color: Colors.black,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSummaryRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Flexible(
+            flex: 4,
+            child: Text(
+              label,
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 6,
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                color: Colors.black,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFeeRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.black87,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Paystack initialization and logistics order creation.
   Future<void> _payAndCreateOrder(BuildContext context) async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
 
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please sign in before making a payment.'),
+        ),
+      );
+      return;
+    }
+
+    // Keep your existing payment configuration for compatibility.
+    // A secret Paystack key should ultimately be kept on your server,
+    // not embedded in a Flutter client.
     const String paystackKey =
         'sk_test_661490bf9dc0914e122c2c043ab3aaf3a307d658';
 
-    final int amount =
-        (double.parse(packageData['price'].toString()) * 100).toInt();
+    final int amountInKobo = (_deliveryFee * 100).round();
 
-    final String reference = "log_${DateTime.now().millisecondsSinceEpoch}";
+    if (amountInKobo <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('The delivery fee is invalid. Please go back and review your package.'),
+        ),
+      );
+      return;
+    }
 
-    final Uri url = Uri.parse('https://api.paystack.co/transaction/initialize');
+    final trackingId = packageData['trackingId']?.toString();
+
+    if (trackingId == null || trackingId.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tracking ID is missing. Please go back and try again.'),
+        ),
+      );
+      return;
+    }
+
+    final String reference =
+        'log_${DateTime.now().millisecondsSinceEpoch}';
+
+    final Uri url =
+        Uri.parse('https://api.paystack.co/transaction/initialize');
+
+    bool dialogOpen = false;
 
     showDialog(
       context: context,
@@ -37301,11 +37694,13 @@ class PackagePreviewPage extends StatelessWidget {
           children: [
             CircularProgressIndicator(),
             SizedBox(height: 16),
-            Text("Processing payment..."),
+            Text('Processing payment...'),
           ],
         ),
       ),
     );
+
+    dialogOpen = true;
 
     try {
       final response = await http.post(
@@ -37316,25 +37711,49 @@ class PackagePreviewPage extends StatelessWidget {
         },
         body: jsonEncode({
           'email': user.email,
-          'amount': amount,
+          'amount': amountInKobo,
           'reference': reference,
         }),
       );
 
       if (response.statusCode != 200) {
-        throw Exception("Payment initialization failed");
+        throw Exception('Payment initialization failed.');
+      }
+
+      final responseData = jsonDecode(response.body);
+
+      if (responseData['status'] != true ||
+          responseData['data']?['authorization_url'] == null) {
+        throw Exception(
+          responseData['message']?.toString() ??
+              'Unable to initialize payment.',
+        );
       }
 
       final checkoutUrl =
-          jsonDecode(response.body)['data']['authorization_url'];
+          responseData['data']['authorization_url'].toString();
 
-      if (await canLaunchUrl(Uri.parse(checkoutUrl))) {
-        await launchUrl(Uri.parse(checkoutUrl),
-            mode: LaunchMode.externalApplication);
+      final checkoutUri = Uri.parse(checkoutUrl);
+
+      // Close the loading dialog before opening external checkout.
+      if (dialogOpen && context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        dialogOpen = false;
       }
 
-      /// ⚠️ TEMP: Assume payment success
-      final trackingId = packageData['trackingId'];
+      final launched = await launchUrl(
+        checkoutUri,
+        mode: LaunchMode.externalApplication,
+      );
+
+      if (!launched) {
+        throw Exception('Unable to open the payment checkout.');
+      }
+
+      // TEMPORARY: This preserves your current flow.
+      // Returning from checkout does not prove that payment succeeded.
+      // Verify the reference with Paystack on a trusted backend before
+      // setting paymentStatus to paid in production.
       final pickupCode = _generateCode();
       final deliveryCode = _generateCode();
 
@@ -37343,6 +37762,11 @@ class PackagePreviewPage extends StatelessWidget {
           .doc(trackingId)
           .set({
         ...packageData,
+
+        // Persist the exact final amount used for checkout.
+        'price': _deliveryFee.round(),
+        'deliveryFee': _deliveryFee.round(),
+
         'status': 'pending',
         'paymentStatus': 'paid',
         'paymentReference': reference,
@@ -37353,7 +37777,7 @@ class PackagePreviewPage extends StatelessWidget {
         'deliveryCode': deliveryCode,
       });
 
-      Navigator.pop(context);
+      if (!context.mounted) return;
 
       Navigator.pushReplacement(
         context,
@@ -37362,21 +37786,19 @@ class PackagePreviewPage extends StatelessWidget {
         ),
       );
     } catch (e) {
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(e.toString())));
-    }
-  }
+      if (dialogOpen && context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        dialogOpen = false;
+      }
 
-  // 🔹 UNTOUCHED
-  Widget _buildServicePreviewUI(String serviceType) {
-    switch (serviceType) {
-      case "Instant pickup and delivery":
-        return _instantDeliveryPreview();
-      case "Waybills":
-        return _waybillsPreview();
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
     }
-    return _defaultPreview();
   }
 
   String _generateCode() {
@@ -37390,86 +37812,8 @@ class PackagePreviewPage extends StatelessWidget {
       ),
     );
   }
-
-  Widget _instantDeliveryPreview() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildDetail("Service Type", "Instant pickup and delivery"),
-        _buildDetail("Package Name", packageData['packageName']),
-        _buildDetail("Category", packageData['category']),
-        _buildDetail("Pickup Address", packageData['pickupAddress']),
-        _buildDetail("Delivery Address", packageData['deliveryAddress']),
-        _buildDetail("Sender Name", packageData['senderName']),
-        _buildDetail("Sender Contact", packageData['senderContact']),
-        _buildDetail("Receiver Name", packageData['receiverName']),
-        _buildDetail("Receiver Contact", packageData['receiverContact']),
-        _buildDetail("Expected Pickup Time", packageData['extraField']),
-        const SizedBox(height: 10),
-        Text("Tracking ID: ${packageData['trackingId']}",
-            style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-                color: Colors.deepPurple)),
-      ],
-    );
-  }
-
-  Widget _waybillsPreview() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildDetail("Service Type", "Waybills"),
-        _buildDetail("Item Name", packageData['packageName']),
-        _buildDetail("Invoice/Waybill", packageData['extraField']),
-        _buildDetail("Sender Name", packageData['senderName']),
-        _buildDetail("Receiver Name", packageData['receiverName']),
-        const SizedBox(height: 10),
-        Text("Tracking ID: ${packageData['trackingId']}",
-            style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-                color: Colors.deepPurple)),
-      ],
-    );
-  }
-
-  Widget _defaultPreview() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildDetail("Package Name", packageData['packageName']),
-        _buildDetail("Pickup Address", packageData['pickupAddress']),
-        _buildDetail("Delivery Address", packageData['deliveryAddress']),
-        const SizedBox(height: 10),
-        Text("Tracking ID: ${packageData['trackingId']}",
-            style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-                color: Colors.deepPurple)),
-      ],
-    );
-  }
-
-  Widget _buildDetail(String title, String? value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text("$title: ", style: const TextStyle(color: Colors.black87)),
-          Expanded(
-            child: Text(
-              value ?? '-',
-              style: const TextStyle(
-                  color: Colors.black54, fontWeight: FontWeight.bold),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
+
 
 class OrderPlacedPage extends StatelessWidget {
   final String orderId;
