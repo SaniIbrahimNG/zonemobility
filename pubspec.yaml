@@ -103,7 +103,7 @@ flutter:
     - assets/images/send.png
     - assets/images/traveling.png
     - assets/images/supplier.png
-    - assets/sounds/notification_sound.mp3
+    
     - assets/images/zone.png
     - assets/images/coke.png
     - assets/images/danwake.png
