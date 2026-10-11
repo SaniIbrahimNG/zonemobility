@@ -35469,8 +35469,11 @@ class _SearchingScreenState extends State<SearchingScreen> {
 
 class PackageDetailsPage extends StatefulWidget {
   final String serviceType;
-  const PackageDetailsPage({Key? key, required this.serviceType})
-      : super(key: key);
+
+  const PackageDetailsPage({
+    Key? key,
+    required this.serviceType,
+  }) : super(key: key);
 
   @override
   State<PackageDetailsPage> createState() => _PackageDetailsPageState();
@@ -35487,23 +35490,52 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
   final _senderContactController = TextEditingController();
   final _receiverNameController = TextEditingController();
   final _receiverContactController = TextEditingController();
+  final _estimatedValueController = TextEditingController();
 
   bool _useSavedSender = false;
   int _currentStep = 0;
   String? _selectedCategory;
+  String? _selectedSize;
+  String? _selectedEstimatedValue;
+
   bool _loadingSenderProfile = true;
-  bool _editingSender = false;
   String? _senderType;
+
+  // ================= SERVICE TYPE =================
+
+  bool get _isWaybill {
+    final type = widget.serviceType.trim().toLowerCase();
+
+    return type.contains('waybill') || type.contains('way bill');
+  }
+
+  bool get _isInstant => !_isWaybill;
+
+  // ================= PACKAGE OPTIONS =================
 
   final List<String> _categories = [
     'Document',
     'Electronics',
     'Clothing',
     'Food',
-    'Other'
+    'Other',
+  ];
+
+  final List<String> _packageSizes = [
+    'Small',
+    'Medium',
+    'Large',
+  ];
+
+  final List<String> _estimatedValueRanges = [
+    '₦1,000 - ₦10,000',
+    '₦10,000 - ₦50,000',
+    '₦50,000 - ₦100,000',
+    'Above ₦100,000',
   ];
 
   // ================= LOGISTICS ROUTES =================
+
   List<Map<String, dynamic>> _routes = [];
 
   String? _selectedFromCity;
@@ -35513,42 +35545,100 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
   @override
   void initState() {
     super.initState();
-    _fetchRoutes();
+
+    // City routes are needed only for Waybills.
+    if (_isWaybill) {
+      _fetchRoutes();
+    }
+
     _loadSenderProfile();
   }
 
-  Future<void> _loadSenderProfile() async {
-    final uid = FirebaseAuth.instance.currentUser!.uid;
+  @override
+  void dispose() {
+    _scrollController.dispose();
 
+    _packageNameController.dispose();
+    _pickupAddressController.dispose();
+    _deliveryAddressController.dispose();
+    _senderNameController.dispose();
+    _senderContactController.dispose();
+    _receiverNameController.dispose();
+    _receiverContactController.dispose();
+    _estimatedValueController.dispose();
+
+    super.dispose();
+  }
+
+  // ================= LOAD SENDER PROFILE =================
+
+  Future<void> _loadSenderProfile() async {
     try {
+      final user = FirebaseAuth.instance.currentUser;
+
+      if (user == null) {
+        if (mounted) {
+          setState(() {
+            _loadingSenderProfile = false;
+          });
+        }
+        return;
+      }
+
       final doc = await FirebaseFirestore.instance
-          .collection("users")
-          .doc(uid)
-          .collection("logistics")
-          .doc("profile")
+          .collection('users')
+          .doc(user.uid)
+          .collection('logistics')
+          .doc('profile')
           .get();
 
       if (!doc.exists) {
+        if (!mounted) return;
+
         setState(() {
           _loadingSenderProfile = false;
         });
+
         return;
       }
 
       final data = doc.data()!;
 
-      _senderType = data["senderType"];
+      _senderType = data['senderType']?.toString();
 
-      if (_senderType == "business") {
-        _senderNameController.text = data["businessName"] ?? "";
+      if (_senderType == 'business') {
+        _senderNameController.text = data['businessName']?.toString() ?? '';
 
-        _senderContactController.text = data["phone"] ?? "";
+        _senderContactController.text = data['phone']?.toString() ?? '';
 
-        final address = data["address"] ?? "";
-        final city = data["city"] ?? "";
-        final state = data["state"] ?? "";
+        final address = data['address']?.toString() ?? '';
+        final city = data['city']?.toString() ?? '';
+        final state = data['state']?.toString() ?? '';
 
-        _pickupAddressController.text = "$address, $city, $state";
+        final addressParts = [
+          address,
+          city,
+          state,
+        ].where((part) => part.trim().isNotEmpty).toList();
+
+        _pickupAddressController.text = addressParts.join(', ');
+      } else {
+        _senderNameController.text =
+            data['name']?.toString() ?? data['fullName']?.toString() ?? '';
+
+        _senderContactController.text = data['phone']?.toString() ?? '';
+
+        final address = data['address']?.toString() ?? '';
+        final city = data['city']?.toString() ?? '';
+        final state = data['state']?.toString() ?? '';
+
+        final addressParts = [
+          address,
+          city,
+          state,
+        ].where((part) => part.trim().isNotEmpty).toList();
+
+        _pickupAddressController.text = addressParts.join(', ');
       }
 
       if (!mounted) return;
@@ -35556,54 +35646,81 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
       setState(() {
         _loadingSenderProfile = false;
       });
-    } catch (_) {
+    } catch (e) {
+      if (!mounted) return;
+
       setState(() {
         _loadingSenderProfile = false;
       });
     }
   }
 
-  Future<void> _fetchRoutes() async {
-    final snapshot =
-        await FirebaseFirestore.instance.collection('logistics_routes').get();
+  // ================= FETCH ROUTES =================
 
-    setState(() {
-      _routes = snapshot.docs.map((e) => e.data()).toList();
-    });
+  Future<void> _fetchRoutes() async {
+    try {
+      final snapshot =
+          await FirebaseFirestore.instance.collection('logistics_routes').get();
+
+      if (!mounted) return;
+
+      setState(() {
+        _routes = snapshot.docs.map((doc) => doc.data()).toList();
+      });
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        _routes = [];
+      });
+    }
   }
 
   List<String> _getCities() {
-    return _routes.map((e) => e['city'].toString()).toSet().toList();
+    return _routes
+        .map((route) => route['city']?.toString() ?? '')
+        .where((city) => city.isNotEmpty)
+        .toSet()
+        .toList();
   }
 
   List<Map<String, dynamic>> _getDestinations(String city) {
     final route = _routes.firstWhere(
-      (r) => r['city'] == city,
-      orElse: () => {},
+      (item) => item['city']?.toString() == city,
+      orElse: () => <String, dynamic>{},
     );
 
     if (route.isEmpty) return [];
 
-    return List<Map<String, dynamic>>.from(route['destinations'] ?? []);
+    return List<Map<String, dynamic>>.from(
+      route['destinations'] ?? [],
+    );
   }
 
   void _calculatePrice() {
-    if (_selectedFromCity == null || _selectedToCity == null) return;
+    if (_selectedFromCity == null || _selectedToCity == null) {
+      setState(() {
+        _calculatedPrice = null;
+      });
+      return;
+    }
 
-    final dests = _getDestinations(_selectedFromCity!);
+    final destinations = _getDestinations(_selectedFromCity!);
 
-    final match = dests.firstWhere(
-      (d) => d['name'] == _selectedToCity,
-      orElse: () => {},
+    final match = destinations.firstWhere(
+      (destination) => destination['name']?.toString() == _selectedToCity,
+      orElse: () => <String, dynamic>{},
     );
 
     setState(() {
-      _calculatedPrice =
-          match.isNotEmpty ? (match['price'] as num).toInt() : null;
+      final price = match['price'];
+
+      _calculatedPrice = price is num ? price.toInt() : null;
     });
   }
 
-  // ================= LOAD SAVED SENDER =================
+  // ================= SAVED SENDER DETAILS =================
+
   Future<void> _loadSavedSender() async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -35611,7 +35728,9 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
 
     setState(() {
       _senderNameController.text = prefs.getString('senderName') ?? '';
+
       _senderContactController.text = prefs.getString('senderContact') ?? '';
+
       _pickupAddressController.text = prefs.getString('pickupAddress') ?? '';
     });
   }
@@ -35619,47 +35738,90 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
   Future<void> _saveSenderDetails() async {
     final prefs = await SharedPreferences.getInstance();
 
-    await prefs.setString('senderName', _senderNameController.text.trim());
     await prefs.setString(
-        'senderContact', _senderContactController.text.trim());
+      'senderName',
+      _senderNameController.text.trim(),
+    );
+
     await prefs.setString(
-        'pickupAddress', _pickupAddressController.text.trim());
+      'senderContact',
+      _senderContactController.text.trim(),
+    );
+
+    await prefs.setString(
+      'pickupAddress',
+      _pickupAddressController.text.trim(),
+    );
   }
 
   // ================= VALIDATION =================
+
   bool _validateStep(int step) {
     switch (step) {
       case 0:
-        return _packageNameController.text.isNotEmpty &&
-            _selectedCategory != null;
+        final packageValid = _packageNameController.text.trim().isNotEmpty &&
+            _selectedCategory != null &&
+            _selectedSize != null &&
+            _selectedEstimatedValue != null;
+
+        if (_isInstant) {
+          return packageValid;
+        }
+
+        return packageValid &&
+            _selectedFromCity != null &&
+            _selectedToCity != null;
+
       case 1:
-        return _senderNameController.text.isNotEmpty &&
-            _senderContactController.text.isNotEmpty &&
-            _pickupAddressController.text.isNotEmpty;
+        return _senderNameController.text.trim().isNotEmpty &&
+            _senderContactController.text.trim().isNotEmpty &&
+            _pickupAddressController.text.trim().isNotEmpty;
+
+      case 2:
+        return _receiverNameController.text.trim().isNotEmpty &&
+            _receiverContactController.text.trim().isNotEmpty &&
+            _deliveryAddressController.text.trim().isNotEmpty;
+
       default:
         return false;
     }
   }
 
+  void _showValidationMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   void _nextStep() {
-    if (_currentStep == 0) {
-      if (_packageNameController.text.isEmpty ||
-          _selectedCategory == null ||
-          _selectedSize == null ||
-          _estimatedValueController.text.isEmpty ||
-          _selectedFromCity == null ||
-          _selectedToCity == null) {
-        return;
+    if (!_validateStep(_currentStep)) {
+      switch (_currentStep) {
+        case 0:
+          _showValidationMessage(
+            _isWaybill
+                ? 'Please complete the package details and select your pickup and destination cities.'
+                : 'Please complete the package name, category, size and estimated value.',
+          );
+          return;
+
+        case 1:
+          _showValidationMessage(
+            'Please complete the sender name, contact and address.',
+          );
+          return;
+
+        case 2:
+          _showValidationMessage(
+            'Please complete the receiver details.',
+          );
+          return;
       }
     }
 
     if (_currentStep == 1) {
-      if (_senderNameController.text.isEmpty ||
-          _senderContactController.text.isEmpty ||
-          _pickupAddressController.text.isEmpty) {
-        return;
-      }
-
       _saveSenderDetails();
     }
 
@@ -35667,6 +35829,12 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
       setState(() {
         _currentStep++;
       });
+
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
     }
   }
 
@@ -35675,47 +35843,69 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
       setState(() {
         _currentStep--;
       });
+
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
     }
   }
 
   // ================= PREVIEW =================
+
   void _goToPreview() {
-    if (!_formKey.currentState!.validate() || _selectedCategory == null) return;
+    if (!_validateStep(0) || !_validateStep(1) || !_validateStep(2)) {
+      _showValidationMessage(
+        'Please complete all required details before continuing.',
+      );
+      return;
+    }
 
     final trackingId = 'TRK-${const Uuid().v4().substring(0, 8).toUpperCase()}';
 
-    final userId = FirebaseAuth.instance.currentUser!.uid;
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      _showValidationMessage(
+        'Please sign in before continuing.',
+      );
+      return;
+    }
 
     final data = {
       'serviceType': widget.serviceType,
       'packageName': _packageNameController.text.trim(),
       'category': _selectedCategory!,
-      'pickupAddress': _pickupAddressController.text.trim(),
-      'deliveryAddress': _deliveryAddressController.text.trim(),
       'senderName': _senderNameController.text.trim(),
       'senderContact': _senderContactController.text.trim(),
+      'pickupAddress': _pickupAddressController.text.trim(),
       'receiverName': _receiverNameController.text.trim(),
       'receiverContact': _receiverContactController.text.trim(),
+      'deliveryAddress': _deliveryAddressController.text.trim(),
       'trackingId': trackingId,
-      'userId': userId,
+      'userId': user.uid,
       'packageSize': _selectedSize,
-      'estimatedValue': _estimatedValueController.text.trim(),
+      'estimatedValue': _selectedEstimatedValue,
 
-      // 🔥 LOGISTICS DATA ADDED
-      'fromCity': _selectedFromCity,
-      'toCity': _selectedToCity,
-      'price': _calculatedPrice,
+      // Waybill route information.
+      // These values remain null for Instant services.
+      'fromCity': _isWaybill ? _selectedFromCity : null,
+      'toCity': _isWaybill ? _selectedToCity : null,
+      'price': _isWaybill ? _calculatedPrice : null,
     };
 
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => PackagePreviewPage(packageData: data),
+        builder: (_) => PackagePreviewPage(
+          packageData: data,
+        ),
       ),
     );
   }
 
-  // ================= MODAL SELECTORS =================
+  // ================= CATEGORY SELECTOR =================
 
   Future<void> _showCategorySheet() async {
     final selected = await showModalBottomSheet<String>(
@@ -35727,7 +35917,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
           top: Radius.circular(24),
         ),
       ),
-      builder: (context) {
+      builder: (sheetContext) {
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
@@ -35735,72 +35925,34 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Handle
-                Center(
-                  child: Container(
-                    width: 42,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                ),
-
+                _sheetHandle(),
                 const SizedBox(height: 22),
-
                 const Text(
-                  "Select package category",
+                  'Select package category',
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
                     color: Colors.black,
                   ),
                 ),
-
                 const SizedBox(height: 6),
-
                 Text(
-                  "Choose the category that best describes your package.",
+                  'Choose the category that best describes your package.',
                   style: TextStyle(
                     fontSize: 13,
                     color: Colors.grey.shade600,
                   ),
                 ),
-
                 const SizedBox(height: 18),
-
                 ..._categories.map((category) {
-                  final isSelected = _selectedCategory == category;
-
-                  IconData icon;
-
-                  switch (category) {
-                    case "Document":
-                      icon = Icons.description_outlined;
-                      break;
-                    case "Electronics":
-                      icon = Icons.devices_outlined;
-                      break;
-                    case "Clothing":
-                      icon = Icons.checkroom_outlined;
-                      break;
-                    case "Food":
-                      icon = Icons.restaurant_outlined;
-                      break;
-                    default:
-                      icon = Icons.inventory_2_outlined;
-                  }
-
                   return _buildSelectorItem(
                     title: category,
-                    icon: icon,
-                    selected: isSelected,
+                    selected: _selectedCategory == category,
                     onTap: () {
-                      Navigator.pop(context, category);
+                      Navigator.pop(sheetContext, category);
                     },
                   );
-                }).toList(),
+                }),
               ],
             ),
           ),
@@ -35808,17 +35960,158 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
       },
     );
 
-    if (selected != null) {
+    if (selected != null && mounted) {
       setState(() {
         _selectedCategory = selected;
       });
     }
   }
 
+  // ================= PACKAGE SIZE SELECTOR =================
+
+  Future<void> _showPackageSizeSheet() async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(24),
+        ),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _sheetHandle(),
+                const SizedBox(height: 22),
+                const Text(
+                  'Select package size',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Choose the size that best describes your package.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                ..._packageSizes.map((size) {
+                  return _buildSelectorItem(
+                    title: size,
+                    selected: _selectedSize == size,
+                    onTap: () {
+                      Navigator.pop(sheetContext, size);
+                    },
+                  );
+                }),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (selected != null && mounted) {
+      setState(() {
+        _selectedSize = selected;
+      });
+    }
+  }
+
+  // ================= ESTIMATED VALUE SELECTOR =================
+
+  Future<void> _showEstimatedValueSheet() async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(24),
+        ),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _sheetHandle(),
+                const SizedBox(height: 22),
+                const Text(
+                  'Select estimated value',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Choose the estimated monetary value of your package.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                ..._estimatedValueRanges.map((range) {
+                  return _buildSelectorItem(
+                    title: range,
+                    selected: _selectedEstimatedValue == range,
+                    onTap: () {
+                      Navigator.pop(sheetContext, range);
+                    },
+                  );
+                }),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (selected != null && mounted) {
+      setState(() {
+        _selectedEstimatedValue = selected;
+        _estimatedValueController.text = selected;
+      });
+    }
+  }
+
+  Widget _sheetHandle() {
+    return Center(
+      child: Container(
+        width: 42,
+        height: 4,
+        decoration: BoxDecoration(
+          color: Colors.grey.shade300,
+          borderRadius: BorderRadius.circular(10),
+        ),
+      ),
+    );
+  }
+
+  // ================= CITY SELECTORS =================
+
   Future<void> _showFromCitySheet() async {
     final cities = _getCities();
 
     if (cities.isEmpty) {
+      _showValidationMessage(
+        'No pickup cities are currently available. Please try again later.',
+      );
       return;
     }
 
@@ -35831,7 +36124,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
           top: Radius.circular(24),
         ),
       ),
-      builder: (context) {
+      builder: (sheetContext) {
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
@@ -35839,19 +36132,10 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Center(
-                  child: Container(
-                    width: 42,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                ),
+                _sheetHandle(),
                 const SizedBox(height: 22),
                 const Text(
-                  "Pickup city",
+                  'Pickup city',
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -35859,7 +36143,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  "Select pickup city?",
+                  'Select the city where the package will be sent from.',
                   style: TextStyle(
                     fontSize: 13,
                     color: Colors.grey.shade600,
@@ -35872,14 +36156,12 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
                     itemCount: cities.length,
                     itemBuilder: (context, index) {
                       final city = cities[index];
-                      final isSelected = _selectedFromCity == city;
 
                       return _buildSelectorItem(
                         title: city,
-                        icon: Icons.location_on_outlined,
-                        selected: isSelected,
+                        selected: _selectedFromCity == city,
                         onTap: () {
-                          Navigator.pop(context, city);
+                          Navigator.pop(sheetContext, city);
                         },
                       );
                     },
@@ -35892,7 +36174,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
       },
     );
 
-    if (selected != null) {
+    if (selected != null && mounted) {
       setState(() {
         _selectedFromCity = selected;
         _selectedToCity = null;
@@ -35903,12 +36185,18 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
 
   Future<void> _showDestinationSheet() async {
     if (_selectedFromCity == null) {
+      _showValidationMessage(
+        'Please select a pickup city first.',
+      );
       return;
     }
 
     final destinations = _getDestinations(_selectedFromCity!);
 
     if (destinations.isEmpty) {
+      _showValidationMessage(
+        'No destinations are available for this pickup city.',
+      );
       return;
     }
 
@@ -35921,7 +36209,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
           top: Radius.circular(24),
         ),
       ),
-      builder: (context) {
+      builder: (sheetContext) {
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
@@ -35929,19 +36217,10 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Center(
-                  child: Container(
-                    width: 42,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                ),
+                _sheetHandle(),
                 const SizedBox(height: 22),
                 const Text(
-                  "Destination",
+                  'Destination city',
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -35949,7 +36228,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  "Where should we deliver this package?",
+                  'Choose where the package should be delivered.',
                   style: TextStyle(
                     fontSize: 13,
                     color: Colors.grey.shade600,
@@ -35963,21 +36242,20 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
                     itemBuilder: (context, index) {
                       final destination = destinations[index];
 
-                      final name = destination['name']?.toString() ?? "";
+                      final name = destination['name']?.toString() ?? '';
 
                       final price = destination['price'];
 
-                      final isSelected = _selectedToCity == name;
+                      final subtitle = price is num
+                          ? '₦${NumberFormat("#,###").format(price.toInt())}'
+                          : null;
 
                       return _buildSelectorItem(
                         title: name,
-                        subtitle: price != null
-                            ? "₦${NumberFormat("#,###").format((price as num).toInt())}"
-                            : null,
-                        icon: Icons.flag_outlined,
-                        selected: isSelected,
+                        subtitle: subtitle,
+                        selected: _selectedToCity == name,
                         onTap: () {
-                          Navigator.pop(context, name);
+                          Navigator.pop(sheetContext, name);
                         },
                       );
                     },
@@ -35990,18 +36268,20 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
       },
     );
 
-    if (selected != null) {
+    if (selected != null && mounted) {
       setState(() {
         _selectedToCity = selected;
-        _calculatePrice();
       });
+
+      _calculatePrice();
     }
   }
+
+  // ================= SELECTOR ITEM =================
 
   Widget _buildSelectorItem({
     required String title,
     String? subtitle,
-    required IconData icon,
     required bool selected,
     required VoidCallback onTap,
   }) {
@@ -36012,7 +36292,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.symmetric(
           horizontal: 14,
-          vertical: 13,
+          vertical: 15,
         ),
         decoration: BoxDecoration(
           color:
@@ -36025,23 +36305,6 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
         ),
         child: Row(
           children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: selected ? Colors.black : Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: Colors.grey.shade200,
-                ),
-              ),
-              child: Icon(
-                icon,
-                size: 20,
-                color: selected ? Colors.white : Colors.black87,
-              ),
-            ),
-            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -36095,14 +36358,15 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
     );
   }
 
+  // ================= SELECTOR FIELD =================
+
   Widget _buildSelectorField({
-    required String label,
+    String? label,
     required String? value,
     required VoidCallback onTap,
-    required IconData icon,
     String? hint,
   }) {
-    final hasValue = value != null && value!.isNotEmpty;
+    final hasValue = value != null && value.isNotEmpty;
 
     return GestureDetector(
       onTap: onTap,
@@ -36110,7 +36374,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
         width: double.infinity,
         padding: const EdgeInsets.symmetric(
           horizontal: 16,
-          vertical: 15,
+          vertical: 17,
         ),
         decoration: BoxDecoration(
           color: Colors.grey.shade100,
@@ -36118,31 +36382,28 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
         ),
         child: Row(
           children: [
-            Icon(
-              icon,
-              size: 20,
-              color: Colors.black87,
-            ),
-            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.grey.shade600,
-                      fontWeight: FontWeight.w500,
+                  if (label != null && label.trim().isNotEmpty) ...[
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 3),
+                    const SizedBox(height: 3),
+                  ],
                   Text(
-                    hasValue ? value! : (hint ?? "Select"),
+                    hasValue ? value : (hint ?? 'Select'),
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: hasValue ? FontWeight.w600 : FontWeight.w400,
-                      color: hasValue ? Colors.black : Colors.grey.shade500,
+                      color: hasValue ? Colors.black : Colors.grey.shade600,
                     ),
                   ),
                 ],
@@ -36158,36 +36419,28 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
     );
   }
 
-  // ================= CITY DROPDOWN =================
   Widget _cityDropdown() {
     return _buildSelectorField(
-      label: "From",
+      label: 'Pickup city',
       value: _selectedFromCity,
-      hint: "Select pickup city",
-      icon: Icons.location_on_outlined,
+      hint: 'Select pickup city',
       onTap: _showFromCitySheet,
     );
   }
 
   Widget _destinationDropdown() {
     return _buildSelectorField(
-      label: "To",
+      label: 'Destination city',
       value: _selectedToCity,
       hint: _selectedFromCity == null
-          ? "Select pickup city first"
-          : "Select destination",
-      icon: Icons.flag_outlined,
-      onTap: () {
-        if (_selectedFromCity == null) {
-          return;
-        }
-
-        _showDestinationSheet();
-      },
+          ? 'Select pickup city first'
+          : 'Select destination city',
+      onTap: _showDestinationSheet,
     );
   }
 
-  // ================= SECTION CARD (UNCHANGED) =================
+  // ================= SECTION CARD =================
+
   Widget _sectionCard({
     required int step,
     required Widget child,
@@ -36196,7 +36449,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
     required String title,
     required String subtitle,
   }) {
-    bool enabled = _currentStep >= step;
+    final enabled = _currentStep >= step;
 
     return AnimatedOpacity(
       duration: const Duration(milliseconds: 300),
@@ -36214,7 +36467,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
                 color: Colors.black.withOpacity(0.05),
                 blurRadius: 8,
                 offset: const Offset(0, 4),
-              )
+              ),
             ],
           ),
           child: Column(
@@ -36226,23 +36479,36 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
                     iconWidget
                   else if (icon != null)
                     Icon(icon),
-                  const SizedBox(width: 8),
-                  Text(title,
-                      style: const TextStyle(
-                          fontSize: 17, fontWeight: FontWeight.bold)),
+                  if (iconWidget != null || icon != null)
+                    const SizedBox(width: 8),
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   const Spacer(),
-                  Text("${step + 1} of 3",
-                      style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green[900]))
+                  Text(
+                    '${step + 1} of 3',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green[900],
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 4),
-              Text(subtitle,
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontSize: 13,
+                ),
+              ),
               const SizedBox(height: 16),
-              child
+              child,
             ],
           ),
         ),
@@ -36250,261 +36516,59 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
     );
   }
 
-  String? _selectedSize;
+  // ================= PACKAGE DETAILS =================
 
-  final List<String> _packageSizes = [
-    "Small",
-    "Medium",
-    "Large",
-  ];
-
-  final _estimatedValueController = TextEditingController();
-
-  Widget _packageSizeSelector() {
-    return Row(
-      children: _packageSizes.map((size) {
-        final selected = _selectedSize == size;
-
-        return Expanded(
-          child: GestureDetector(
-            onTap: () {
-              setState(() {
-                _selectedSize = size;
-              });
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              margin: EdgeInsets.only(
-                right: size != _packageSizes.last ? 10 : 0,
-              ),
-              height: 55,
-              decoration: BoxDecoration(
-                color: selected ? Colors.black : Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: selected ? Colors.black : Colors.grey.shade300,
-                ),
-              ),
-              child: Center(
-                child: Text(
-                  size,
-                  style: TextStyle(
-                    color: selected ? Colors.white : Colors.black87,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-  Widget _senderForm() {
-    return Column(
-      children: [
-        GestureDetector(
-          onTap: () async {
-            setState(() => _useSavedSender = !_useSavedSender);
-            if (_useSavedSender) await _loadSavedSender();
-          },
-          child: Row(
-            children: [
-              // Spacer(),
-              Container(
-                width: 20,
-                height: 20,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.black, width: 1),
-                  color: _useSavedSender ? Colors.black : Colors.transparent,
-                ),
-                child: _useSavedSender
-                    ? const Icon(Icons.check, size: 10, color: Colors.white)
-                    : null,
-              ),
-              const SizedBox(width: 8),
-              const Text("Use my details", style: TextStyle(fontSize: 10)),
-            ],
-          ),
-        ),
-        SizedBox(height: 8),
-        _buildTextField(
-          _senderNameController,
-          "Sender Name",
-          onChanged: (_) => _nextStep(),
-        ),
-        const SizedBox(height: 12),
-        _buildTextField(
-          _senderContactController,
-          "Phone",
-          keyboardType: TextInputType.phone,
-          onChanged: (_) => _nextStep(),
-        ),
-        SizedBox(height: 12),
-        _buildTextField(
-          _pickupAddressController,
-          "Pickup Location",
-          onChanged: (_) => _nextStep(),
-        ),
-
-        // 👇 EVERYTHING currently inside _senderSection()
-      ],
-    );
-  }
-
-  Widget _senderSummaryCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: Colors.grey.shade200,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(.05),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: Colors.black12,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(
-                  _senderType == "business" ? Icons.business : Icons.person,
-                  color: Colors.black,
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _senderType == "business"
-                          ? "Business Profile"
-                          : "Personal Profile",
-                      style: TextStyle(
-                        color: Colors.grey.shade600,
-                        fontSize: 13,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _senderNameController.text,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 22),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.phone_outlined),
-            title: Text(_senderContactController.text),
-          ),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.location_on_outlined),
-            title: Text(_pickupAddressController.text),
-          ),
-          const SizedBox(height: 10),
-          Center(
-            child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  _editingSender = true;
-                });
-              },
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: const [
-                  Icon(
-                    Icons.edit_outlined,
-                    color: Colors.black,
-                    size: 18,
-                  ),
-                  SizedBox(width: 6),
-                  Text(
-                    "Edit Details",
-                    style: TextStyle(
-                      color: Colors.green,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ================= SECTIONS =================
   Widget _packageSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildTextField(
           _packageNameController,
-          "Package Name",
+          'Package Name',
         ),
+
         const SizedBox(height: 20),
+
+        // No category icon or extra "Category" label.
         _buildSelectorField(
-          label: "Category",
           value: _selectedCategory,
-          hint: "Select package category",
-          icon: Icons.category_outlined,
+          hint: 'Select package category',
           onTap: _showCategorySheet,
         ),
-        const SizedBox(height: 22),
-        const Align(
-          alignment: Alignment.centerLeft,
-          child: Text(
-            "Package Size",
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 15,
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        _packageSizeSelector(),
-        const SizedBox(height: 22),
-        _buildTextField(
-          _estimatedValueController,
-          "Estimated Value (₦)",
-          keyboardType: TextInputType.number,
-        ),
+
         const SizedBox(height: 20),
-        _cityDropdown(),
+
+        // Package size behaves like a text field, opening options.
+        _buildSelectorField(
+          label: 'Package Size',
+          value: _selectedSize,
+          hint: 'Select package size',
+          onTap: _showPackageSizeSheet,
+        ),
+
         const SizedBox(height: 20),
-        _destinationDropdown(),
-        //_priceCard(),
+
+        // Estimated value is selected from the provided ranges.
+        _buildSelectorField(
+          label: 'Estimated Value',
+          value: _selectedEstimatedValue,
+          hint: 'Select estimated value',
+          onTap: _showEstimatedValueSheet,
+        ),
+
+        // Pickup and destination city fields are Waybills-only.
+        if (_isWaybill) ...[
+          const SizedBox(height: 20),
+          _cityDropdown(),
+          const SizedBox(height: 20),
+          _destinationDropdown(),
+          _priceCard(),
+        ],
       ],
     );
   }
+
+  // ================= SENDER DETAILS =================
 
   Widget _senderSection() {
     if (_loadingSenderProfile) {
@@ -36518,51 +36582,188 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
       );
     }
 
-    if (!_editingSender) {
-      return _senderSummaryCard();
-    }
-
     return _senderForm();
   }
 
-  Widget _receiverSection() {
+  Widget _senderForm() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildTextField(_receiverNameController, "Receiver Name"),
-        const SizedBox(height: 12),
-        _buildTextField(_receiverContactController, "Phone",
-            keyboardType: TextInputType.phone),
-        const SizedBox(height: 12),
-        _buildTextField(_deliveryAddressController, "Delivery Address"),
+        GestureDetector(
+          onTap: () async {
+            setState(() {
+              _useSavedSender = !_useSavedSender;
+            });
+
+            if (_useSavedSender) {
+              await _loadSavedSender();
+            }
+          },
+          child: Row(
+            children: [
+              Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.black,
+                    width: 1,
+                  ),
+                  color: _useSavedSender ? Colors.black : Colors.transparent,
+                ),
+                child: _useSavedSender
+                    ? const Icon(
+                        Icons.check,
+                        size: 10,
+                        color: Colors.white,
+                      )
+                    : null,
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'Use my details',
+                style: TextStyle(fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 22),
+
+        // Circular profile icon and sender/business name.
+        Row(
+          children: [
+            Container(
+              width: 54,
+              height: 54,
+              decoration: const BoxDecoration(
+                color: Color(0xFFF0F0F0),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                _senderType == 'business'
+                    ? Icons.business_outlined
+                    : Icons.person_outline_rounded,
+                color: Colors.black,
+                size: 25,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                _senderNameController.text.trim().isNotEmpty
+                    ? _senderNameController.text.trim()
+                    : 'Sender details',
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black,
+                ),
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 24),
+
+        const Text(
+          'Contact',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Colors.black,
+          ),
+        ),
+
+        const SizedBox(height: 8),
+
+        _buildTextField(
+          _senderContactController,
+          'Phone number',
+          keyboardType: TextInputType.phone,
+          onChanged: (_) {
+            setState(() {});
+          },
+        ),
+
+        const SizedBox(height: 20),
+
+        const Text(
+          'Address',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Colors.black,
+          ),
+        ),
+
+        const SizedBox(height: 8),
+
+        _buildTextField(
+          _pickupAddressController,
+          'Enter sender address',
+        ),
       ],
     );
   }
 
+  // ================= RECEIVER DETAILS =================
+
+  Widget _receiverSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildTextField(
+          _receiverNameController,
+          'Receiver Name',
+        ),
+        const SizedBox(height: 12),
+        _buildTextField(
+          _receiverContactController,
+          'Phone',
+          keyboardType: TextInputType.phone,
+        ),
+        const SizedBox(height: 12),
+        _buildTextField(
+          _deliveryAddressController,
+          'Delivery Address',
+        ),
+      ],
+    );
+  }
+
+  // ================= STEP TITLES =================
+
   String get _stepTitle {
     switch (_currentStep) {
       case 0:
-        return "Package Details";
+        return 'Package Details';
       case 1:
-        return "Sender Details";
+        return 'Sender Details';
       case 2:
-        return "Receiver Details";
+        return 'Receiver Details';
       default:
-        return "";
+        return '';
     }
   }
 
   String get _stepSubtitle {
     switch (_currentStep) {
       case 0:
-        return "Tell us about the package you're sending.";
+        return _isInstant
+            ? "Tell us about the package you're sending."
+            : "Tell us about your package and select the pickup and destination cities.";
       case 1:
-        return "Where should we pick up your package?";
+        return 'Who is sending this package?';
       case 2:
-        return "Who should receive this package?";
+        return 'Who should receive this package?';
       default:
-        return "";
+        return '';
     }
   }
+
+  // ================= PROGRESS BAR =================
 
   Widget _progressBar() {
     return TweenAnimationBuilder<double>(
@@ -36573,36 +36774,38 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
       ),
       builder: (_, value, __) {
         return ClipRRect(
-          //borderRadius: BorderRadius.circular(100),
           child: LinearProgressIndicator(
             value: value,
             minHeight: 5,
             backgroundColor: Colors.grey.shade200,
-            valueColor: const AlwaysStoppedAnimation<Color>(Colors.green),
+            valueColor: const AlwaysStoppedAnimation<Color>(
+              Colors.green,
+            ),
           ),
         );
       },
     );
   }
 
+  // ================= CURRENT STEP =================
+
   Widget _buildCurrentStep() {
     switch (_currentStep) {
       case 0:
         return _packageSection();
-
       case 1:
         return _senderSection();
-
       case 2:
         return _receiverSection();
-
       default:
         return const SizedBox();
     }
   }
 
+  // ================= PRICE CARD =================
+
   Widget _priceCard() {
-    if (_calculatedPrice == null) {
+    if (!_isWaybill || _calculatedPrice == null) {
       return const SizedBox();
     }
 
@@ -36621,24 +36824,19 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
             color: Colors.white,
           ),
           const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
-                Text(
-                  "Estimated Delivery Fee",
-                  style: TextStyle(
-                    color: Colors.white70,
-                  ),
-                ),
-              ],
+          const Expanded(
+            child: Text(
+              'Estimated Delivery Fee',
+              style: TextStyle(
+                color: Colors.white70,
+              ),
             ),
           ),
           Text(
-            "₦${NumberFormat("#,###").format(_calculatedPrice)}",
+            '₦${NumberFormat("#,###").format(_calculatedPrice)}',
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 24,
+              fontSize: 22,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -36648,38 +36846,36 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
   }
 
   // ================= BUILD =================
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        //automaticallyImplyLeading: false, // 👈 turn this off since we customize it
         backgroundColor: Colors.white,
         elevation: 0,
         scrolledUnderElevation: 0,
-
         leading: Padding(
           padding: const EdgeInsets.only(left: 10),
           child: GestureDetector(
             onTap: () => Navigator.pop(context),
             child: Container(
-              width: 25,
-              height: 25,
+              width: 30,
+              height: 30,
               decoration: BoxDecoration(
-                color: Colors.grey[100], // ✅ grey 50 look
+                color: Colors.grey[100],
                 shape: BoxShape.circle,
               ),
               child: const Icon(
-                Icons.arrow_back_ios,
+                Icons.arrow_back_ios_new_rounded,
                 size: 14,
                 color: Colors.black,
               ),
             ),
           ),
         ),
-
         title: const Padding(
-          padding: EdgeInsets.only(left: 8), // ✅ spacing from icon
+          padding: EdgeInsets.only(left: 8),
           child: Text(
             '',
             style: TextStyle(
@@ -36693,7 +36889,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
       body: SingleChildScrollView(
         child: Column(
           children: [
-            SizedBox(height: 25),
+            const SizedBox(height: 25),
             _progressBar(),
             const SizedBox(height: 15),
             Padding(
@@ -36741,7 +36937,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
                           child: _buildCurrentStep(),
                         ),
                       ),
-                      SizedBox(height: 20),
+                      const SizedBox(height: 24),
                       Row(
                         children: [
                           if (_currentStep > 0)
@@ -36750,9 +36946,19 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
                                 onPressed: _previousStep,
                                 style: OutlinedButton.styleFrom(
                                   minimumSize: const Size.fromHeight(55),
+                                  side: BorderSide(
+                                    color: Colors.grey.shade300,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
                                 ),
-                                child: const Text("Back",
-                                    style: TextStyle(color: Colors.black)),
+                                child: const Text(
+                                  'Back',
+                                  style: TextStyle(
+                                    color: Colors.black,
+                                  ),
+                                ),
                               ),
                             ),
                           if (_currentStep > 0) const SizedBox(width: 14),
@@ -36768,15 +36974,21 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.black,
                                 minimumSize: const Size.fromHeight(55),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
                               ),
                               child: Text(
-                                _currentStep == 2 ? "Continue" : "Next",
-                                style: const TextStyle(color: Colors.white),
+                                _currentStep == 2 ? 'Continue' : 'Next',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
                           ),
                         ],
-                      )
+                      ),
                     ],
                   ),
                 ),
@@ -36788,26 +37000,36 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
     );
   }
 
-  InputDecoration _inputDecoration(String label) => InputDecoration(
-        labelText: label,
-        filled: true,
-        fillColor: Colors.grey[100],
+  // ================= TEXT FIELD STYLES =================
 
-        // Label before typing/focus
-        labelStyle: const TextStyle(
-          color: Colors.grey,
+  InputDecoration _inputDecoration(String label) {
+    return InputDecoration(
+      labelText: label,
+      filled: true,
+      fillColor: Colors.grey[100],
+      labelStyle: const TextStyle(
+        color: Colors.grey,
+      ),
+      floatingLabelStyle: const TextStyle(
+        color: Colors.grey,
+      ),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(
+          color: Colors.black,
+          width: 1,
         ),
-
-        // Label when it moves up
-        floatingLabelStyle: const TextStyle(
-          color: Colors.grey,
-        ),
-
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-      );
+      ),
+    );
+  }
 
   Widget _buildTextField(
     TextEditingController controller,
@@ -36819,10 +37041,7 @@ class _PackageDetailsPageState extends State<PackageDetailsPage> {
       controller: controller,
       keyboardType: keyboardType,
       onChanged: onChanged,
-
-      // Blinking cursor
       cursorColor: Colors.black,
-
       decoration: _inputDecoration(label),
     );
   }
